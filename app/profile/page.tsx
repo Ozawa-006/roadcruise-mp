@@ -15,6 +15,11 @@ export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // 🌟 新增：我的话题状态和回复数量
+  const [myTopics, setMyTopics] = useState<any[]>([]);
+  const [myRepliesCount, setMyRepliesCount] = useState(0);
+  
   const router = useRouter();
 
   useEffect(() => {
@@ -35,6 +40,25 @@ export default function ProfilePage() {
       if (profileData) {
         setProfile(profileData);
       }
+
+      // 🌟 获取我发布的最新 5 个话题
+      const { data: topicsData } = await supabase
+        .from('forum_topics')
+        .select('id, title, category_id, created_at, replies_count')
+        .eq('author_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      
+      if (topicsData) setMyTopics(topicsData);
+
+      // 🌟 获取我回复的总数
+      const { count } = await supabase
+        .from('forum_replies')
+        .select('*', { count: 'exact', head: true })
+        .eq('author_id', user.id);
+      
+      if (count) setMyRepliesCount(count);
+
       setLoading(false);
     };
     loadData();
@@ -44,7 +68,6 @@ export default function ProfilePage() {
 
   const displayName = profile?.display_name || user?.email?.split('@')[0] || '玩家';
   const avatarUrl = profile?.avatar_url;
-  const joinDate = user?.created_at ? new Date(user.created_at).toLocaleDateString() : '未知';
   
   // 🌟 角色判断体系
   const ROLE_WEIGHTS: any = { developer: 100, director: 80, manager: 60, staff: 40, member: 10 };
@@ -119,7 +142,6 @@ export default function ProfilePage() {
                     </span>
                   </div>
                   
-                  {/* 🌟 这里修复了 Steam ID 的显示 */}
                   <div className="text-sm space-y-3">
                     <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">English, Chinese (Simplified)</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile?.steam_id || '未绑定'}</span></p>
@@ -148,7 +170,6 @@ export default function ProfilePage() {
                        <span>Discord:</span> 
                        <span className="text-white">{profile?.discord_id || '未绑定'}</span>
                      </p>
-                     {/* 🌟 这里修复了 Social 区域 Steam 的显示 */}
                      <p className="text-sm text-gray-400 flex justify-between mt-1">
                        <span>Steam:</span> 
                        <span className="text-white">{profile?.steam_id || '未绑定'}</span>
@@ -158,7 +179,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-                        {/* 🌟 新增：游戏内遥测数据面板 (占位壳) */}
+            {/* 🌟 游戏内遥测数据面板 */}
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg overflow-hidden">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex justify-between items-center">
                 <div className="flex items-center gap-2">
@@ -210,6 +231,66 @@ export default function ProfilePage() {
                 <div className="text-center text-gray-500 text-sm py-8 bg-[#232428] rounded-md border border-dashed border-gray-700">
                   暂无运输记录 (No deliveries found).
                 </div>
+              </div>
+            </div>
+
+            {/* 🌟 新增：论坛成就系统 */}
+            <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
+              <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
+                <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                <span className="text-sm font-bold text-gray-400">成就与勋章 (Achievements)</span>
+              </div>
+              <div className="p-6 flex flex-wrap gap-4">
+                <div className="bg-[#18191c] border border-green-500/50 p-4 rounded-lg text-center w-28 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
+                  <div className="text-3xl mb-2">🚛</div>
+                  <p className="text-xs text-white font-bold">正版认证</p>
+                  <p className="text-[10px] text-gray-500 mt-1">已绑定 Steam</p>
+                </div>
+                <div className="bg-[#18191c] border border-blue-500/50 p-4 rounded-lg text-center w-28 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                  <div className="text-3xl mb-2">📝</div>
+                  <p className="text-xs text-white font-bold">初来乍到</p>
+                  <p className="text-[10px] text-gray-500 mt-1">发布首个话题</p>
+                </div>
+                <div className="bg-[#18191c] border border-gray-700 p-4 rounded-lg text-center w-28 opacity-50 grayscale">
+                  <div className="text-3xl mb-2">🔥</div>
+                  <p className="text-xs text-white font-bold">活跃司机</p>
+                  <p className="text-[10px] text-gray-500 mt-1">回复满 50 次</p>
+                </div>
+                <div className="bg-[#18191c] border border-gray-700 p-4 rounded-lg text-center w-28 opacity-50 grayscale">
+                  <div className="text-3xl mb-2">👑</div>
+                  <p className="text-xs text-white font-bold">元老</p>
+                  <p className="text-[10px] text-gray-500 mt-1">拥有专属靓号</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 🌟 新增：我的论坛动态 */}
+            <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
+              <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" /></svg>
+                  <span className="text-sm font-bold text-gray-400">我的社区动态</span>
+                </div>
+                <span className="text-xs text-gray-500">共发布 {myTopics.length} 个话题，回复 {myRepliesCount} 次</span>
+              </div>
+              
+              <div className="p-4 space-y-2">
+                {myTopics.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">你还没有在论坛发布过帖子。</p>
+                ) : (
+                  myTopics.map(topic => (
+                    <Link 
+                      key={topic.id}
+                      href={`/forum/${topic.category_id}/${topic.id}`}
+                      className="block bg-[#18191c] p-3 rounded-md border border-gray-700 hover:border-blue-500 transition"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-white font-bold text-sm truncate pr-4">{topic.title}</span>
+                        <span className="text-xs text-gray-500 whitespace-nowrap">{new Date(topic.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </Link>
+                  ))
+                )}
               </div>
             </div>
 
