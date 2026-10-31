@@ -2,16 +2,16 @@
   "name": "road-cruise-mp",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
+ "scripts": {
+  "dev": "next dev",
+  "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+  "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
+},
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "axios": "^1.21.0",
     "next": "16.4.3",
+    "openid-client": "^5.7.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
