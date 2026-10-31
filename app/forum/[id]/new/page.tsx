@@ -17,7 +17,8 @@ export default function NewTopicPage() {
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [imageUrl, setImageUrl] = useState(''); // 🌟 改成外链状态
+  const [imageUrl, setImageUrl] = useState('');
+  const [tag, setTag] = useState('综合讨论'); // 🌟 新增：分类标签状态
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -33,13 +34,14 @@ export default function NewTopicPage() {
       return;
     }
 
-    // 🌟 直接提交外链，不再需要处理文件上传
+    // 提交时带上 tag 字段
     const { error } = await supabase.from('forum_topics').insert({
       category_id: id,
       author_id: user.id,
       title,
       content,
-      image_url: imageUrl
+      image_url: imageUrl,
+      tag: tag // 🌟 存入标签
     });
 
     if (error) {
@@ -74,6 +76,23 @@ export default function NewTopicPage() {
       {/* 表单区域 */}
       <div className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-8 -mt-6 relative z-10">
         <form onSubmit={handleSubmit} className="bg-[#2c2d31] border border-gray-700 p-6 md:p-8 rounded-lg shadow-2xl space-y-6">
+          
+          {/* 🌟 新增：主题分类下拉框 */}
+          <div>
+            <label className="block text-sm font-bold text-gray-400 mb-2">主题分类</label>
+            <select 
+              value={tag} 
+              onChange={(e) => setTag(e.target.value)}
+              className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="综合讨论">综合讨论</option>
+              <option value="卡车展示">卡车展示</option>
+              <option value="图片/截图">图片/截图</option>
+              <option value="技术教程">技术教程</option>
+              <option value="提问求助">提问求助</option>
+            </select>
+          </div>
+
           <div>
             <label className="block text-sm font-bold text-gray-400 mb-2">帖子标题</label>
             <input 
@@ -97,7 +116,6 @@ export default function NewTopicPage() {
             ></textarea>
           </div>
 
-          {/* 🌟 改成纯文本 URL 输入框 */}
           <div>
             <label className="block text-sm font-bold text-gray-400 mb-2">添加配图链接 (选填)</label>
             <input 
@@ -107,7 +125,7 @@ export default function NewTopicPage() {
               className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500" 
               placeholder="https://i.imgur.com/xxxxx.jpg (推荐图床直链)" 
             />
-            <p className="text-xs text-gray-500 mt-2">提示：目前支持 Imgur、路过图床等图片直链。</p>
+            {/* 🌟 去掉了底部的提示文字 */}
           </div>
 
           <div className="flex justify-between items-center pt-4 border-t border-gray-700">

@@ -16,7 +16,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // 🌟 新增：我的话题状态和回复数量
+  // 我的话题状态和回复数量
   const [myTopics, setMyTopics] = useState<any[]>([]);
   const [myRepliesCount, setMyRepliesCount] = useState(0);
   
@@ -41,7 +41,7 @@ export default function ProfilePage() {
         setProfile(profileData);
       }
 
-      // 🌟 获取我发布的最新 5 个话题
+      // 获取我发布的最新 5 个话题
       const { data: topicsData } = await supabase
         .from('forum_topics')
         .select('id, title, category_id, created_at, replies_count')
@@ -51,7 +51,7 @@ export default function ProfilePage() {
       
       if (topicsData) setMyTopics(topicsData);
 
-      // 🌟 获取我回复的总数
+      // 获取我回复的总数
       const { count } = await supabase
         .from('forum_replies')
         .select('*', { count: 'exact', head: true })
@@ -69,7 +69,7 @@ export default function ProfilePage() {
   const displayName = profile?.display_name || user?.email?.split('@')[0] || '玩家';
   const avatarUrl = profile?.avatar_url;
   
-  // 🌟 角色判断体系
+  // 角色判断体系
   const ROLE_WEIGHTS: any = { developer: 100, director: 80, manager: 60, staff: 40, member: 10 };
   const ROLE_LABELS: any = { developer: '开发者', director: '论坛总经理', manager: '社区经理', staff: '工作人员', member: '注册司机' };
   
@@ -164,54 +164,45 @@ export default function ProfilePage() {
                      <h4 className="text-xs text-gray-400 mb-1">Account Status</h4>
                      <p className="text-green-500 font-bold text-sm">Active (正常)</p>
                   </div>
-                  <div className="bg-[#232428] p-3 rounded-md border border-gray-700">
-                     <div className="bg-[#232428] p-3 rounded-md border border-gray-700">
-  <h4 className="text-xs text-gray-400 mb-3">Social Information</h4>
-  <div className="space-y-2">
-    <p className="text-sm text-gray-400 flex justify-between">
-      <span>Discord:</span> 
-      <span className="text-white">{profile?.discord_id || '未绑定'}</span>
-    </p>
-    <p className="text-sm text-gray-400 flex justify-between">
-      <span>Steam:</span> 
-      <span className="text-white">{profile?.steam_id || '未绑定'}</span>
-    </p>
-    
-    {/* 🌟 社交链接动态渲染 */}
-    {profile?.twitch_url && (
-      <p className="text-sm text-gray-400 flex justify-between">
-        <span>Twitch:</span> 
-        <a href={profile.twitch_url} target="_blank" className="text-purple-400 hover:underline">前往频道</a>
-      </p>
-    )}
-    {profile?.twitter_url && (
-      <p className="text-sm text-gray-400 flex justify-between">
-        <span>Twitter:</span> 
-        <a href={profile.twitter_url} target="_blank" className="text-blue-400 hover:underline">前往主页</a>
-      </p>
-    )}
-    {profile?.youtube_url && (
-      <p className="text-sm text-gray-400 flex justify-between">
-        <span>YouTube:</span> 
-        <a href={profile.youtube_url} target="_blank" className="text-red-400 hover:underline">前往频道</a>
-      </p>
-    )}
-    {profile?.wot_url && (
-      <p className="text-sm text-gray-400 flex justify-between">
-        <span>World of Trucks:</span> 
-        <a href={profile.wot_url} target="_blank" className="text-orange-400 hover:underline">前往资料</a>
-      </p>
-    )}
-  </div>
-</div>
-                     <p className="text-sm text-gray-400 flex justify-between">
-                       <span>Discord:</span> 
-                       <span className="text-white">{profile?.discord_id || '未绑定'}</span>
-                     </p>
-                     <p className="text-sm text-gray-400 flex justify-between mt-1">
-                       <span>Steam:</span> 
-                       <span className="text-white">{profile?.steam_id || '未绑定'}</span>
-                     </p>
+                  
+                  {/* 🌟 干净整洁的社交信息框 */}
+                  <div className="bg-[#232428] p-4 rounded-md border border-gray-700">
+                     <h4 className="text-xs text-gray-400 mb-3 font-bold">Social Information</h4>
+                     <div className="space-y-2 text-sm">
+                        <p className="text-gray-400 flex justify-between">
+                          <span>Discord:</span> 
+                          <span className="text-white">{profile?.discord_id || '未绑定'}</span>
+                        </p>
+                        <p className="text-gray-400 flex justify-between">
+                          <span>Steam:</span> 
+                          <span className="text-white">{profile?.steam_id || '未绑定'}</span>
+                        </p>
+                        
+                        {profile?.twitch_url && (
+                          <p className="text-gray-400 flex justify-between">
+                            <span>Twitch:</span> 
+                            <a href={profile.twitch_url} target="_blank" className="text-purple-400 hover:underline">前往频道</a>
+                          </p>
+                        )}
+                        {profile?.twitter_url && (
+                          <p className="text-gray-400 flex justify-between">
+                            <span>Twitter:</span> 
+                            <a href={profile.twitter_url} target="_blank" className="text-blue-400 hover:underline">前往主页</a>
+                          </p>
+                        )}
+                        {profile?.youtube_url && (
+                          <p className="text-gray-400 flex justify-between">
+                            <span>YouTube:</span> 
+                            <a href={profile.youtube_url} target="_blank" className="text-red-400 hover:underline">前往频道</a>
+                          </p>
+                        )}
+                        {profile?.wot_url && (
+                          <p className="text-gray-400 flex justify-between">
+                            <span>World of Trucks:</span> 
+                            <a href={profile.wot_url} target="_blank" className="text-orange-400 hover:underline">前往资料</a>
+                          </p>
+                        )}
+                     </div>
                   </div>
                 </div>
               </div>
@@ -272,7 +263,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* 🌟 新增：论坛成就系统 */}
+            {/* 🌟 论坛成就系统 */}
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
                 <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
@@ -302,7 +293,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* 🌟 新增：我的论坛动态 */}
+            {/* 🌟 我的论坛动态 */}
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md justify-between">
                 <div className="flex items-center gap-2">
