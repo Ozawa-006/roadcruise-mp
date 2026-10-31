@@ -151,7 +151,7 @@ export default function ForumHome() {
               </div>
               <div className="p-4 grid grid-cols-4 md:grid-cols-8 gap-4">
                 {recentUsers.map(u => (
-                  <div key={u.id} className="flex flex-col items-center group cursor-pointer">
+                  <Link href={`/profile/${u.id}`} key={u.id} className="flex flex-col items-center group cursor-pointer">
                     <div className="w-12 h-12 rounded bg-[#18191c] border border-gray-600 overflow-hidden group-hover:border-blue-500 transition shadow">
                       {u.avatar_url ? (
                         <img src={u.avatar_url} className="w-full h-full object-cover" />
@@ -164,7 +164,7 @@ export default function ForumHome() {
                     <span className="text-[10px] text-gray-400 mt-2 text-center truncate w-full group-hover:text-white transition">
                       {u.display_name}
                     </span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -233,7 +233,7 @@ export default function ForumHome() {
               </div>
               <div className="p-2">
                 {recentUsers.slice(0, 5).map(u => (
-                  <div key={u.id} className="flex items-center gap-3 p-2 hover:bg-[#3a3b40] rounded transition border-b border-gray-700/50 last:border-0">
+                                    <Link href={`/profile/${u.id}`} key={u.id} className="flex items-center gap-3 p-2 hover:bg-[#3a3b40] rounded transition border-b border-gray-700/50 last:border-0 block">
                     <div className="w-8 h-8 rounded-full bg-[#18191c] border border-gray-600 overflow-hidden">
                       {u.avatar_url ? (
                         <img src={u.avatar_url} className="w-full h-full object-cover" />
@@ -244,7 +244,7 @@ export default function ForumHome() {
                       )}
                     </div>
                     <span className="text-xs text-gray-300 truncate">{u.display_name}</span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
