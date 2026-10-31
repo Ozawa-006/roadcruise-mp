@@ -150,9 +150,9 @@ export default function Navbar() {
       {/* 🌟 第二层：主导航栏 */}
       <div className="flex justify-between items-center px-6 py-3">
                 {/* 🌟 使用 bg-clip-text 实现文字渐变 */}
-        <Link 
+         <Link 
           href="/" 
-          className="text-xl md:text-2xl font-black italic tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-red-600 hover:opacity-80 transition whitespace-nowrap"
+          className="text-xl md:text-2xl font-black italic tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-red-200 to-red-500 hover:opacity-80 transition whitespace-nowrap pr-2 pb-1 inline-block"
         >
           Road Cruise Transport MP
         </Link>

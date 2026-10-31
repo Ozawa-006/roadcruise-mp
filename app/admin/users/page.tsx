@@ -131,52 +131,47 @@ export default function UserManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+                            {users.map((u) => (
                 <tr key={u.id} className="border-b border-gray-700/50 hover:bg-[#3a3b40] transition">
-                  <td className="py-3 px-4 text-white font-bold">{u.display_name || '未命名玩家'}</td>
+                  <td className="py-3 px-4 text-white font-bold">
+                    {u.display_name || '未命名玩家'}
+                    {/* 显示邮箱方便你核对 */}
+                    <span className="text-xs text-gray-500 block font-normal">{u.email || '无邮箱'}</span>
+                  </td>
                   <td className="py-3 px-4 font-mono text-gray-500">{u.random_id || '-'}</td>
 
                   {editingId === u.id ? (
                     <>
+                      {/* 🌟 专属靓号编辑区 */}
                       <td className="py-3 px-4">
                         <input 
                           type="text" 
                           value={editCustomIdVal} 
                           onChange={(e) => setEditCustomIdVal(e.target.value)}
-                          className="bg-[#18191c] border border-blue-500 rounded px-2 py-1 w-28 text-white placeholder-gray-600"
-                          placeholder="留空即撤回"
+                          // 🚨 规则1：只有开发者能改，且不能改开发者的ID
+                          disabled={currentUserRole !== 'developer' || u.role === 'developer'} 
+                          className="bg-[#18191c] border border-blue-500 rounded px-2 py-1 w-28 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          placeholder={currentUserRole === 'developer' ? '分配靓号' : '无权限'}
                         />
                       </td>
+
+                      {/* 🌟 职位下拉框 */}
                       <td className="py-3 px-4">
-                        {/* 🌟 下拉选择框 */}
                         <select 
                           value={editRoleVal}
                           onChange={(e) => setEditRoleVal(e.target.value)}
-                          className="bg-[#18191c] border border-blue-500 rounded px-2 py-1 w-32 text-white focus:outline-none"
+                          disabled={u.role === 'developer'} // 🚨 规则2：开发者不能被降级
+                          className="bg-[#18191c] border border-blue-500 rounded px-2 py-1 w-32 text-white disabled:opacity-50"
                         >
-                          {/* 如果当前是开发者，显示所有职位 */}
-                          {currentUserRole === 'developer' ? (
-                            <>
-                              <option value="developer">开发者</option>
-                              <option value="director">论坛总经理</option>
-                              <option value="manager">社区经理</option>
-                              <option value="staff">工作人员</option>
-                              <option value="member">普通成员</option>
-                            </>
-                          ) : currentUserRole === 'director' ? (
-                            <>
-                              <option value="manager">社区经理</option>
-                              <option value="staff">工作人员</option>
-                              <option value="member">普通成员</option>
-                            </>
-                          ) : currentUserRole === 'manager' ? (
-                            <>
-                              <option value="staff">工作人员</option>
-                              <option value="member">普通成员</option>
-                            </>
-                          ) : null}
+                          <option value="developer" disabled>开发者</option>
+                          <option value="director">论坛总经理</option>
+                          <option value="manager">社区经理</option>
+                          <option value="staff">工作人员</option>
+                          <option value="member">普通成员</option>
                         </select>
                       </td>
+
+                      {/* 操作按钮 */}
                       <td className="py-3 px-4">
                         <button onClick={() => handleSave(u)} className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm mr-2 transition">保存</button>
                         <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-white text-sm">取消</button>
@@ -184,6 +179,7 @@ export default function UserManagementPage() {
                     </>
                   ) : (
                     <>
+                      {/* 正常显示 */}
                       <td className="py-3 px-4 font-mono text-blue-400">
                         {u.custom_id ? (
                           <span className="bg-blue-900/30 text-blue-400 border border-blue-700/50 px-2 py-1 rounded">{u.custom_id}</span>
@@ -203,8 +199,8 @@ export default function UserManagementPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        {/* 只有当你有权限修改对方时，才显示编辑按钮 */}
-                        {(ROLE_WEIGHTS[currentUserRole] > ROLE_WEIGHTS[u.role || 'member'] || currentUserRole === 'developer') && u.role !== 'developer' ? (
+                        {/* 🚨 规则3：普通人看不到开发者行，或无法编辑同级/上级 */}
+                        {u.role !== 'developer' && (currentUserRole === 'developer' || ROLE_WEIGHTS[currentUserRole] > ROLE_WEIGHTS[u.role || 'member']) ? (
                           <button onClick={() => handleEditClick(u)} className="text-blue-400 hover:text-blue-300 font-bold text-sm">编辑</button>
                         ) : (
                           <span className="text-gray-600 text-sm">不可操作</span>

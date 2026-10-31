@@ -15,19 +15,18 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  useEffect(() => {
+    useEffect(() => {
     const checkRole = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
+      if (!user) return router.push('/login');
 
-      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-      const userRole = data?.role || 'member';
+      const { data } = await supabase.from('profiles').select('role, custom_id').eq('id', user.id).single();
       
-      // 如果是普通玩家，直接踢回首页，不让进后台
-      if (userRole === 'member') {
+      const userRole = data?.role || 'member';
+      const isDevEmail = user.email === '420075623@qq.com'; // 🌟 你的最高级别邮箱验证
+      
+      // 🌟 核心拦截：只有开发者，或者你的邮箱，才能进后台
+      if (userRole !== 'developer' && !isDevEmail) {
         router.push('/');
         return;
       }
