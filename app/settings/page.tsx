@@ -174,6 +174,15 @@ function SettingsForm() {
       <div className="flex-1 bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg p-6">
         <h1 className="text-xl font-bold text-white mb-6 border-b border-gray-700 pb-3">编辑个人资料</h1>
         
+{/* 🌟 新增：只读的邮箱展示 */}
+        <div className="mb-6 bg-[#18191c] border border-gray-600 rounded p-3 text-gray-400 text-sm flex justify-between items-center">
+          <div>
+            <span>登录邮箱 (Email)：</span>
+            <span className="text-white font-mono ml-2">{user?.email}</span>
+          </div>
+          <span className="text-xs text-gray-600">(账号唯一凭证)</span>
+        </div>
+
         <form onSubmit={handleSave} className="space-y-6">
           
           {/* 头像上传 */}

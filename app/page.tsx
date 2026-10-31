@@ -59,9 +59,11 @@ export default function Home() {
         <div className="relative z-10 text-center flex flex-col items-center">
           <h1 className="text-5xl md:text-6xl font-bold mb-4 drop-shadow-lg">公路游轮运输 MP</h1>
           <p className="text-xl text-gray-300 mb-8 drop-shadow">欢迎来到属于卡友的公路世界</p>
-          <div className="flex space-x-4">
-            <button className="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded text-white font-bold transition shadow-lg">申请加入车队</button>
-            <a href="#" className="bg-gray-700 hover:bg-gray-600 px-8 py-3 rounded text-white font-bold transition shadow-lg">加入 Discord</a>
+                    <div className="flex">
+            {/* 使用 Link 包裹，点击直接跳转到登录/注册页 */}
+            <Link href="/login" className="bg-blue-600 hover:bg-blue-700 px-10 py-3 rounded-lg text-white font-bold text-lg transition shadow-xl hover:scale-105 transform duration-200">
+              加入 Road Cruise Transport MP
+            </Link>
           </div>
         </div>
       </div>
@@ -78,36 +80,41 @@ export default function Home() {
           <div className="relative w-full h-[400px] rounded-2xl overflow-hidden group border border-gray-800 bg-gray-900">
             
             {/* 轮播内容 */}
-                                    {news.map((item, index) => (
+                                               {news.map((item, index) => (
               <div
                 key={item.id}
-                className={`absolute inset-0 transition-opacity duration-700 ease-in-out flex flex-col justify-end p-8 md:p-12 bg-gradient-to-t from-black via-black/70 to-transparent ${
+                className={`absolute inset-0 transition-opacity duration-700 ease-in-out flex flex-col justify-end p-8 md:p-12 ${
                   index === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'
                 }`}
               >
-                {/* ... 保持图片背景部分不变 ... */}
-                {item.image_url ? (
-                  <div 
-                    className="absolute inset-0 bg-cover bg-center -z-10 opacity-60"
-                    style={{ backgroundImage: `url(${item.image_url})` }}
-                  ></div>
-                ) : (
-                  <div className="absolute inset-0 bg-gray-900 -z-10"></div>
-                )}
+                {/* 🌟 1. 背景图部分：直接使用后台填写的 URL，没填则用默认图 */}
+                <div 
+                  className="absolute inset-0 bg-cover bg-center -z-20 opacity-70"
+                  style={{ 
+                    backgroundImage: `url(${item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'})` 
+                  }}
+                ></div>
                 
-                {/* 👇 修改下面这部分，包住文字内容 👇 */}
-                <Link href={`/news/${item.id}`} className="max-w-3xl relative z-10 block group-hover:opacity-90 transition">
+                {/* 渐变遮罩，让文字更清晰 */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent -z-10"></div>
+                
+                {/* 🌟 2. 内容区：如果有外链则新窗口打开，否则跳转详情页 */}
+                <Link 
+                  href={item.link_url || `/news/${item.id}`} 
+                  target={item.link_url ? "_blank" : "_self"}
+                  className="max-w-3xl relative z-10 block group-hover:opacity-90 transition"
+                >
                   <span className="inline-block bg-blue-600 text-xs font-bold px-3 py-1 rounded mb-4 shadow">{item.type}</span>
                   <h3 className="text-3xl md:text-5xl font-black mb-4 leading-tight group-hover:text-blue-400 transition-colors">
                     {item.title}
                   </h3>
                   <p className="text-gray-300 text-lg md:text-xl leading-relaxed mb-6 line-clamp-3">{item.content}</p>
+                  
+                  {/* 阅读更多按钮 */}
                   <div className="mt-4 inline-flex items-center text-blue-400 font-bold text-sm">
-                    阅读全文 <span className="ml-2">➔</span>
+                    阅读全文 <span className="ml-2 transition-transform group-hover:translate-x-1">➔</span>
                   </div>
                 </Link>
-                {/* 👆 修改结束 👆 */}
-
               </div>
             ))}
 

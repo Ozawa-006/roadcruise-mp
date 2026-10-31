@@ -150,12 +150,18 @@ export default function ProfilePage() {
     ID: {profile?.custom_id || profile?.random_id || '分配中...'}
   </span>
 </div>
-                  <div className="text-sm space-y-3">
-                    <p><span className="text-gray-500 inline-block w-24">Email:</span> <span className="text-white">{user?.email}</span></p>
-                    <p><span className="text-gray-500 inline-block w-24">Role:</span> <span className={isAdmin ? 'text-red-400 font-bold' : 'text-green-400'}>{isAdmin ? 'Super Admin' : 'Member'}</span></p>
-                    <p><span className="text-gray-500 inline-block w-24">Join Date:</span> <span className="text-white">{joinDate}</span></p>
-                    
-                    {/* 显示自我介绍 */}
+                                    <div className="text-sm space-y-3">
+                    <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">English, Chinese (Simplified)</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">TruckersMP ID:</span> <span className="text-white">N/A</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile?.steam_id || '未绑定'}</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={isAdmin ? 'text-red-400 font-bold' : 'text-green-400'}>{isAdmin ? 'Super Admin' : 'Member'}</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Member since:</span> <span className="text-white">{joinDate}</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">0</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Account status:</span> <span className="text-green-500 font-bold">Active (正常)</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Linked games:</span> <span className="text-white">Euro Truck Simulator 2</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">In-game status:</span> <span className="text-gray-500">Offline</span></p>
+
+                    {/* 自我介绍保留在下面 */}
                     {profile?.bio && (
                       <div className="mt-4 p-3 bg-[#232428] rounded border border-gray-700">
                         <p className="text-gray-400 text-xs mb-1">关于我 (Bio)</p>

@@ -95,7 +95,7 @@ export default function Navbar() {
       {/* 🌟 第一层：极简顶栏 */}
       <div className="bg-[#1a1a1a] text-xs text-gray-400 py-1.5 px-6 flex justify-between items-center border-b border-gray-800/50">
         <div>
-          <span>Players Trucking: <span className="text-green-500 font-bold">{mounted && typeof players === 'number' ? players.toLocaleString() : '加载中...'}</span></span>
+          <span className="text-gray-400 font-bold tracking-widest uppercase">Welcome to Road Cruise Transport MP</span>
         </div>
         
         <div className="flex items-center space-x-4 relative">
@@ -149,8 +149,12 @@ export default function Navbar() {
 
       {/* 🌟 第二层：主导航栏 */}
       <div className="flex justify-between items-center px-6 py-3">
-        <Link href="/" className="text-3xl font-black italic tracking-tighter text-white hover:text-gray-300 transition">
-          CRT<span className="text-red-600">MP</span>
+                {/* 🌟 使用 bg-clip-text 实现文字渐变 */}
+        <Link 
+          href="/" 
+          className="text-xl md:text-2xl font-black italic tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-red-600 hover:opacity-80 transition whitespace-nowrap"
+        >
+          Road Cruise Transport MP
         </Link>
 
         <nav className="hidden md:flex items-center space-x-8 text-sm font-medium text-gray-300">
@@ -189,7 +193,21 @@ export default function Navbar() {
 
           {/* 原有的导航链接 */}
           <Link href="/forum" className="hover:text-white transition">论坛 (Forum)</Link>
-          <Link href="#" className="hover:text-white transition">活动 (Events)</Link>
+                    {/* 🌟 活动 下拉菜单 */}
+          <div className="relative group">
+            <button className="flex items-center space-x-1 hover:text-white transition py-2 focus:outline-none">
+              <span>活动 (Events)</span>
+              <svg className="w-3 h-3 text-gray-500 group-hover:text-white transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            
+            {/* 下拉面板：默认隐藏，鼠标悬停显示 */}
+            <div className="absolute top-full left-0 mt-1 w-48 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              <Link href="#" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">
+                暂无活动
+              </Link>
+              {/* 以后有活动了，就在这里加 Link */}
+            </div>
+          </div>
           <Link href="#" className="hover:text-white transition">车队 (VTC)</Link>
           <Link href="#" className="hover:text-white transition">帮助与支持</Link>
         </nav>
