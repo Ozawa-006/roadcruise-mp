@@ -69,7 +69,27 @@ export default function ProfilePage() {
   const displayName = profile?.display_name || user?.email?.split('@')[0] || '玩家';
   const avatarUrl = profile?.avatar_url; // 自定义头像
   const joinDate = user?.created_at ? new Date(user.created_at).toLocaleDateString() : '未知';
-  const isAdmin = user?.email === '420075623@qq.com';
+    // 🌟 定义角色权重表
+  const ROLE_WEIGHTS: any = {
+    developer: 100,
+    director: 80,
+    manager: 60,
+    staff: 40,
+    member: 10
+  };
+
+  const ROLE_LABELS: any = {
+    developer: '开发者',
+    director: '论坛总经理',
+    manager: '社区经理',
+    staff: '工作人员',
+    member: '注册司机'
+  };
+
+  const userRole = profile?.role || 'member';
+  
+  // 🌟 核心判断：只要权重等于或高于 staff（40），或者邮箱是开发者本人，就可以看到后台入口
+  const canAccessAdmin = ROLE_WEIGHTS[userRole] >= ROLE_WEIGHTS['staff'] || user?.email === '420075623@qq.com';
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -97,7 +117,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="mt-8">
                   <h2 className="text-white font-bold text-lg">{displayName}</h2>
-                  <p className="text-xs text-gray-500">{isAdmin ? '超级管理员' : '注册司机'}</p>
+                  <p className="text-xs text-gray-500">{ROLE_LABELS[userRole]}</p>
                 </div>
               </div>
             </div>
@@ -120,8 +140,8 @@ export default function ProfilePage() {
               </ul>
             </div>
 
-            {/* 管理员特权 */}
-            {isAdmin && (
+                        {/* 🌟 管理员特权（只有 staff 及以上才能看到） */}
+            {canAccessAdmin && (
               <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-4 shadow-lg">
                 <h3 className="text-xs text-gray-500 font-bold mb-3 uppercase tracking-wider">管理员特权</h3>
                 <Link href="/admin" className="bg-blue-600 hover:bg-blue-700 text-white text-center w-full block py-2 rounded-md text-sm font-bold transition shadow">
@@ -153,7 +173,9 @@ export default function ProfilePage() {
                                   <div className="text-sm space-y-3">
                     <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">English, Chinese (Simplified)</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile?.steam_id || '未绑定'}</span></p>
-                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={isAdmin ? 'text-red-400 font-bold' : 'text-green-400'}>{isAdmin ? 'Super Admin' : 'Member'}</span></p>
+                    <span className={userRole !== 'member' ? 'text-red-400 font-bold' : 'text-green-400'}>
+  {ROLE_LABELS[userRole]}
+</span>
                     <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">0</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Linked games:</span> <span className="text-white">Euro Truck Simulator 2</span></p>
                     <p><span className="text-gray-500 inline-block w-28">In-game status:</span> <span className="text-gray-500">Offline</span></p>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation'; // 🌟 引入 useRouter
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
 import Link from 'next/link';
@@ -15,12 +15,16 @@ export default function TopicDetailPage() {
   const [quoteUser, setQuoteUser] = useState('');
   const [quoteContent, setQuoteContent] = useState('');
   const { id, topicId } = useParams(); 
+  const router = useRouter();
+  
   const [topic, setTopic] = useState<any>(null);
   const [replies, setReplies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // 回复状态
+  // 用户与权限状态
   const [user, setUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string>('member'); // 🌟 新增：记录当前用户角色
+  
   const [replyContent, setReplyContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -38,12 +42,12 @@ export default function TopicDetailPage() {
 
     if (topicData) setTopic(topicData);
 
-    // 2. 获取回复列表（按时间正序，最早的在前）
+    // 2. 获取回复列表（🌟 修复：加上 role 字段，让徽章能显示）
     const { data: replyData } = await supabase
       .from('forum_replies')
       .select(`
         *,
-        profiles:author_id (display_name, avatar_url)
+        profiles:author_id (display_name, avatar_url, role)
       `)
       .eq('topic_id', topicId)
       .order('created_at', { ascending: true });
@@ -55,19 +59,23 @@ export default function TopicDetailPage() {
   useEffect(() => {
     fetchTopicAndReplies();
     
-    // 检查当前用户是否登录
+    // 检查当前用户是否登录，并获取角色
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+      
+      if (user) {
+        const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (data) setUserRole(data.role);
+      }
     };
     getUser();
   }, [topicId]);
 
-   const handleReply = async (e: React.FormEvent) => {
+  const handleReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return alert('请先登录！');
     
-    // 如果处于引用状态，自动拼接引用格式
     let finalContent = replyContent;
     if (quoteUser) {
       finalContent = `> 引用 @${quoteUser} 的发言：\n> ${quoteContent}\n\n${replyContent}`;
@@ -76,12 +84,10 @@ export default function TopicDetailPage() {
     if (!finalContent.trim()) return;
     setSubmitting(true);
     
-
-    // 1. 插入回复
-     const { error } = await supabase.from('forum_replies').insert({
+    const { error } = await supabase.from('forum_replies').insert({
       topic_id: topicId,
       author_id: user.id,
-      content: finalContent // 存入拼接后的内容
+      content: finalContent
     });
 
     if (!error) {
@@ -90,13 +96,32 @@ export default function TopicDetailPage() {
         .eq('id', topicId);
 
       setReplyContent('');
-      setQuoteUser(''); // 清空引用状态
+      setQuoteUser('');
       setQuoteContent('');
       await fetchTopicAndReplies();
     } else {
       alert('回复失败: ' + error.message);
     }
     setSubmitting(false);
+  };
+
+  // 🌟 新增：删除帖子功能
+  const handleDeleteTopic = async () => {
+    if (!confirm('⚠️ 确定要删除这篇帖子吗？此操作不可恢复！')) return;
+    
+    // 先删除帖子下的所有回复
+    await supabase.from('forum_replies').delete().eq('topic_id', topicId);
+    
+    // 再删除帖子本身
+    const { error } = await supabase.from('forum_topics').delete().eq('id', topicId);
+    
+    if (error) {
+      alert('删除失败：' + error.message);
+    } else {
+      alert('🗑️ 帖子已删除');
+      router.push(`/forum/${id}`);
+      router.refresh();
+    }
   };
 
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;
@@ -138,10 +163,23 @@ export default function TopicDetailPage() {
             <p className="text-xs text-blue-400 mt-1">楼主</p>
           </div>
           <div className="flex-1 p-6 md:p-8">
+            
+            {/* 🌟 修改：在这里加入删除按钮，并判断权限 */}
             <div className="flex justify-between items-center text-xs text-gray-500 mb-6 border-b border-gray-700 pb-4">
               <span>发表于：{new Date(topic.created_at).toLocaleString()}</span>
-              <span>#1</span>
+              <div className="flex items-center gap-4">
+                <span>#1</span>
+                {user && (user.id === topic.author_id || ['developer', 'director', 'manager'].includes(userRole)) && (
+                  <button 
+                    onClick={handleDeleteTopic} 
+                    className="bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1 rounded transition border border-red-700/50"
+                  >
+                    🗑️ 删除帖子
+                  </button>
+                )}
+              </div>
             </div>
+            
             <div className="text-gray-300 text-base leading-relaxed whitespace-pre-wrap mb-6">
               {topic.content}
             </div>
@@ -165,7 +203,8 @@ export default function TopicDetailPage() {
                 <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-2xl font-bold text-white mb-2 overflow-hidden shadow-md border-2 border-gray-600">
                   {reply.profiles?.avatar_url ? <img src={reply.profiles.avatar_url} className="w-full h-full object-cover" /> : reply.profiles?.display_name?.charAt(0).toUpperCase()}
                 </div>
-                                <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || '未知用户'}</h4>
+                <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || '未知用户'}</h4>
+                
                 {/* 🌟 动态徽章 */}
                 <div className="mt-2 text-center">
                   {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ 开发者</span>}
@@ -180,20 +219,18 @@ export default function TopicDetailPage() {
                   <span>发表于：{new Date(reply.created_at).toLocaleString()}</span>
                   <span>#{index + 2}</span>
                 </div>
-                <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-                  {reply.content}
-                </div>
-                                <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap mb-4">
+                
+                {/* 🌟 修复：删除了重复显示两遍的 {reply.content} */}
+                <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap mb-4">
                   {reply.content}
                 </div>
                 
-                {/* 🌟 新增：引用按钮 */}
+                {/* 引用按钮 */}
                 <div className="flex justify-end pt-2 border-t border-gray-700/50">
                   <button 
                     onClick={() => {
                       setQuoteUser(reply.profiles?.display_name || '未知用户');
                       setQuoteContent(reply.content);
-                      // 自动滚动到底部输入框
                       document.getElementById('reply-box')?.scrollIntoView({ behavior: 'smooth' });
                     }}
                     className="text-xs text-blue-400 hover:text-blue-300 font-bold"
@@ -206,12 +243,11 @@ export default function TopicDetailPage() {
           ))}
         </div>
 
-        {/* 🌟 回复输入框 */}
+        {/* 回复输入框 */}
         <div className="bg-[#2c2d31] border border-gray-700 rounded-lg p-6 shadow-lg mt-8">
           <h3 className="text-lg font-bold text-white mb-4">发表回复</h3>
-                    {user ? (
+          {user ? (
             <form onSubmit={handleReply}>
-              {/* 引用提示框 */}
               {quoteUser && (
                 <div className="mb-2 p-3 bg-gray-800 border-l-4 border-blue-500 rounded text-sm text-gray-400 relative">
                   <span className="font-bold text-blue-400">正在回复 @{quoteUser}：</span>
@@ -234,7 +270,6 @@ export default function TopicDetailPage() {
                 placeholder={quoteUser ? `回复 @${quoteUser}...` : "写下你的看法..."}
                 required
               ></textarea>
-              {/* ...按钮部分保持不变... */}
               <div className="text-right">
                 <button 
                   type="submit" 

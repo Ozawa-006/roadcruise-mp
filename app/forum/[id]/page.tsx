@@ -64,7 +64,7 @@ export default function CategoryPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-5xl mx-auto w-full px-4 md:px-8">
           <div className="text-sm text-gray-400 mb-2">
-            <Link href="/forum" className="hover:text-white transition">CRT MP 论坛</Link>
+            <Link href="/forum" className="hover:text-white transition">RCT MP 论坛</Link>
             <span className="mx-2">/</span>
             <span className="text-white font-bold">{category.name}</span>
           </div>

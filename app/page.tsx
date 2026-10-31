@@ -11,56 +11,42 @@ const supabase = createClient(
 );
 
 export default function Home() {
-  const [news, setNews] = useState<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0); // 当前轮播到第几张
+  const [latestTopics, setLatestTopics] = useState<any[]>([]);
 
-  // 获取公告数据
+  // 🌟 改为获取论坛里“官方公告”板块的最新帖子（假设 category_id 为 1）
   useEffect(() => {
-    const fetchNews = async () => {
-      const { data, error } = await supabase
-        .from('announcements')
-        .select('*')
+    const fetchLatestTopics = async () => {
+      const { data } = await supabase
+        .from('forum_topics')
+        .select(`
+          id,
+          title,
+          category_id,
+          created_at,
+          replies_count,
+          profiles:author_id (display_name)
+        `)
+        .eq('category_id', 1) // 只拉取官方公告板块
         .order('created_at', { ascending: false })
-        .limit(5); // 最多取5条用来轮播
-
-      if (!error && data) {
-        setNews(data);
-      }
+        .limit(4); // 拿最新的 4 条
+      
+      if (data) setLatestTopics(data);
     };
-    fetchNews();
+    fetchLatestTopics();
   }, []);
 
-  // 自动轮播逻辑（每 5 秒切换一次）
-  useEffect(() => {
-    if (news.length <= 1) return; // 如果只有1条或没有，就不自动轮播了
-
-    const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % news.length);
-    }, 5000);
-
-    return () => clearInterval(timer); // 组件卸载时清理定时器
-  }, [news.length]);
-
-  // 手动切换
-  const nextSlide = () => {
-    setCurrentIndex((prev) => (prev + 1) % news.length);
-  };
-  const prevSlide = () => {
-    setCurrentIndex((prev) => (prev - 1 + news.length) % news.length);
-  };
-
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col">
+    <main className="min-h-screen bg-black text-white flex flex-col font-sans">
       <Navbar />
       
-      {/* 首屏大图区 */}
+      {/* 首屏大图区 (保持不变) */}
       <div className="h-[60vh] flex flex-col items-center justify-center bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center relative">
         <div className="absolute inset-0 bg-black/60 z-0"></div>
         <div className="relative z-10 text-center flex flex-col items-center">
-          <h1 className="text-5xl md:text-6xl font-bold mb-4 drop-shadow-lg">公路游轮运输 MP</h1>
+          <h1 className="text-5xl md:text-6xl font-bold mb-4 drop-shadow-lg text-white">公路游轮运输 MP</h1>
           <p className="text-xl text-gray-300 mb-8 drop-shadow">欢迎来到属于卡友的公路世界</p>
-                    <div className="flex">
-            {/* 使用 Link 包裹，点击直接跳转到登录/注册页 */}
+          
+          <div className="flex">
             <Link href="/login" className="bg-blue-600 hover:bg-blue-700 px-10 py-3 rounded-lg text-white font-bold text-lg transition shadow-xl hover:scale-105 transform duration-200">
               加入 Road Cruise Transport MP
             </Link>
@@ -68,88 +54,40 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 📢 轮播图区域 */}
-      <div className="flex-1 max-w-6xl mx-auto w-full p-10">
-        <div className="flex justify-between items-end mb-6 border-b border-gray-800 pb-4">
-          <h2 className="text-3xl font-bold">社区最新动态</h2>
+      {/* 🌟 论坛官方新闻同步区 */}
+      <div className="flex-1 max-w-6xl mx-auto w-full p-10 pt-12">
+        <div className="flex justify-between items-end mb-8 border-b border-gray-800 pb-4">
+          <h2 className="text-3xl font-bold text-white">官方最新动态</h2>
+          <Link href="/forum/1" className="text-sm text-gray-500 hover:text-blue-400 transition">
+            前往论坛查看全部 →
+          </Link>
         </div>
-
-        {news.length === 0 ? (
-          <p className="text-gray-500 text-center py-20">暂无公告，请管理员前往后台发布。</p>
+        
+        {latestTopics.length === 0 ? (
+          <p className="text-gray-500 text-center py-10">暂无官方公告，请前往论坛发布。</p>
         ) : (
-          <div className="relative w-full h-[400px] rounded-2xl overflow-hidden group border border-gray-800 bg-gray-900">
-            
-            {/* 轮播内容 */}
-                                               {news.map((item, index) => (
-              <div
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {latestTopics.map((item) => (
+              <Link 
                 key={item.id}
-                className={`absolute inset-0 transition-opacity duration-700 ease-in-out flex flex-col justify-end p-8 md:p-12 ${
-                  index === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'
-                }`}
+                href={`/forum/${item.category_id}/${item.id}`}
+                className="bg-[#111111] border border-gray-800 p-6 rounded-xl hover:border-blue-500 hover:bg-[#1a1a1a] transition group shadow-lg flex flex-col justify-between"
               >
-                {/* 🌟 1. 背景图部分：直接使用后台填写的 URL，没填则用默认图 */}
-                <div 
-                  className="absolute inset-0 bg-cover bg-center -z-20 opacity-70"
-                  style={{ 
-                    backgroundImage: `url(${item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'})` 
-                  }}
-                ></div>
-                
-                {/* 渐变遮罩，让文字更清晰 */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent -z-10"></div>
-                
-                {/* 🌟 2. 内容区：如果有外链则新窗口打开，否则跳转详情页 */}
-                <Link 
-                  href={item.link_url || `/news/${item.id}`} 
-                  target={item.link_url ? "_blank" : "_self"}
-                  className="max-w-3xl relative z-10 block group-hover:opacity-90 transition"
-                >
-                  <span className="inline-block bg-blue-600 text-xs font-bold px-3 py-1 rounded mb-4 shadow">{item.type}</span>
-                  <h3 className="text-3xl md:text-5xl font-black mb-4 leading-tight group-hover:text-blue-400 transition-colors">
+                <div>
+                  <div className="flex justify-between items-start mb-3">
+                    <span className="bg-blue-900/30 text-blue-400 text-xs px-2 py-1 rounded border border-blue-900/50">官方发布</span>
+                    <span className="text-xs text-gray-500">{new Date(item.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition line-clamp-2 mb-4">
                     {item.title}
                   </h3>
-                  <p className="text-gray-300 text-lg md:text-xl leading-relaxed mb-6 line-clamp-3">{item.content}</p>
-                  
-                  {/* 阅读更多按钮 */}
-                  <div className="mt-4 inline-flex items-center text-blue-400 font-bold text-sm">
-                    阅读全文 <span className="ml-2 transition-transform group-hover:translate-x-1">➔</span>
-                  </div>
-                </Link>
-              </div>
+                </div>
+                <div className="flex justify-between text-sm text-gray-500 border-t border-gray-800/50 pt-4">
+                  <span>发布者: {item.profiles?.display_name || '管理员'}</span>
+                  <span>💬 {item.replies_count || 0} 评论</span>
+                </div>
+              </Link>
             ))}
-
-            {/* 左右切换按钮 */}
-            {news.length > 1 && (
-              <>
-                <button 
-                  onClick={prevSlide}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-black/50 hover:bg-blue-600 text-white w-12 h-12 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300"
-                >
-                  ❮
-                </button>
-                <button 
-                  onClick={nextSlide}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 z-20 bg-black/50 hover:bg-blue-600 text-white w-12 h-12 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300"
-                >
-                  ❯
-                </button>
-              </>
-            )}
-
-            {/* 底部小圆点指示器 */}
-            {news.length > 1 && (
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex space-x-2">
-                {news.map((_, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setCurrentIndex(index)}
-                    className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                      index === currentIndex ? 'bg-blue-500 w-8' : 'bg-gray-500 hover:bg-gray-400'
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>

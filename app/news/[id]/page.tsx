@@ -66,7 +66,7 @@ export default function NewsDetailPage() {
           <div className="flex items-center text-gray-400 text-sm">
             <span>发布于：{new Date(article.created_at).toLocaleDateString()}</span>
             <span className="mx-3">•</span>
-            <span>CRT MP 社区管理组</span>
+            <span>RCT MP 社区管理组</span>
           </div>
         </div>
       </div>

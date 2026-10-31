@@ -102,7 +102,7 @@ function LoginForm() {
         {/* 视图一：登录 */}
         {viewState === 'login' && (
           <>
-            <h1 className="text-3xl font-bold mb-6 text-center">登录 CRT MP 社区</h1>
+            <h1 className="text-3xl font-bold mb-6 text-center">登录 RCT MP 社区</h1>
             <form onSubmit={handleAuth} className="space-y-4">
               <div>
                 <label className="block text-sm font-bold text-gray-400 mb-1">邮箱地址</label>
@@ -125,7 +125,7 @@ function LoginForm() {
         {/* 视图二：注册前置条件（类似 TMP 的欢迎页） */}
         {viewState === 'guide' && (
           <>
-            <h1 className="text-2xl font-bold mb-2 text-center">欢迎来到 CRT MP!</h1>
+            <h1 className="text-2xl font-bold mb-2 text-center">欢迎来到 RCT MP!</h1>
             <p className="text-center text-sm text-gray-400 mb-6">为了注册，请确保您满足以下条件：</p>
             
             <ul className="space-y-3 text-sm text-gray-300 mb-8 bg-[#18191c] p-5 rounded border border-gray-700">
