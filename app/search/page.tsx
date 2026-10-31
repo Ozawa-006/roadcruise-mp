@@ -14,6 +14,7 @@ const supabase = createClient(
 function SearchResults() {
   const searchParams = useSearchParams();
   const query = searchParams.get('q') || '';
+  const type = searchParams.get('type') || 'all'; // all, topics, members
 
   const [topics, setTopics] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -27,33 +28,53 @@ function SearchResults() {
       }
       setLoading(true);
 
-      // 1. 搜索相关帖子（模糊匹配标题和内容）
-      const { data: topicData } = await supabase
-        .from('forum_topics')
-        .select(`
-          id, title, category_id, created_at,
-          profiles:author_id (display_name)
-        `)
-        .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      
-      if (topicData) setTopics(topicData);
+      const searchTopics = type === 'all' || type === 'topics';
+      const searchUsers = type === 'all' || type === 'members';
 
-      // 2. 搜索相关玩家（模糊匹配昵称）
-      const { data: userData } = await supabase
-        .from('profiles')
-        .select('id, display_name, avatar_url, role, custom_id')
-        .ilike('display_name', `%${query}%`)
-        .limit(10);
+      // 1. 搜索帖子 (匹配标题或内容)
+      if (searchTopics) {
+        const { data: topicData } = await supabase
+          .from('forum_topics')
+          .select(`
+            id, title, category_id, created_at,
+            profiles:author_id (display_name)
+          `)
+          .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (topicData) setTopics(topicData);
+      } else {
+        setTopics([]);
+      }
+
+      // 2. 搜索玩家 (匹配名称，或者直接匹配 6 位专属 ID / 随机 ID)
+      if (searchUsers) {
+        // 判断输入的是不是纯数字，如果是，可能是搜 ID
+        const isNumeric = /^\d+$/.test(query);
         
-      if (userData) setUsers(userData);
+        let queryBuilder = supabase
+          .from('profiles')
+          .select('id, display_name, avatar_url, role, custom_id, random_id, steam_id');
+        
+        if (isNumeric) {
+          // 如果是数字，同时搜名字、专属 ID、随机 ID
+          queryBuilder = queryBuilder.or(`display_name.ilike.%${query}%,custom_id.eq.${query},random_id.eq.${query}`);
+        } else {
+          // 如果是文字，只搜名字
+          queryBuilder = queryBuilder.ilike('display_name', `%${query}%`);
+        }
+
+        const { data: userData } = await queryBuilder.limit(10);
+        if (userData) setUsers(userData);
+      } else {
+        setUsers([]);
+      }
 
       setLoading(false);
     };
 
     fetchResults();
-  }, [query]);
+  }, [query, type]);
 
   if (loading) return <div className="text-center text-white mt-20">搜索中...</div>;
 
@@ -63,41 +84,42 @@ function SearchResults() {
         <h1 className="text-2xl font-bold text-white">
           搜索结果：<span className="text-blue-400">"{query}"</span>
         </h1>
-        <p className="text-xs text-gray-500 mt-2">找到 {topics.length} 个相关帖子，{users.length} 位相关玩家。</p>
+        <p className="text-xs text-gray-500 mt-2">
+          范围：{type === 'all' ? '全部' : type === 'topics' ? '帖子/新闻' : '玩家'} 
+          | 找到 {topics.length} 个相关帖子，{users.length} 位相关玩家。
+        </p>
       </div>
 
-      {/* 玩家结果 */}
+      {/* 玩家结果展示 */}
       {users.length > 0 && (
         <div className="mb-10">
-          <h2 className="text-lg font-bold text-gray-300 mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-bold text-gray-300 mb-4 flex items-center gap-2 border-l-4 border-green-500 pl-3">
             👥 相关玩家
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {users.map(u => (
-              <div key={u.id} className="bg-[#2c2d31] border border-gray-700 p-4 rounded-lg flex items-center gap-4">
+              <Link href={`/profile/${u.id}`} key={u.id} className="bg-[#2c2d31] border border-gray-700 p-4 rounded-lg flex items-center gap-4 hover:border-green-500 transition group">
                 <div className="w-12 h-12 rounded-full bg-[#18191c] overflow-hidden border border-gray-600">
                   {u.avatar_url ? <img src={u.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl font-bold text-gray-500">{u.display_name?.charAt(0).toUpperCase()}</div>}
                 </div>
                 <div>
-                  <p className="text-white font-bold">{u.display_name}</p>
-                  <p className="text-xs text-blue-400">ID: {u.custom_id || '无'}</p>
+                  <p className="text-white font-bold group-hover:text-green-400 transition">{u.display_name}</p>
+                  <p className="text-xs text-blue-400">ID: {u.custom_id || u.random_id || '无'}</p>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
       )}
 
-      {/* 帖子结果 */}
-      <div>
-        <h2 className="text-lg font-bold text-gray-300 mb-4 flex items-center gap-2">
-          📝 相关帖子
-        </h2>
-        <div className="space-y-3">
-          {topics.length === 0 ? (
-            <p className="text-gray-500 text-sm">没有找到相关帖子。</p>
-          ) : (
-            topics.map(topic => (
+      {/* 帖子结果展示 */}
+      {topics.length > 0 && (
+        <div>
+          <h2 className="text-lg font-bold text-gray-300 mb-4 flex items-center gap-2 border-l-4 border-blue-500 pl-3">
+            📝 相关帖子 / 新闻
+          </h2>
+          <div className="space-y-3">
+            {topics.map(topic => (
               <Link 
                 key={topic.id} 
                 href={`/forum/${topic.category_id}/${topic.id}`}
@@ -109,10 +131,18 @@ function SearchResults() {
                   <span>{new Date(topic.created_at).toLocaleDateString()}</span>
                 </div>
               </Link>
-            ))
-          )}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* 空结果提示 */}
+      {!loading && topics.length === 0 && users.length === 0 && (
+        <div className="text-center py-20 bg-[#2c2d31] border border-gray-700 rounded-lg">
+          <p className="text-4xl mb-4">🔍</p>
+          <p className="text-gray-400">没有找到与 "{query}" 相关的内容，请尝试其他关键词或 ID。</p>
+        </div>
+      )}
     </div>
   );
 }

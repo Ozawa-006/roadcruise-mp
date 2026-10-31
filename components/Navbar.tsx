@@ -20,7 +20,8 @@ export default function Navbar() {
   const [currentLang, setCurrentLang] = useState('简中');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timeZone, setTimeZone] = useState('');
-  const [searchQuery, setSearchQuery] = useState(''); // 🌟 搜索状态
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState('all'); // 🌟 新增：搜索类型
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
   const menuRef = useRef<HTMLDivElement>(null); 
   const router = useRouter();
@@ -81,7 +82,7 @@ export default function Navbar() {
       authListener.subscription.unsubscribe();
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []); // 🌟 修复：这里加上了依赖数组 []，防止无限循环
+  }, []);
 
   useEffect(() => {
     // 获取当前时区
@@ -105,7 +106,8 @@ export default function Navbar() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      // 🌟 将分类类型拼接到 URL 中
+      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}&type=${searchType}`);
     }
   };
 
@@ -221,16 +223,34 @@ export default function Navbar() {
           <Link href="/forum/4" className="hover:text-white transition">车队 (VTC)</Link>
           <Link href="#" className="hover:text-white transition">帮助与支持</Link>
 
-          {/* 🌟 全局搜索框 (放置在导航最右侧) */}
-          <form onSubmit={handleSearch} className="relative ml-4">
+          {/* 🌟 终极版搜索框 (带分类下拉) */}
+          <form onSubmit={handleSearch} className="relative ml-4 flex items-center bg-[#232428] border border-gray-700 rounded-full focus-within:border-blue-500 transition-all focus-within:w-80 w-64 h-8">
+            
+            {/* 搜索范围下拉框 */}
+            <select 
+              value={searchType}
+              onChange={(e) => setSearchType(e.target.value)}
+              className="bg-transparent text-xs text-gray-400 border-none outline-none pl-3 pr-1 cursor-pointer appearance-none hover:text-white"
+            >
+              <option value="all" className="bg-[#232428]">全部</option>
+              <option value="topics" className="bg-[#232428]">帖子/新闻</option>
+              <option value="members" className="bg-[#232428]">玩家</option>
+            </select>
+            
+            {/* 分割线 */}
+            <div className="h-3 w-px bg-gray-600 mx-1"></div>
+
+            {/* 输入框 */}
             <input 
               type="text" 
-              placeholder="搜索帖子或玩家..." 
+              placeholder="搜索..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-[#232428] text-xs text-white border border-gray-700 rounded-full py-1.5 pl-4 pr-10 focus:outline-none focus:border-blue-500 w-48 transition-all focus:w-64"
+              className="bg-transparent text-xs text-white outline-none w-full h-full px-2"
             />
-            <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+            
+            {/* 搜索按钮 */}
+            <button type="submit" className="text-gray-400 hover:text-white pr-3 pl-1 h-full flex items-center">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             </button>
           </form>
