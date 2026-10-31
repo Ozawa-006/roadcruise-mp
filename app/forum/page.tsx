@@ -46,12 +46,11 @@ export default function ForumHome() {
         .limit(5);
       if (hot) setHotTopics(hot);
 
-      // 4. 获取“在线”成员（用最近注册的 8 位用户代替）
-      // 🌟 注意：如果这里读不出数据，请去 Supabase 运行 ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
+            // 4. 获取“在线”成员（用最近活跃的 8 位用户代替）
       const { data: users } = await supabase
         .from('profiles')
         .select('id, display_name, avatar_url, role')
-        .order('created_at', { ascending: false })
+        .order('updated_at', { ascending: false }) // ✅ 改成 updated_at
         .limit(8);
       if (users) setRecentUsers(users);
 
