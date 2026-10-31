@@ -96,7 +96,7 @@ export default function ProfilePage() {
               <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-4 shadow-lg">
                 <h3 className="text-xs text-gray-500 font-bold mb-3 uppercase tracking-wider">管理员特权</h3>
                 <Link href="/admin" className="bg-blue-600 hover:bg-blue-700 text-white text-center w-full block py-2 rounded-md text-sm font-bold transition shadow">
-                  进入发布后台
+                  进入管理后台
                 </Link>
               </div>
             )}
@@ -154,6 +154,37 @@ export default function ProfilePage() {
                        <span className="text-white">{profile?.steam_id || '未绑定'}</span>
                      </p>
                   </div>
+                </div>
+              </div>
+            </div>
+
+                        {/* 🌟 新增：游戏内遥测数据面板 (占位壳) */}
+            <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg overflow-hidden">
+              <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
+                  <span className="text-sm font-bold text-gray-400">In-Game Telemetry (游戏遥测)</span>
+                </div>
+                <span className="text-xs text-green-500 font-bold animate-pulse">● 数据接入中</span>
+              </div>
+              <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-[#18191c] p-4 rounded-lg border border-gray-600 text-center">
+                  <p className="text-xs text-gray-500 mb-1">当前速度</p>
+                  <p className="text-2xl font-mono font-bold text-blue-400">0 <span className="text-xs text-gray-500">km/h</span></p>
+                </div>
+                <div className="bg-[#18191c] p-4 rounded-lg border border-gray-600 text-center">
+                  <p className="text-xs text-gray-500 mb-1">档位</p>
+                  <p className="text-2xl font-mono font-bold text-white">N</p>
+                </div>
+                <div className="bg-[#18191c] p-4 rounded-lg border border-gray-600 text-center">
+                  <p className="text-xs text-gray-500 mb-1">油量</p>
+                  <div className="w-full bg-gray-700 h-2 mt-3 rounded-full overflow-hidden">
+                    <div className="bg-green-500 h-full w-[85%]"></div>
+                  </div>
+                </div>
+                <div className="bg-[#18191c] p-4 rounded-lg border border-gray-600 text-center">
+                  <p className="text-xs text-gray-500 mb-1">引擎状态</p>
+                  <p className="text-sm font-bold text-red-500 mt-1">关闭</p>
                 </div>
               </div>
             </div>

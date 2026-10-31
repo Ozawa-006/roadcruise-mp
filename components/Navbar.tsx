@@ -208,6 +208,7 @@ export default function Navbar() {
               {/* 以后有活动了，就在这里加 Link */}
             </div>
           </div>
+          <Link href="/map" className="hover:text-white transition flex items-center gap-1">实时地图</Link>
           <Link href="#" className="hover:text-white transition">车队 (VTC)</Link>
           <Link href="#" className="hover:text-white transition">帮助与支持</Link>
         </nav>
