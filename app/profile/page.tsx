@@ -143,7 +143,7 @@ export default function ProfilePage() {
                   </div>
                   
                   <div className="text-sm space-y-3">
-                    <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">English, Chinese (Simplified)</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">{profile?.languages || 'Chinese (Simplified)'}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile?.steam_id || '未绑定'}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={userRole !== 'member' ? 'text-red-400 font-bold' : 'text-green-400'}>{ROLE_LABELS[userRole]}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">0</span></p>
@@ -165,7 +165,45 @@ export default function ProfilePage() {
                      <p className="text-green-500 font-bold text-sm">Active (正常)</p>
                   </div>
                   <div className="bg-[#232428] p-3 rounded-md border border-gray-700">
-                     <h4 className="text-xs text-gray-400 mb-2">Social Information</h4>
+                     <div className="bg-[#232428] p-3 rounded-md border border-gray-700">
+  <h4 className="text-xs text-gray-400 mb-3">Social Information</h4>
+  <div className="space-y-2">
+    <p className="text-sm text-gray-400 flex justify-between">
+      <span>Discord:</span> 
+      <span className="text-white">{profile?.discord_id || '未绑定'}</span>
+    </p>
+    <p className="text-sm text-gray-400 flex justify-between">
+      <span>Steam:</span> 
+      <span className="text-white">{profile?.steam_id || '未绑定'}</span>
+    </p>
+    
+    {/* 🌟 社交链接动态渲染 */}
+    {profile?.twitch_url && (
+      <p className="text-sm text-gray-400 flex justify-between">
+        <span>Twitch:</span> 
+        <a href={profile.twitch_url} target="_blank" className="text-purple-400 hover:underline">前往频道</a>
+      </p>
+    )}
+    {profile?.twitter_url && (
+      <p className="text-sm text-gray-400 flex justify-between">
+        <span>Twitter:</span> 
+        <a href={profile.twitter_url} target="_blank" className="text-blue-400 hover:underline">前往主页</a>
+      </p>
+    )}
+    {profile?.youtube_url && (
+      <p className="text-sm text-gray-400 flex justify-between">
+        <span>YouTube:</span> 
+        <a href={profile.youtube_url} target="_blank" className="text-red-400 hover:underline">前往频道</a>
+      </p>
+    )}
+    {profile?.wot_url && (
+      <p className="text-sm text-gray-400 flex justify-between">
+        <span>World of Trucks:</span> 
+        <a href={profile.wot_url} target="_blank" className="text-orange-400 hover:underline">前往资料</a>
+      </p>
+    )}
+  </div>
+</div>
                      <p className="text-sm text-gray-400 flex justify-between">
                        <span>Discord:</span> 
                        <span className="text-white">{profile?.discord_id || '未绑定'}</span>

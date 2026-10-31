@@ -21,7 +21,13 @@ function SettingsForm() {
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [discordId, setDiscordId] = useState('');
+  
+  // 新增：语言和社交媒体状态
+  const [languages, setLanguages] = useState('Chinese (Simplified), English');
+  const [twitchUrl, setTwitchUrl] = useState('');
+  const [twitterUrl, setTwitterUrl] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [wotUrl, setWotUrl] = useState('');
   
   // Steam 状态
   const [steamId, setSteamId] = useState('');
@@ -49,7 +55,11 @@ function SettingsForm() {
         setDisplayName(profile.display_name || '');
         setBio(profile.bio || '');
         setAvatarUrl(profile.avatar_url || '');
-        setDiscordId(profile.discord_id || '');
+        setLanguages(profile.languages || 'Chinese (Simplified), English');
+        setTwitchUrl(profile.twitch_url || '');
+        setTwitterUrl(profile.twitter_url || '');
+        setYoutubeUrl(profile.youtube_url || '');
+        setWotUrl(profile.wot_url || '');
         setSteamId(profile.steam_id || '');
         setSteamVerified(profile.steam_verified || false);
       }
@@ -75,12 +85,16 @@ function SettingsForm() {
         setAvatarUrl(finalAvatarUrl);
       }
 
-      // 🌟 关键：这里只更新资料，绝对不动 steam_id
+      // 更新所有字段
       const { error } = await supabase.from('profiles').update({
         display_name: displayName,
         bio: bio,
         avatar_url: finalAvatarUrl,
-        discord_id: discordId,
+        languages: languages,
+        twitch_url: twitchUrl,
+        twitter_url: twitterUrl,
+        youtube_url: youtubeUrl,
+        wot_url: wotUrl,
       }).eq('id', user.id);
 
       if (error) throw error;
@@ -104,7 +118,7 @@ function SettingsForm() {
   return (
     <div className="flex-1 max-w-6xl mx-auto w-full p-4 md:p-6 flex flex-col md:flex-row gap-6">
       
-      {/* 左侧边栏 */}
+      {/* 左侧边栏保持不变 */}
       <div className="w-full md:w-64 space-y-4 shrink-0">
         <div className="bg-[#2c2d31] rounded-md overflow-hidden border border-gray-700 shadow-lg">
           <div className="h-32 bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=600&auto=format&fit=crop')] bg-cover bg-center"></div>
@@ -120,16 +134,8 @@ function SettingsForm() {
 
         <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-2 shadow-lg">
           <ul className="text-sm space-y-1">
-            <li>
-              <Link href="/profile" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">
-                个人资料
-              </Link>
-            </li>
-            <li>
-              <Link href="/settings" className="flex items-center text-green-500 bg-[#3a3b40] px-3 py-2 rounded-md font-bold">
-                账号设置
-              </Link>
-            </li>
+            <li><Link href="/profile" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">个人资料</Link></li>
+            <li><Link href="/settings" className="flex items-center text-green-500 bg-[#3a3b40] px-3 py-2 rounded-md font-bold">账号设置</Link></li>
           </ul>
         </div>
       </div>
@@ -143,21 +149,37 @@ function SettingsForm() {
             <span>登录邮箱 (Email)：</span>
             <span className="text-white font-mono ml-2">{user?.email}</span>
           </div>
-          <span className="text-xs text-gray-600">(账号唯一凭证)</span>
         </div>
 
         <form onSubmit={handleSave} className="space-y-6">
           
-          <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">头像 (Avatar)</label>
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-full bg-gray-800 border border-gray-600 flex items-center justify-center overflow-hidden shrink-0">
-                {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <span className="text-2xl">👤</span>}
+          {/* 头像与语言 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-gray-400 mb-2">头像 (Avatar)</label>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-gray-800 border border-gray-600 flex items-center justify-center overflow-hidden shrink-0">
+                  {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <span className="text-2xl">👤</span>}
+                </div>
+                <div className="border border-gray-600 rounded bg-[#232428] px-4 py-2 cursor-pointer relative hover:bg-gray-800 transition">
+                  <span className="text-sm">{file ? file.name : '选择图片...'}</span>
+                  <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                </div>
               </div>
-              <div className="border border-gray-600 rounded bg-[#232428] px-4 py-2 cursor-pointer relative hover:bg-gray-800 transition">
-                <span className="text-sm">{file ? file.name : '选择图片...'}</span>
-                <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} className="absolute inset-0 opacity-0 cursor-pointer" />
-              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-bold text-gray-400 mb-2">语言 (Languages)</label>
+              <select 
+                value={languages} 
+                onChange={(e) => setLanguages(e.target.value)}
+                className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
+              >
+                <option value="Chinese (Simplified)">简体中文</option>
+                <option value="Chinese (Simplified), English">简体中文 + English</option>
+                <option value="English">English</option>
+                <option value="Chinese (Simplified), English, Russian">简中 + 英语 + 俄语</option>
+              </select>
             </div>
           </div>
 
@@ -168,33 +190,43 @@ function SettingsForm() {
 
           <div>
             <label className="block text-sm font-bold text-gray-400 mb-2">关于我 (Bio)</label>
-            <textarea value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-32 focus:outline-none focus:border-blue-500" placeholder="简单介绍一下你自己..."></textarea>
+            <textarea value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-24 focus:outline-none focus:border-blue-500" placeholder="简单介绍一下你自己..."></textarea>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">Discord ID</label>
-              <input type="text" value={discordId} onChange={(e) => setDiscordId(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500" placeholder="例如: xiaoze#1234" />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">Steam 账号验证</label>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between bg-[#18191c] border border-gray-600 rounded p-3">
-                  <div className="flex flex-col">
-                    <span className="text-white text-sm font-bold">
-                      {steamVerified ? '✅ 已验证' : '❌ 未绑定'}
-                    </span>
-                    {/* 🌟 直接显示 ID */}
-                    {steamVerified && steamId && (
-                      <span className="text-xs text-gray-500 font-mono mt-1">ID: {steamId}</span>
-                    )}
-                  </div>
-                  <button type="button" onClick={handleSteamBind} className={`px-4 py-1.5 rounded text-sm font-bold transition ${steamVerified ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-[#171a21] hover:bg-[#2a475e] text-white border border-gray-500'}`}>
-                    {steamVerified ? '重新验证' : '前往 Steam 验证'}
-                  </button>
-                </div>
+          {/* 🌟 新增：社交媒体链接 */}
+          <div className="border-t border-gray-700 pt-4">
+            <h3 className="text-md font-bold text-white mb-4">社交媒体 (Social Information)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Twitch 链接</label>
+                <input type="url" value={twitchUrl} onChange={(e) => setTwitchUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://twitch.tv/..." />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">Twitter (X) 链接</label>
+                <input type="url" value={twitterUrl} onChange={(e) => setTwitterUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://twitter.com/..." />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">YouTube 频道</label>
+                <input type="url" value={youtubeUrl} onChange={(e) => setYoutubeUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://youtube.com/..." />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">World of Trucks 链接</label>
+                <input type="url" value={wotUrl} onChange={(e) => setWotUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://worldoftrucks.com/..." />
+              </div>
+            </div>
+          </div>
+
+          {/* Steam 验证区域保持不变 */}
+          <div className="border-t border-gray-700 pt-4">
+            <label className="block text-sm font-bold text-gray-400 mb-2">Steam 账号验证</label>
+            <div className="flex items-center justify-between bg-[#18191c] border border-gray-600 rounded p-3">
+              <div className="flex flex-col">
+                <span className="text-white text-sm font-bold">{steamVerified ? '✅ 已验证' : '❌ 未绑定'}</span>
+                {steamVerified && steamId && <span className="text-xs text-gray-500 font-mono mt-1">ID: {steamId}</span>}
+              </div>
+              <button type="button" onClick={handleSteamBind} className="px-4 py-1.5 rounded text-sm font-bold bg-[#171a21] border border-gray-500 text-white">
+                {steamVerified ? '重新验证' : '前往验证'}
+              </button>
             </div>
           </div>
 
@@ -202,7 +234,7 @@ function SettingsForm() {
             <button type="submit" disabled={saving} className="bg-green-600 hover:bg-green-700 text-white px-8 py-2 rounded font-bold transition disabled:opacity-50">
               {saving ? '保存中...' : '保存更改'}
             </button>
-            {msg && <span className={`text-sm font-bold ${msg.includes('失败') || msg.includes('❌') ? 'text-red-400' : 'text-green-400'}`}>{msg}</span>}
+            {msg && <span className={`text-sm font-bold ${msg.includes('失败') ? 'text-red-400' : 'text-green-400'}`}>{msg}</span>}
           </div>
         </form>
       </div>
