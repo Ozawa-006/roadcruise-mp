@@ -30,18 +30,27 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
 
   // 监听 URL 参数，决定显示哪个页面
+    // 监听 URL 参数，决定显示哪个页面
   useEffect(() => {
     if (steamIdParam && verifiedParam === 'true') {
       setViewState('register_form');
+      // 🌟 核心修复：读取完参数后，立刻把网址里的参数清空！
+      window.history.replaceState({}, '', '/login');
+      
     } else if (errorParam === 'no_ets2') {
       setMessage('❌ Steam 验证失败：您必须拥有正版 ETS2 且游玩时长超过 2 小时！');
       setViewState('guide');
+      window.history.replaceState({}, '', '/login');
+      
     } else if (errorParam === 'steam_auth_failed' || errorParam === 'steam_callback_failed') {
       setMessage('❌ 无法连接 Steam 服务器，请检查您的网络代理设置或稍后再试。');
       setViewState('guide');
+      window.history.replaceState({}, '', '/login');
+      
     } else if (errorParam) {
       setMessage(`❌ 验证失败：${errorParam}`);
       setViewState('guide');
+      window.history.replaceState({}, '', '/login');
     }
   }, [steamIdParam, verifiedParam, errorParam]);
 
