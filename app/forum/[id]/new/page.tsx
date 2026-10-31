@@ -14,9 +14,10 @@ const supabase = createClient(
 export default function NewTopicPage() {
   const { id } = useParams();
   const router = useRouter();
+  
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [file, setFile] = useState<File | null>(null); // 🌟 新增图片状态
+  const [imageUrl, setImageUrl] = useState(''); // 🌟 改成外链状态
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -25,7 +26,6 @@ export default function NewTopicPage() {
     setLoading(true);
     setMsg('');
 
-    // 检查登录状态
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       setMsg('请先登录再发帖！');
@@ -33,42 +33,21 @@ export default function NewTopicPage() {
       return;
     }
 
-    try {
-      let uploadedImageUrl = '';
+    // 🌟 直接提交外链，不再需要处理文件上传
+    const { error } = await supabase.from('forum_topics').insert({
+      category_id: id,
+      author_id: user.id,
+      title,
+      content,
+      image_url: imageUrl
+    });
 
-      // 🌟 1. 如果有选择文件，先上传
-      if (file) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `topic-${Math.random()}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('forum_media')
-          .upload(fileName, file);
-          
-        if (uploadError) throw uploadError;
-
-        const { data } = supabase.storage.from('forum_media').getPublicUrl(fileName);
-        uploadedImageUrl = data.publicUrl;
-      }
-
-      // 🌟 2. 插入数据库
-      const { error } = await supabase.from('forum_topics').insert({
-        category_id: id,
-        author_id: user.id,
-        title,
-        content,
-        image_url: uploadedImageUrl // 存入图片链接
-      });
-
-      if (error) throw error;
-
-      // 发帖成功，跳回当前版块列表
-      router.push(`/forum/${id}`);
-      router.refresh();
-      
-    } catch (error: any) {
+    if (error) {
       setMsg(`发帖失败: ${error.message}`);
       setLoading(false);
+    } else {
+      router.push(`/forum/${id}`);
+      router.refresh();
     }
   };
 
@@ -76,7 +55,7 @@ export default function NewTopicPage() {
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
       
-      {/* 🌟 顶部横幅区域 */}
+      {/* 顶部横幅区域 */}
       <div 
         className="w-full h-48 md:h-64 relative bg-cover bg-center bg-blue-900 border-b border-gray-700"
         style={{ backgroundImage: `url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=1000&auto=format&fit=crop')` }}
@@ -92,7 +71,7 @@ export default function NewTopicPage() {
         </div>
       </div>
 
-      {/* 🌟 表单区域 */}
+      {/* 表单区域 */}
       <div className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-8 -mt-6 relative z-10">
         <form onSubmit={handleSubmit} className="bg-[#2c2d31] border border-gray-700 p-6 md:p-8 rounded-lg shadow-2xl space-y-6">
           <div>
@@ -118,21 +97,17 @@ export default function NewTopicPage() {
             ></textarea>
           </div>
 
-          {/* 🌟 新增：图片上传组件 */}
+          {/* 🌟 改成纯文本 URL 输入框 */}
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">添加配图 (选填)</label>
-            <div className="border-2 border-dashed border-gray-700 rounded-lg p-4 bg-gray-800/50 flex flex-col items-center hover:border-blue-500 transition relative">
-              <input 
-                type="file" 
-                accept="image/*"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-              <span className="text-2xl mb-2">📸</span>
-              <span className="text-gray-400 text-sm">
-                {file ? file.name : '点击选择一张本地图片'}
-              </span>
-            </div>
+            <label className="block text-sm font-bold text-gray-400 mb-2">添加配图链接 (选填)</label>
+            <input 
+              type="url" 
+              value={imageUrl} 
+              onChange={(e) => setImageUrl(e.target.value)} 
+              className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500" 
+              placeholder="https://i.imgur.com/xxxxx.jpg (推荐图床直链)" 
+            />
+            <p className="text-xs text-gray-500 mt-2">提示：目前支持 Imgur、路过图床等图片直链。</p>
           </div>
 
           <div className="flex justify-between items-center pt-4 border-t border-gray-700">

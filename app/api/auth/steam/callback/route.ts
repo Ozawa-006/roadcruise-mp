@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
         key: steamApiKey,
         steamid: steamId,
         include_played_free_games: true,
-        appids_filter: 227300,
+        appids_filter: JSON.stringify([227300]),
       },
     });
 
