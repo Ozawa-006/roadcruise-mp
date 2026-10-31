@@ -1,3 +1,4 @@
+// app/forum/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -46,6 +47,7 @@ export default function ForumHome() {
       if (hot) setHotTopics(hot);
 
       // 4. 获取“在线”成员（用最近注册的 8 位用户代替）
+      // 🌟 注意：如果这里读不出数据，请去 Supabase 运行 ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
       const { data: users } = await supabase
         .from('profiles')
         .select('id, display_name, avatar_url, role')
