@@ -14,10 +14,13 @@ const supabase = createClient(
 export default function Home() {
   const [latestTopics, setLatestTopics] = useState<any[]>([]);
   const [stats, setStats] = useState({ users: 0, vtc: 0, events: 0, team: 0 });
+  
+  // 🌟 新增：轮播图状态
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. 获取最新官方公告
+      // 1. 获取最新官方公告 (拉取5条用于轮播)
       const { data: topics } = await supabase
         .from('forum_topics')
         .select(`
@@ -26,7 +29,7 @@ export default function Home() {
         `)
         .eq('category_id', 1)
         .order('created_at', { ascending: false })
-        .limit(3);
+        .limit(5);
       if (topics) setLatestTopics(topics);
 
       // 2. 获取统计数据
@@ -43,80 +46,142 @@ export default function Home() {
     fetchData();
   }, []);
 
+  // 🌟 新增：自动轮播定时器
+  useEffect(() => {
+    if (latestTopics.length <= 1) return;
+    
+    const timer = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % latestTopics.length);
+    }, 5000); // 5秒切换一次
+
+    return () => clearInterval(timer);
+  }, [latestTopics.length]);
+
+  // 切换上一张/下一张
+  const nextSlide = () => {
+    if (latestTopics.length > 0) setCurrentIndex((prev) => (prev + 1) % latestTopics.length);
+  };
+  const prevSlide = () => {
+    if (latestTopics.length > 0) setCurrentIndex((prev) => (prev - 1 + latestTopics.length) % latestTopics.length);
+  };
+
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
       
-      {/* 🌟 第一区块：首屏大图与卖点 */}
-      <section className="relative h-[70vh] flex items-center bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center">
-        <div className="absolute inset-0 bg-black/60 z-0"></div>
-        
-        <div className="relative z-10 max-w-7xl mx-auto w-full px-6 md:px-10 flex flex-col md:flex-row items-center justify-between">
-          {/* 左侧卖点列表 */}
-          <div className="text-white space-y-4 mb-10 md:mb-0">
-            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-              <span className="w-2 h-6 bg-blue-500 inline-block"></span> 
-              为什么加入我们？
-            </h2>
-            <ul className="space-y-3 text-lg">
-              <li className="flex items-center gap-3"><span className="text-blue-500">✔</span> 成千上万的活跃玩家</li>
-              <li className="flex items-center gap-3"><span className="text-blue-500">✔</span> 强力公平的游戏审核团队</li>
-              <li className="flex items-center gap-3"><span className="text-blue-500">✔</span> 专属且稳定的服务器体验</li>
-              <li className="flex items-center gap-3"><span className="text-blue-500">✔</span> 伟大且友好的社区氛围</li>
-              <li className="flex items-center gap-3"><span className="text-blue-500">✔</span> 现在，只差你了！</li>
-            </ul>
+      {/* 🌟 第一区块：官方新闻轮播图 (TMP 风格) */}
+      <section className="relative w-full h-[60vh] md:h-[70vh] bg-black overflow-hidden group">
+        {latestTopics.length === 0 ? (
+          // 如果没有新闻数据，显示默认兜底图
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center">
+            <div className="absolute inset-0 bg-black/60 z-0"></div>
+            <div className="relative z-10 text-center">
+              <h1 className="text-4xl md:text-6xl font-black text-white mb-6 drop-shadow-lg">
+                Road Cruise Transport MP
+              </h1>
+              <Link href="/login" className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold text-lg transition shadow-xl">
+                今天就加入吧！
+              </Link>
+            </div>
           </div>
+        ) : (
+          // 有新闻数据时，渲染轮播图
+          <>
+            {latestTopics.map((item, index) => (
+              <div
+                key={item.id}
+                className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex flex-col items-center justify-center bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center ${
+                  index === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                }`}
+              >
+                {/* 黑色遮罩 */}
+                <div className="absolute inset-0 bg-black/70 z-0"></div>
 
-          {/* 右侧 CTA 按钮 */}
-          <div className="text-center">
-            <h1 className="text-4xl md:text-5xl font-black text-white mb-6 drop-shadow-lg">
-              Road Cruise Transport MP
-            </h1>
-            <Link 
-              href="/login" 
-              className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-10 py-4 rounded-lg font-bold text-xl transition shadow-xl hover:scale-105"
-            >
-              今天就加入吧！
-            </Link>
-          </div>
-        </div>
+                {/* 新闻内容 */}
+                <div className="relative z-10 text-center max-w-4xl px-6 flex flex-col items-center">
+                  <span className="text-blue-500 font-bold tracking-widest uppercase mb-2 text-sm md:text-base">Road Cruise News</span>
+                  <h1 className="text-3xl md:text-5xl font-black text-white mb-6 drop-shadow-lg leading-tight line-clamp-2">
+                    {item.title}
+                  </h1>
+                  <Link 
+                    href={`/forum/${item.category_id}/${item.id}`} 
+                    className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-md font-bold text-base transition shadow-lg mt-2"
+                  >
+                    Read More (阅读更多)
+                  </Link>
+                </div>
+              </div>
+            ))}
+
+            {/* 左右切换按钮 */}
+            {latestTopics.length > 1 && (
+              <>
+                <button 
+                  onClick={prevSlide}
+                  className="absolute left-0 top-0 bottom-0 w-16 bg-white/5 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <button 
+                  onClick={nextSlide}
+                  className="absolute right-0 top-0 bottom-0 w-16 bg-white/5 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+
+                {/* 底部小圆点指示器 */}
+                <div className="absolute bottom-6 left-0 right-0 flex justify-center space-x-3 z-20">
+                  {latestTopics.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentIndex(index)}
+                      className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                        index === currentIndex ? 'bg-white scale-125' : 'bg-white/40 hover:bg-white/70'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
       </section>
 
-      {/* 🌟 第二区块：最新消息 (按要求提前) */}
+      {/* 🌟 第二区块：VTC Events (原最新消息改名) */}
       <section className="py-16 bg-[#111111] border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-end mb-8 border-b border-gray-800 pb-4">
-            <h2 className="text-2xl font-bold text-white">最新消息</h2>
-            <Link href="/forum/1" className="text-sm text-blue-400 hover:text-blue-300 transition">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+              <span className="w-1.5 h-6 bg-blue-500 block"></span>
+              VTC Events
+            </h2>
+            <Link href="/forum" className="text-sm text-blue-400 hover:text-blue-300 transition">
               前往论坛查看全部 →
             </Link>
           </div>
           
-          {latestTopics.length === 0 ? (
-            <p className="text-gray-500 text-center py-6">暂无官方动态。</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {latestTopics.map((item) => (
-                <Link 
-                  key={item.id}
-                  href={`/forum/${item.category_id}/${item.id}`}
-                  className="bg-[#2c2d31] border border-gray-700 p-5 rounded-lg hover:border-blue-500 hover:bg-[#3a3b40] transition group shadow-lg"
-                >
-                  <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition line-clamp-2 mb-3">
-                    {item.title}
-                  </h3>
-                  <div className="flex justify-between text-xs text-gray-500 mt-4">
-                    <span>{item.profiles?.display_name || '官方'}</span>
-                    <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* 活动占位卡片 */}
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="bg-[#2c2d31] border border-gray-700 p-5 rounded-lg hover:border-blue-500 transition shadow-lg flex flex-col justify-between">
+                <div>
+                   <div className="h-32 bg-[#1e1f23] rounded-md mb-4 flex items-center justify-center text-gray-500">
+                      <svg className="w-10 h-10 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                   </div>
+                   <h3 className="text-lg font-bold text-white mb-2">VTC 联动活动即将上线</h3>
+                   <p className="text-sm text-gray-400 line-clamp-2">敬请期待我们与各大车队联合举办的精彩联运活动，系统正在开发中...</p>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500 mt-4 pt-4 border-t border-gray-700/50">
+                  <span>Road Cruise Official</span>
+                  <span className="text-orange-400">即将发布</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* 🌟 第三区块：我们的服务 (按要求第二位) */}
+      {/* 🌟 第三区块：我们的服务 */}
       <section className="py-16 max-w-7xl mx-auto px-6">
         <h2 className="text-2xl font-bold text-white text-center mb-10">
           <span className="border-b-2 border-blue-500 pb-2">我们的服务</span>
@@ -149,7 +214,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 🌟 第四区块：数据统计 (按要求第三位) */}
+      {/* 🌟 第四区块：数据统计 */}
       <section className="bg-[#111111] py-12 border-y border-gray-800">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           <div>
@@ -177,7 +242,7 @@ export default function Home() {
           
           {/* Logo 与 简介 */}
           <div className="col-span-1 md:col-span-1">
-            <Link href="/" className="text-2xl font-black italic bg-clip-text text-transparent bg-gradient-to-r from-white to-red-500 inline-block mb-4">
+            <Link href="/" className="text-xl lg:text-2xl font-black italic tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-red-500 inline-block mb-4">
               Road Cruise Transport MP
             </Link>
             <p className="text-sm text-gray-500 leading-relaxed">
