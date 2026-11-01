@@ -47,7 +47,22 @@ export default function ProfilePage() {
         .single();
         
       if (profileData) {
-        setProfile(profileData);
+        let vtcInfo = null;
+        if (profileData.vtc_id) {
+          const { data: vtcData, error: vtcError } = await supabase
+            .from('vtcs')
+            .select('name, tag, logo_url')
+            .eq('id', profileData.vtc_id)
+            .single();
+
+          if (vtcError) {
+            console.error('获取车队信息失败:', vtcError);
+          } else {
+            vtcInfo = vtcData;
+          }
+        }
+
+        setProfile({ ...profileData, vtc_info: vtcInfo });
         setRoleLevel(profileData.role_level || 10); // 🌟 同步等级
 
         // 🌟 核心修改 1：去 roles 表里查中文名字，替代死代码
@@ -203,6 +218,34 @@ export default function ProfilePage() {
                      </div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
+              <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
+                <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" /></svg>
+                <span className="text-sm font-bold text-gray-400">VTC Info (车队信息)</span>
+              </div>
+              <div className="p-6">
+                {profile.vtc_info ? (
+                  <Link href={`/vtc/${profile.vtc_id}`} className="flex items-center gap-4 bg-[#232428] p-4 rounded-lg border border-gray-700 hover:border-blue-500 transition group">
+                    <div className="w-16 h-16 bg-[#18191c] rounded-lg overflow-hidden border border-gray-600 flex items-center justify-center shrink-0">
+                      {profile.vtc_info.logo_url ? (
+                        <img src={profile.vtc_info.logo_url} alt={profile.vtc_info.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-2xl">🏢</span>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{profile.vtc_info.name}</h3>
+                      {profile.vtc_info.tag && <span className="text-xs text-blue-400 font-mono">[{profile.vtc_info.tag}]</span>}
+                    </div>
+                  </Link>
+                ) : (
+                  <div className="text-center text-gray-500 text-sm py-8 bg-[#232428] rounded-md border border-dashed border-gray-700">
+                    你目前尚未加入任何车队 (You are not currently a member of any VTC).
+                  </div>
+                )}
               </div>
             </div>
 

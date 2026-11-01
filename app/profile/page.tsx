@@ -38,7 +38,22 @@ export default function ProfilePage() {
         .single();
         
       if (profileData) {
-        setProfile(profileData);
+        let vtcInfo = null;
+        if (profileData.vtc_id) {
+          const { data: vtcData, error: vtcError } = await supabase
+            .from('vtcs')
+            .select('name, tag, logo_url')
+            .eq('id', profileData.vtc_id)
+            .single();
+
+          if (vtcError) {
+            console.error('获取车队信息失败:', vtcError);
+          } else {
+            vtcInfo = vtcData;
+          }
+        }
+
+        setProfile({ ...profileData, vtc_info: vtcInfo });
       }
 
       // 获取我发布的最新 5 个话题
@@ -245,9 +260,25 @@ export default function ProfilePage() {
                 <span className="text-sm font-bold text-gray-400">VTC Info (车队信息)</span>
               </div>
               <div className="p-6">
-                <div className="text-center text-gray-500 text-sm py-8 bg-[#232428] rounded-md border border-dashed border-gray-700">
-                  你目前尚未加入任何车队 (You are not currently a member of any VTC).
-                </div>
+                {profile?.vtc_info ? (
+                  <Link href={`/vtc/${profile.vtc_id}`} className="flex items-center gap-4 bg-[#232428] p-4 rounded-lg border border-gray-700 hover:border-blue-500 transition group">
+                    <div className="w-16 h-16 bg-[#18191c] rounded-lg overflow-hidden border border-gray-600 flex items-center justify-center shrink-0">
+                      {profile.vtc_info.logo_url ? (
+                        <img src={profile.vtc_info.logo_url} alt={profile.vtc_info.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-2xl">🏢</span>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{profile.vtc_info.name}</h3>
+                      {profile.vtc_info.tag && <span className="text-xs text-blue-400 font-mono">[{profile.vtc_info.tag}]</span>}
+                    </div>
+                  </Link>
+                ) : (
+                  <div className="text-center text-gray-500 text-sm py-8 bg-[#232428] rounded-md border border-dashed border-gray-700">
+                    你目前尚未加入任何车队 (You are not currently a member of any VTC).
+                  </div>
+                )}
               </div>
             </div>
 

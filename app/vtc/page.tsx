@@ -28,16 +28,20 @@ export default function VTCHome() {
         if (profile?.vtc_id) setUserVtcId(profile.vtc_id);
       }
 
-      // 2. 获取所有车队列表 (使用 count 统计每个车队的人数)
-      const { data: vtcData } = await supabase
+      // 2. 获取所有车队列表并统计成员数量
+      const { data: vtcData, error } = await supabase
         .from('vtcs')
         .select(`
           *,
-          profiles(count)
+          profiles!vtc_id(count)
         `)
         .order('created_at', { ascending: false });
       
-      if (vtcData) setVtcs(vtcData);
+      if (error) {
+        console.error('获取车队失败:', error);
+      } else if (vtcData) {
+        setVtcs(vtcData);
+      }
       setLoading(false);
     };
     fetchData();
