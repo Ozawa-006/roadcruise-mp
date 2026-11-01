@@ -21,11 +21,35 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.27v',
+    date: '2026-11-01',
+    title: '安全审计与内容初始化',
+    highlight: true,
+    items: [
+      {
+        kind: 'security',
+        text: '新增操作审计日志（`audit_log` + 6 张表触发器）：记录权限、车队、活动、规则、新闻的关键变更；Lv.90+ 可在 `/admin/audit` 查看 before/after',
+      },
+      {
+        kind: 'security',
+        text: 'Steam 验证/回调/绑定与服务器状态代理加入 IP 限流（内存级兜底，多实例下计数不共享，强限流后续接 Upstash）',
+      },
+      {
+        kind: 'feature',
+        text: '初始化 12 条社区规则并发布到 `/rules`（分为社区总则、游戏与联运、论坛与交流、违规与处罚四部分），可在 `/admin/rules` 编辑',
+      },
+      {
+        kind: 'chore',
+        text: '更新安全文档：P1 收尾状态与限流局限说明',
+      },
+    ],
+  },
+  {
     version: '0.0.26v',
     date: '2026-11-01',
     title: '内容生态与通知中心',
     commit: 'c5e2d92',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

@@ -352,15 +352,22 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 
 ---
 
-## 8. 后续（P1 / P2，本阶段不做）
+## 8. 后续（P1 / P2）
 
-- **P1**：注册/发帖/回帖/Steam 回调的速率限制（Vercel Edge Middleware 或 Upstash）；`/api/auth/steam/*` 加简单的人机校验。
-- **P1**：`audit_log` 表（who / what / before / after / at），由 `profiles` 守卫触发器写入，用于追溯提权与删帖。
-- **P1**：`custom_id` 唯一索引 + 格式约束（`^[0-9]{4,8}$`）。
+已完成的 P1（2026-11-01）：
+
+- **审计日志**：`audit_log` 表 + 6 张表的审计触发器（profiles / vtcs / events / vtc_news / rules_articles / announcements），记录操作者、动作、目标、before/after 关键字段；仅 Lv.90+ 可在 `/admin/audit` 查看（`supabase/audit-log.sql`）。
+- **接口限流**：`lib/rate-limit.ts`（内存级、按 IP + 路由）已挂在 `/api/auth/steam/{verify,callback,pending,bind}` 与 `/api/servers/status`。⚠️ 局限：Vercel 多实例/冷启动下计数不共享，只能挡单实例高频刷接口；强限流需接 Upstash/Redis。
+- **custom_id 约束**：4–8 位数字格式 `CHECK` + 部分唯一索引。
+- **社区规则初始内容**：12 条，可在 `/admin/rules` 编辑。
+
+仍未做：
+
+- **P1**：富文本发帖（TipTap/Quill 或自研安全 Markdown）与图片管理。
 - **P2**：`profiles` 列级收权，把 `steam_id` / `discord_id` 从匿名读里摘出去（需同步改 `app/settings/page.tsx` 的 `select('*')`）。
 - **P2**：Storage 桶加 `file_size_limit` 与 `allowed_mime_types`（当前只靠前端 `accept="image/*"`）。
-- **P2**：通知前端（下拉面板 + 已读按钮），目前只有数据库触发器在写。
 - **P2**：把 `supabase/` 纳入 supabase CLI 迁移（`supabase migration new`），让后续变更可 review、可回放。
+- **P2**：CSP（当前只加了基础安全响应头，未加 CSP 以免破坏 Supabase/外链图片）。
 
 ---
 
@@ -389,4 +396,4 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 | 17 | 失败路径不清 pending，可能被另一账号复用 | `already_verified` / `steam_in_use` / `no_ets2` 失败时清除 pending |
 | 18 | 旧版 `on_reply_created` 触发器与新触发器重复插入通知 | 已在 STEP 0.8 删除旧触发器与 `handle_new_reply()`；新触发器按 `notifications.type='reply'` 写入（该列 NOT NULL） |
 
-**仍未处理（P1/P2，已知接受）**：`profiles` 匿名可读含 `steam_id/discord_id`（列级收权）、`custom_id` 唯一约束、速率限制、审计日志、CSP/安全响应头、`NEXTAUTH_URL` 未接入固定 origin、错误信息直出 DB 文案。
+**仍未处理（P1/P2，已知接受）**：`profiles` 匿名可读含 `steam_id/discord_id`（列级收权）、CSP、`NEXTAUTH_URL` 未接入固定 origin、错误信息直出 DB 文案、分布式限流（Upstash）。

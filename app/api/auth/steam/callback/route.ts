@@ -14,6 +14,7 @@ import {
   verifyTokenOfType,
 } from '../../../../../lib/steam-token';
 import { getAdminClient } from '../../../../../lib/supabase-server';
+import { clientKey, rateLimit, rateLimitedResponse } from '../../../../../lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,10 @@ export const dynamic = 'force-dynamic';
  * 4. settings 绑定的 userId 取自签名 state Cookie，不再信任 URL 参数。
  */
 export async function GET(req: NextRequest) {
+  // 限流（内存级兜底）：同一 IP 每分钟最多 20 次回调
+  const limited = rateLimit(clientKey(req, 'steam-callback'), 20, 60_000);
+  if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
   const params = req.nextUrl.searchParams;
 
   const state = verifyTokenOfType<StatePayload>(

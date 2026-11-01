@@ -8,6 +8,7 @@ import {
   createStateToken,
 } from '../../../../../lib/steam-token';
 import { getAnonClient } from '../../../../../lib/supabase-server';
+import { clientKey, rateLimit, rateLimitedResponse } from '../../../../../lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,10 @@ export const dynamic = 'force-dynamic';
  * - settings：JSON { redirectUrl }，由前端用 window.location 跳转
  */
 export async function GET(req: NextRequest) {
+  // 限流（内存级兜底）：同一 IP 每分钟最多发起 10 次 Steam 验证
+  const limited = rateLimit(clientKey(req, 'steam-verify'), 10, 60_000);
+  if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
   const sourceRequested = req.nextUrl.searchParams.get('source');
   const source: 'register' | 'settings' = sourceRequested === 'settings' ? 'settings' : 'register';
 

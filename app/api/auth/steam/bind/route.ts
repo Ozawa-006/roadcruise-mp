@@ -8,6 +8,7 @@ import {
   verifyTokenOfType,
 } from '../../../../../lib/steam-token';
 import { getAdminClient, getAnonClient, noStoreJson } from '../../../../../lib/supabase-server';
+import { clientKey, rateLimit, rateLimitedResponse } from '../../../../../lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,10 @@ export const dynamic = 'force-dynamic';
  * 写入使用 service_role（客户端无法直接改 steam_id / steam_verified）。
  */
 export async function POST(req: NextRequest) {
+  // 限流（内存级兜底）：同一 IP 每分钟最多 20 次绑定请求
+  const limited = rateLimit(clientKey(req, 'steam-bind'), 20, 60_000);
+  if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
   const token = readBearer(req);
   if (!token) {
     return noStoreJson({ ok: false, code: 'unauthorized', message: '未登录' }, 401);

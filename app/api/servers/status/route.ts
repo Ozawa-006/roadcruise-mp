@@ -8,6 +8,7 @@ import {
   type ServerTarget,
   type ServersStatusPayload,
 } from '@/lib/server-status';
+import { clientKey, rateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,7 +112,11 @@ function failedPayload(targets: ServerTarget[]): ServersStatusPayload {
  *
  * 响应永远 200（单台失败只体现在 errors 中），且 `Cache-Control: no-store`。
  */
-export async function GET(request: NextRequest): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<Response> {
+  // 限流（内存级兜底）：同一 IP 每分钟最多 120 次，避免被刷代理
+  const limited = rateLimit(clientKey(request, 'servers-status'), 120, 60_000);
+  if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
   const allTargets = getServerTargets();
 
   // 生产环境没有配置 / RCTMP_SERVERS=[] 时，明确告知前端“未配置”。

@@ -98,6 +98,15 @@ export default function AdminDashboard() {
             </Link>
           )}
 
+          {/* 🌟 操作审计 (Lv.90 高级社区经理及以上可见) */}
+          {canEditRules(roleLevel) && (
+            <Link href="/admin/audit" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-orange-500 transition shadow-lg group block">
+              <div className="text-4xl mb-4 group-hover:scale-110 transition">🛡️</div>
+              <h2 className="text-xl font-bold text-white mb-2">操作审计</h2>
+              <p className="text-sm text-gray-400">查看关键操作记录（权限/车队/活动/规则）</p>
+            </Link>
+          )}
+
           {/* 🌟 系统设置占位 (Lv.90 及以上可见)：保留模块位置，但明确标注尚未开放 */}
           {canEditRules(roleLevel) && (
             <div
