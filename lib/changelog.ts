@@ -21,10 +21,30 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.34v',
+    date: '2026-11-01',
+    title: '图床链接插入（路过图床）',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '富文本图片按钮改为两种图床链接插入方式：「完整图片」直接插入 `![描述](图片URL)`；「缩略图」插入 `[![缩略图](thumb)](大图链接)`，点击缩略图可看大图',
+      },
+      {
+        kind: 'feature',
+        text: '适配路过图床（imgchr.com / ax1x.com）生成的「图片URL链接」「缩略图URL链接」；粘贴任意 http(s) 图床地址即可',
+      },
+      {
+        kind: 'chore',
+        text: '移除编辑器内「上传图片」本地 Storage 按钮（`post-images` 桶保留备用，未删除数据）',
+      },
+    ],
+  },
+  {
     version: '0.0.33v',
     date: '2026-11-01',
     title: '富文本图片上传',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

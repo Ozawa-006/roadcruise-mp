@@ -3,7 +3,6 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import RichText from '@/components/RichText';
 import { sanitizeHttpUrl } from '@/lib/rich-text';
-import { uploadPostImage } from '@/lib/post-image';
 
 export interface RichTextEditorProps {
   value: string;
@@ -76,19 +75,8 @@ export default function RichTextEditor({
 }: RichTextEditorProps) {
   const editorId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingSelection = useRef<{ start: number; end: number } | null>(null);
-  /** 点开文件选择器时的光标位置；上传是异步的，完成后按这里插入。 */
-  const uploadAnchor = useRef<{ start: number; end: number } | null>(null);
-  /** 上传期间用户可能继续编辑，异步插入必须用最新值，避免覆盖输入。 */
-  const valueRef = useRef(value);
   const [preview, setPreview] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    valueRef.current = value;
-  }, [value]);
 
   // 受控 textarea 重新渲染后再恢复选区，避免 setSelectionRange 被旧值截断。
   useEffect(() => {
@@ -163,7 +151,10 @@ export default function RichTextEditor({
   const insertImage = () => {
     const { start, end } = readSelection();
     const selected = value.slice(start, end);
-    const input = window.prompt('请输入图片地址（仅支持 http:// 或 https://）', 'https://');
+    const input = window.prompt(
+      '请输入完整图片地址（路过图床的「图片URL链接」，http/https）',
+      'https://'
+    );
     if (input === null) return;
 
     const src = sanitizeHttpUrl(input);
@@ -177,62 +168,41 @@ export default function RichTextEditor({
     insertAt(start, end, syntax);
   };
 
-  /** 打开系统文件选择器；先记下光标位置，避免失焦后插入点漂移。 */
-  const openImagePicker = () => {
-    if (preview || uploading) return;
-    uploadAnchor.current = readSelection();
-    setUploadError(null);
-    fileInputRef.current?.click();
-  };
-
   /**
-   * 上传成功后把 `![图片](url)` 插到上传前光标处。
-   * 用 valueRef 的当前值拼接，上传期间用户的新输入不会被覆盖。
+   * 插入「缩略图 + 点击看大图」：使用路过图床提供的缩略图 URL 与完整图片/页面 URL。
+   * Markdown 形式：[![缩略图](thumb)](full)
    */
-  const insertUploadedImage = (url: string): boolean => {
-    const currentValue = valueRef.current;
-    const anchor = uploadAnchor.current ?? {
-      start: currentValue.length,
-      end: currentValue.length,
-    };
-    const start = Math.min(anchor.start, currentValue.length);
-    const end = Math.min(Math.max(anchor.end, start), currentValue.length);
-    const syntax = `![图片](${encodeUrlForMarkdown(url)})`;
-    const nextValue = currentValue.slice(0, start) + syntax + currentValue.slice(end);
-    const caret = start + syntax.length;
+  const insertThumbnail = () => {
+    const { start, end } = readSelection();
+    const selected = value.slice(start, end);
 
-    // 异步插入不走 commit()：闭包里的 value 可能已过期，这里以 valueRef 为准。
-    if (typeof maxLength === 'number' && nextValue.length > maxLength) return false;
-    pendingSelection.current = { start: caret, end: caret };
-    onChange(nextValue);
-    textareaRef.current?.focus();
-    return true;
-  };
+    const thumbInput = window.prompt(
+      '请输入缩略图地址（路过图床的「缩略图URL链接」，http/https）',
+      'https://'
+    );
+    if (thumbInput === null) return;
 
-  const handleImageFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.target;
-    const file = input.files?.[0];
-    // 清空 value，保证再次选择同一张图片也能触发 change。
-    input.value = '';
-
-    if (!file) return;
-    if (preview) return;
-
-    setUploadError(null);
-    setUploading(true);
-    try {
-      const { url } = await uploadPostImage(file);
-      const inserted = insertUploadedImage(url);
-      if (!inserted) {
-        setUploadError('内容长度已达上限，图片未能插入');
-        return;
-      }
-      uploadAnchor.current = null;
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : '图片上传失败，请稍后重试');
-    } finally {
-      setUploading(false);
+    const thumb = sanitizeHttpUrl(thumbInput);
+    if (!thumb) {
+      window.alert('缩略图地址不合法：仅支持 http:// 或 https://。');
+      return;
     }
+
+    const fullInput = window.prompt(
+      '请输入点击后打开的大图/页面地址（完整图片URL或图片页面链接）',
+      thumb
+    );
+    if (fullInput === null) return;
+
+    const full = sanitizeHttpUrl(fullInput);
+    if (!full) {
+      window.alert('大图地址不合法：仅支持 http:// 或 https://。');
+      return;
+    }
+
+    const alt = escapeInlineLabel(selected.trim() || '图片');
+    const syntax = `[![${alt}](${encodeUrlForMarkdown(thumb)})](${encodeUrlForMarkdown(full)})`;
+    insertAt(start, end, syntax);
   };
 
   const applyLinePrefix = (prefix: string) => {
@@ -317,17 +287,6 @@ export default function RichTextEditor({
         ))}
 
       <div className="overflow-hidden rounded-lg border border-gray-700 bg-[#18191c] transition-colors focus-within:border-blue-500">
-        {/* 隐藏的文件选择器：由工具栏「上传图片」按钮触发。 */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          tabIndex={-1}
-          aria-hidden="true"
-          onChange={handleImageFileChange}
-          disabled={preview || uploading}
-        />
         <div className="flex items-center gap-2 border-b border-gray-700 bg-[#2c2d31] px-2 py-2">
           <div
             role="toolbar"
@@ -363,18 +322,18 @@ export default function RichTextEditor({
               链接
             </ToolbarButton>
             <ToolbarButton
-              title="插入图片 ![描述](https://...)"
+              title="插入完整图片 ![描述](图片URL)"
               onClick={insertImage}
               disabled={preview}
             >
-              图片
+              完整图片
             </ToolbarButton>
             <ToolbarButton
-              title="上传图片（JPG/PNG/WebP，最大 5MB）"
-              onClick={openImagePicker}
-              disabled={preview || uploading}
+              title="插入缩略图（点击看大图）"
+              onClick={insertThumbnail}
+              disabled={preview}
             >
-              {uploading ? '上传中…' : '上传图片'}
+              缩略图
             </ToolbarButton>
             <ToolbarButton
               title="引用 (> 文字)"
@@ -444,7 +403,7 @@ export default function RichTextEditor({
 
         <div className="flex items-center justify-between gap-3 border-t border-gray-700/60 bg-[#232428] px-3 py-1.5">
           <span className="min-w-0 truncate text-[11px] text-gray-500">
-            支持 **加粗**、*斜体*、`代码`、[链接]、![图片]、&gt; 引用、- 列表、## 标题
+            支持 **加粗**、*斜体*、`代码`、[链接]、![完整图片]、[![缩略图]](&#8203;大图链接)、&gt; 引用、- 列表、## 标题
           </span>
           {typeof maxLength === 'number' && (
             <span
@@ -457,12 +416,6 @@ export default function RichTextEditor({
           )}
         </div>
       </div>
-
-      {uploadError && (
-        <p role="alert" className="mt-2 text-xs font-bold text-red-400">
-          {uploadError}
-        </p>
-      )}
     </div>
   );
 }
