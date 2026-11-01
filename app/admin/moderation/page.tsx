@@ -6,7 +6,7 @@
 //   · 新建记录由数据库触发器给目标用户写站内通知（type='moderation'），前端不重复发送。
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
@@ -18,7 +18,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const MAX_RECENT = 200;
+const PAGE_SIZE = 50;
+// 页码窗口：当前页前后各 2 页，首尾页始终显示
+const PAGE_WINDOW = 2;
 const MAX_USER_RECORDS = 100;
 const PROFILE_CHUNK_SIZE = 100;
 const MAX_REASON_LENGTH = 120;
@@ -77,6 +79,23 @@ const STATUS_META: Record<
     className: 'border-gray-600 bg-[#232428] text-gray-500',
   },
 };
+
+type RecentActionFilter = 'all' | ModerationAction;
+type RecentStatusFilter = 'all' | ActionStatus;
+
+const RECENT_ACTION_OPTIONS: ReadonlyArray<{ value: RecentActionFilter; label: string }> = [
+  { value: 'all', label: '全部动作' },
+  { value: 'warning', label: '警告' },
+  { value: 'mute', label: '禁言' },
+  { value: 'ban', label: '封禁' },
+];
+
+const RECENT_STATUS_OPTIONS: ReadonlyArray<{ value: RecentStatusFilter; label: string }> = [
+  { value: 'all', label: '全部状态' },
+  { value: 'active', label: '生效中' },
+  { value: 'expired', label: '已过期' },
+  { value: 'revoked', label: '已撤销' },
+];
 
 const MODERATION_COLUMNS =
   'id,user_id,action,reason,note,expires_at,created_by,created_at,revoked_at,revoked_by';
@@ -164,6 +183,26 @@ function errorMessage(error: unknown): string {
     if (typeof value === 'string' && value.trim()) return value;
   }
   return '操作失败，请稍后重试';
+}
+
+/** 生成页码：首尾页 + 当前页前后各 PAGE_WINDOW 页，中间用省略号。 */
+function buildPageItems(current: number, total: number): Array<number | '…'> {
+  const pages = new Set<number>([1, total]);
+
+  for (let page = current - PAGE_WINDOW; page <= current + PAGE_WINDOW; page += 1) {
+    if (page >= 1 && page <= total) pages.add(page);
+  }
+
+  const sorted = Array.from(pages).sort((left, right) => left - right);
+  const items: Array<number | '…'> = [];
+
+  sorted.forEach((page, index) => {
+    const previous = sorted[index - 1];
+    if (index > 0 && previous !== undefined && page - previous > 1) items.push('…');
+    items.push(page);
+  });
+
+  return items;
 }
 
 function formatTime(value: string | null): string {
@@ -317,9 +356,14 @@ export default function AdminModerationPage() {
   const [recordsError, setRecordsError] = useState<string | null>(null);
 
   const [recent, setRecent] = useState<ModerationRow[]>([]);
+  const [recentTotal, setRecentTotal] = useState(0);
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentAction, setRecentAction] = useState<RecentActionFilter>('all');
+  const [recentStatus, setRecentStatus] = useState<RecentStatusFilter>('all');
   const [recentLoading, setRecentLoading] = useState(true);
   const [recentError, setRecentError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
+  const recentTopRef = useRef<HTMLElement>(null);
 
   const [action, setAction] = useState<ModerationAction>('warning');
   const [reason, setReason] = useState('');
@@ -386,7 +430,7 @@ export default function AdminModerationPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // 2. 全站最近处罚：created_at desc，最多 200 条；再分块二次查询用户昵称与处理人昵称
+  // 2. 全站最近处罚：服务端分页（每页 50 条）+ 精确总数；只对当前页的用户/处理人二次查询昵称
   useEffect(() => {
     if (checking || !staffId) return;
 
@@ -397,23 +441,57 @@ export default function AdminModerationPage() {
       setRecentError(null);
 
       try {
-        const { data, error } = await supabase
+        let request = supabase
           .from('moderation_actions')
-          .select(MODERATION_COLUMNS)
+          .select(MODERATION_COLUMNS, { count: 'exact' });
+
+        if (recentAction !== 'all') {
+          request = request.eq('action', recentAction);
+        }
+
+        // 状态筛选只拼接服务端生成的时间，绝不拼接用户输入
+        const nowIso = new Date().toISOString();
+        if (recentStatus === 'active') {
+          request = request
+            .is('revoked_at', null)
+            .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+        } else if (recentStatus === 'expired') {
+          request = request
+            .is('revoked_at', null)
+            .not('expires_at', 'is', null)
+            .lte('expires_at', nowIso);
+        } else if (recentStatus === 'revoked') {
+          request = request.not('revoked_at', 'is', null);
+        }
+
+        const from = (recentPage - 1) * PAGE_SIZE;
+        const { data, error, count } = await request
           .order('created_at', { ascending: false })
-          .limit(MAX_RECENT);
+          .order('id', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
         if (cancelled) return;
 
         if (error) {
           setRecentError(error.message);
           setRecent([]);
+          setRecentTotal(0);
           return;
         }
 
         const rows = toModerationRows(data);
+        const nextTotal = typeof count === 'number' ? count : from + rows.length;
         setRecent(rows);
+        setRecentTotal(nextTotal);
         setNow(Date.now());
 
+        // 越界回退：总数变少时回到最后一页
+        const lastPage = Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
+        if (recentPage > lastPage) {
+          setRecentPage(lastPage);
+          return;
+        }
+
+        // 只为当前页出现的用户/处理人查询昵称，避免全表扫描
         const profileIds = rows
           .flatMap((row) => [row.user_id, row.created_by, row.revoked_by])
           .filter((value): value is string => typeof value === 'string' && value.length > 0);
@@ -425,6 +503,7 @@ export default function AdminModerationPage() {
         if (cancelled) return;
         setRecentError(errorMessage(error));
         setRecent([]);
+        setRecentTotal(0);
       } finally {
         if (!cancelled) setRecentLoading(false);
       }
@@ -435,7 +514,7 @@ export default function AdminModerationPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, staffId, dataToken]);
+  }, [checking, staffId, dataToken, recentPage, recentAction, recentStatus]);
 
   // 3. 选中用户的处罚记录（当前处罚 + 历史记录）
   useEffect(() => {
@@ -640,6 +719,28 @@ export default function AdminModerationPage() {
   const activeRecords = records.filter((row) => isEffective(row, now));
   const historyRecords = records.filter((row) => !isEffective(row, now));
   const selectedDisplayName = selected?.display_name?.trim() || '未命名用户';
+
+  const recentTotalPages = Math.max(1, Math.ceil(recentTotal / PAGE_SIZE));
+  const currentRecentPage = Math.min(recentPage, recentTotalPages);
+  const recentPageItems = buildPageItems(currentRecentPage, recentTotalPages);
+  const hasRecentFilters = recentAction !== 'all' || recentStatus !== 'all';
+
+  const gotoRecentPage = (next: number) => {
+    const target = Math.min(Math.max(1, next), recentTotalPages);
+    if (target === recentPage) return;
+
+    setRecentPage(target);
+    // 翻页后滚动到列表顶部，避免停留在页脚
+    window.requestAnimationFrame(() => {
+      recentTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const resetRecentFilters = () => {
+    setRecentAction('all');
+    setRecentStatus('all');
+    setRecentPage(1);
+  };
 
   if (checking) {
     return (
@@ -1030,25 +1131,98 @@ export default function AdminModerationPage() {
           )}
         </section>
 
-        {/* 最近处罚记录 */}
-        <section className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-white">最近处罚记录</h2>
-            <span className="text-xs text-gray-500">
-              全站 {recent.length} 条（最多最近 {MAX_RECENT} 条）
-            </span>
+        {/* 最近处罚记录：服务端分页 + 动作/状态筛选 */}
+        <section
+          ref={recentTopRef}
+          className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5"
+        >
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white">最近处罚记录</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                全站 {recentTotal} 条 · 第 {currentRecentPage} / {recentTotalPages} 页 · 每页{' '}
+                {PAGE_SIZE} 条
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={recentAction}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const option = RECENT_ACTION_OPTIONS.find((item) => item.value === value);
+                  if (option) {
+                    setRecentAction(option.value);
+                    setRecentPage(1);
+                  }
+                }}
+                aria-label="按处罚动作筛选"
+                className="rounded border border-gray-600 bg-[#18191c] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+              >
+                {RECENT_ACTION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={recentStatus}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const option = RECENT_STATUS_OPTIONS.find((item) => item.value === value);
+                  if (option) {
+                    setRecentStatus(option.value);
+                    setRecentPage(1);
+                  }
+                }}
+                aria-label="按处罚状态筛选"
+                className="rounded border border-gray-600 bg-[#18191c] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+              >
+                {RECENT_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {hasRecentFilters && (
+                <button
+                  type="button"
+                  onClick={resetRecentFilters}
+                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white"
+                >
+                  清除筛选
+                </button>
+              )}
+            </div>
           </div>
 
           {recentError ? (
-            <p className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-              加载失败：{recentError}
-            </p>
+            <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2">
+              <p className="text-sm text-red-300">加载失败：{recentError}</p>
+              <button
+                type="button"
+                onClick={() => setDataToken((value) => value + 1)}
+                className="mt-2 rounded bg-red-700 px-3 py-1 text-xs font-bold text-white transition hover:bg-red-600"
+              >
+                重试
+              </button>
+            </div>
           ) : recentLoading ? (
             <p className="py-6 text-center text-sm text-gray-500">加载中...</p>
           ) : recent.length === 0 ? (
-            <p className="rounded border border-dashed border-gray-700 px-3 py-8 text-center text-sm text-gray-500">
-              暂无处罚记录。
-            </p>
+            <div className="rounded border border-dashed border-gray-700 px-3 py-8 text-center">
+              <p className="text-sm text-gray-500">
+                {hasRecentFilters ? '没有符合当前筛选条件的处罚记录。' : '暂无处罚记录。'}
+              </p>
+              {hasRecentFilters && (
+                <button
+                  type="button"
+                  onClick={resetRecentFilters}
+                  className="mt-3 text-xs font-bold text-blue-400 transition hover:text-blue-300"
+                >
+                  清除筛选
+                </button>
+              )}
+            </div>
           ) : (
             <ul className="space-y-2">
               {recent.map((row) => {
@@ -1096,6 +1270,53 @@ export default function AdminModerationPage() {
                 );
               })}
             </ul>
+          )}
+
+          {!recentError && recentTotal > 0 && (
+            <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-gray-700 pt-3 sm:flex-row">
+              <p className="text-xs text-gray-500">
+                共 {recentTotal} 条 · 第 {currentRecentPage} / {recentTotalPages} 页
+              </p>
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => gotoRecentPage(currentRecentPage - 1)}
+                  disabled={currentRecentPage <= 1}
+                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  上一页
+                </button>
+                {recentPageItems.map((item, index) =>
+                  typeof item === 'number' ? (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => gotoRecentPage(item)}
+                      aria-current={item === currentRecentPage ? 'page' : undefined}
+                      className={`min-w-8 rounded border px-2 py-1.5 text-xs transition ${
+                        item === currentRecentPage
+                          ? 'border-blue-500 bg-blue-600 text-white'
+                          : 'border-gray-600 text-gray-300 hover:border-blue-500 hover:text-white'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span key={`gap-${index}`} className="px-1 text-xs text-gray-600">
+                      {item}
+                    </span>
+                  )
+                )}
+                <button
+                  type="button"
+                  onClick={() => gotoRecentPage(currentRecentPage + 1)}
+                  disabled={currentRecentPage >= recentTotalPages}
+                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
           )}
         </section>
       </div>

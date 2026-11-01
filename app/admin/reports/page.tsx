@@ -4,9 +4,10 @@
 //   · SELECT 全部举报、UPDATE 状态要求 rct_role_level() >= 40；
 //   · 触发器 trg_reports_touch_handled 自动补 handled_at / handled_by；
 //   · 触发器 trg_reports_notify 在状态变化时给举报人写 notifications（type='report'）。
+// 列表为服务端分页：每次只取当前页 50 条（select + count + range），筛选下推到 PostgREST。
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -17,7 +18,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const MAX_ROWS = 200;
+const PAGE_SIZE = 50;
 
 const TARGET_TYPES = [
   { value: 'topic', label: '帖子' },
@@ -33,6 +34,8 @@ type ReportStatus = 'open' | 'reviewing' | 'resolved' | 'rejected';
 type StatusFilter = 'all' | ReportStatus;
 type TypeFilter = 'all' | TargetType;
 type PendingActionStatus = 'resolved' | 'rejected';
+
+type PageItem = number | 'ellipsis';
 
 const STATUS_OPTIONS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
   { value: 'all', label: '全部状态' },
@@ -88,6 +91,26 @@ interface PendingAction {
   next: PendingActionStatus;
   note: string;
   error: string | null;
+}
+
+/** 生成页码按钮：当前页前后各 2 页 + 首尾页，中间用省略号连接。 */
+function buildPageItems(currentPage: number, totalPages: number): PageItem[] {
+  const visible = new Set<number>();
+  visible.add(1);
+  visible.add(totalPages);
+  for (let candidate = currentPage - 2; candidate <= currentPage + 2; candidate += 1) {
+    if (candidate >= 1 && candidate <= totalPages) visible.add(candidate);
+  }
+
+  const sorted = Array.from(visible).sort((left, right) => left - right);
+  const items: PageItem[] = [];
+  let previous = 0;
+  for (const pageNumber of sorted) {
+    if (previous !== 0 && pageNumber - previous > 1) items.push('ellipsis');
+    items.push(pageNumber);
+    previous = pageNumber;
+  }
+  return items;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -193,18 +216,22 @@ const SELECT_COLUMNS =
 
 export default function AdminReportsPage() {
   const router = useRouter();
+  const listTopRef = useRef<HTMLDivElement | null>(null);
+  const scrollToTopPendingRef = useRef(false);
 
   const [checking, setChecking] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
 
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, ProfileInfo>>({});
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [page, setPage] = useState(1);
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [action, setAction] = useState<PendingAction | null>(null);
@@ -254,7 +281,7 @@ export default function AdminReportsPage() {
     };
   }, [router]);
 
-  // 2. 列表：状态 + 类型筛选，created_at desc，最多最近 200 条；再二次查询举报人/处理人资料
+  // 2. 列表：服务端分页，只取当前页（status/type 条件同时作用于 count 与 range）；再二次查询本页举报人/处理人资料
   useEffect(() => {
     if (checking || !userId) return;
 
@@ -264,27 +291,50 @@ export default function AdminReportsPage() {
       setLoading(true);
       setLoadError(null);
 
+      const finishLoading = () => {
+        setLoading(false);
+        if (scrollToTopPendingRef.current) {
+          scrollToTopPendingRef.current = false;
+          listTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+
       try {
+        const from = (page - 1) * PAGE_SIZE;
+        const to = from + PAGE_SIZE - 1;
+
         let query = supabase
           .from('reports')
-          .select(SELECT_COLUMNS)
+          .select(SELECT_COLUMNS, { count: 'exact' })
           .order('created_at', { ascending: false })
-          .limit(MAX_ROWS);
+          .range(from, to);
 
         if (statusFilter !== 'all') query = query.eq('status', statusFilter);
         if (typeFilter !== 'all') query = query.eq('target_type', typeFilter);
 
-        const { data, error } = await query;
+        const { data, count, error } = await query;
         if (cancelled) return;
 
         if (error) {
+          // 出错时保留现有列表，只提示错误并提供重试。
           setLoadError(error.message);
-          setReports([]);
-          setProfiles({});
+          setLoading(false);
           return;
         }
 
         const rows = toReportRows(data);
+        // count 由 Content-Range 解析而来；缺失时至少保证当前页可用，避免误判为 0 条。
+        const nextTotal =
+          typeof count === 'number' ? count : (page - 1) * PAGE_SIZE + rows.length;
+        const lastPage = Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
+        setTotalCount(nextTotal);
+
+        // 越界保护：处理/删除后总页数变小，回退到最后一页重新请求（期间保持 loading）。
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+
         setReports(rows);
 
         const profileIds = Array.from(
@@ -299,10 +349,11 @@ export default function AdminReportsPage() {
 
         if (profileIds.length === 0) {
           setProfiles({});
+          finishLoading();
           return;
         }
 
-        // 分块查询，避免 200 条举报的 UUID 把 PostgREST 的 URL 拉得过长。
+        // 分块查询，避免把多行 UUID 的 PostgREST URL 拉得过长。
         const mergedProfiles: Record<string, ProfileInfo> = {};
         const PROFILE_CHUNK_SIZE = 100;
         for (let index = 0; index < profileIds.length; index += PROFILE_CHUNK_SIZE) {
@@ -322,14 +373,11 @@ export default function AdminReportsPage() {
         }
 
         setProfiles(mergedProfiles);
+        finishLoading();
       } catch (error) {
-        if (!cancelled) {
-          setLoadError(errorMessage(error));
-          setReports([]);
-          setProfiles({});
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        setLoadError(errorMessage(error));
+        setLoading(false);
       }
     };
 
@@ -338,7 +386,24 @@ export default function AdminReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, userId, statusFilter, typeFilter, reloadToken]);
+  }, [checking, userId, statusFilter, typeFilter, page, reloadToken]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const hasFilters = statusFilter !== 'all' || typeFilter !== 'all';
+  const pageItems = buildPageItems(currentPage, totalPages);
+
+  const goToPage = (target: number) => {
+    if (loading) return;
+    const next = Math.min(Math.max(1, Math.trunc(target)), totalPages);
+    if (next === page) return;
+    scrollToTopPendingRef.current = true;
+    setPage(next);
+  };
+
+  const reloadCurrentPage = () => {
+    setReloadToken((value) => value + 1);
+  };
 
   const profileName = (id: string | null): string => {
     if (!id) return '——';
@@ -400,16 +465,19 @@ export default function AdminReportsPage() {
       setAction(null);
 
       if (updated) {
-        setReports((previous) => {
-          const matchesStatus = statusFilter === 'all' || statusFilter === updated.status;
-          const matchesType = typeFilter === 'all' || typeFilter === updated.target_type;
-          if (!matchesStatus || !matchesType) {
-            return previous.filter((row) => row.id !== updated.id);
-          }
-          return previous.map((row) => (row.id === updated.id ? updated : row));
-        });
+        const matchesStatus = statusFilter === 'all' || statusFilter === updated.status;
+        const matchesType = typeFilter === 'all' || typeFilter === updated.target_type;
+        if (matchesStatus && matchesType) {
+          // 就地替换当前页中的这一条，不必整页重查。
+          setReports((previous) =>
+            previous.map((row) => (row.id === updated.id ? updated : row))
+          );
+        } else {
+          // 状态变化后不再符合当前筛选：重新拉取当前页（页码越界会由加载逻辑自动回退）。
+          reloadCurrentPage();
+        }
       } else {
-        setReloadToken((value) => value + 1);
+        reloadCurrentPage();
       }
 
       setNotice({
@@ -461,7 +529,11 @@ export default function AdminReportsPage() {
               value={statusFilter}
               onChange={(event) => {
                 const value = event.target.value;
-                if (value === 'all' || isReportStatus(value)) setStatusFilter(value);
+                if (value === 'all' || isReportStatus(value)) {
+                  setStatusFilter(value);
+                  // 改变筛选条件后回到第 1 页。
+                  setPage(1);
+                }
                 setAction(null);
               }}
               disabled={loading}
@@ -484,7 +556,10 @@ export default function AdminReportsPage() {
               value={typeFilter}
               onChange={(event) => {
                 const value = event.target.value;
-                if (value === 'all' || isTargetType(value)) setTypeFilter(value);
+                if (value === 'all' || isTargetType(value)) {
+                  setTypeFilter(value);
+                  setPage(1);
+                }
                 setAction(null);
               }}
               disabled={loading}
@@ -498,25 +573,36 @@ export default function AdminReportsPage() {
             </select>
           </div>
 
-          <div className="flex items-center gap-3 md:ml-auto">
+          <div className="flex flex-wrap items-center gap-3 md:ml-auto">
             <button
               type="button"
-              onClick={() => setReloadToken((value) => value + 1)}
+              onClick={reloadCurrentPage}
               disabled={loading}
               className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
             >
               {loading ? '刷新中...' : '刷新'}
             </button>
             <span className="text-xs text-gray-500">
-              共 {reports.length} 条（最多最近 {MAX_ROWS} 条）
+              共 {totalCount} 条 · 第 {currentPage} / {totalPages} 页（每页 {PAGE_SIZE} 条）
             </span>
           </div>
         </div>
 
         {loadError && (
-          <p className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            加载失败：{loadError}
-          </p>
+          <div
+            role="alert"
+            className="mb-4 flex flex-col gap-2 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span className="break-all">加载失败：{loadError}</span>
+            <button
+              type="button"
+              onClick={reloadCurrentPage}
+              disabled={loading}
+              className="shrink-0 rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
+            >
+              重试
+            </button>
+          </div>
         )}
 
         {notice && (
@@ -531,160 +617,232 @@ export default function AdminReportsPage() {
           </p>
         )}
 
-        {loading ? (
-          <p className="py-12 text-center text-sm text-gray-500">加载中...</p>
-        ) : loadError ? null : reports.length === 0 ? (
-          <p className="rounded border border-gray-700 bg-[#2c2d31] px-4 py-12 text-center text-sm text-gray-500">
-            没有符合条件的举报。
-          </p>
-        ) : (
-          <ul className="space-y-4">
-            {reports.map((report) => {
-              const meta = STATUS_META[report.status];
-              const busy = busyId === report.id;
-              const activeAction =
-                action !== null && action.reportId === report.id ? action : null;
+        <div ref={listTopRef} className="scroll-mt-6">
+          {loading && reports.length === 0 ? (
+            <div
+              aria-busy="true"
+              aria-live="polite"
+              className="space-y-4"
+            >
+              <p className="text-center text-sm text-gray-500">加载中...</p>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-28 animate-pulse rounded-lg border border-gray-700/40 bg-[#232428]"
+                />
+              ))}
+            </div>
+          ) : null}
 
-              return (
-                <li
-                  key={report.id}
-                  className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
+          {!loading && !loadError && reports.length === 0 ? (
+            <p className="rounded border border-gray-700 bg-[#2c2d31] px-4 py-12 text-center text-sm text-gray-500">
+              {hasFilters ? '没有符合当前筛选条件的举报。' : '暂无举报记录。'}
+            </p>
+          ) : null}
+
+          {reports.length > 0 ? (
+            <>
+              <ul
+                aria-busy={loading}
+                className={`space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`}
+              >
+                {reports.map((report) => {
+                  const meta = STATUS_META[report.status];
+                  const busy = busyId === report.id;
+                  const activeAction =
+                    action !== null && action.reportId === report.id ? action : null;
+
+                  return (
+                    <li
+                      key={report.id}
+                      className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5"
                     >
-                      {meta.label}
-                    </span>
-                    <span className="rounded border border-gray-600 bg-[#232428] px-2 py-0.5 text-xs text-gray-300">
-                      {targetTypeLabel(report.target_type)}
-                    </span>
-                    <span className="text-xs text-gray-500">#{report.id}</span>
-                    <span className="text-xs text-gray-500">{formatTime(report.created_at)}</span>
-                  </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
+                        >
+                          {meta.label}
+                        </span>
+                        <span className="rounded border border-gray-600 bg-[#232428] px-2 py-0.5 text-xs text-gray-300">
+                          {targetTypeLabel(report.target_type)}
+                        </span>
+                        <span className="text-xs text-gray-500">#{report.id}</span>
+                        <span className="text-xs text-gray-500">{formatTime(report.created_at)}</span>
+                      </div>
 
-                  <p className="mt-3 text-sm font-bold text-white">原因：{report.reason}</p>
-                  {report.detail && (
-                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-300">
-                      {report.detail}
-                    </p>
+                      <p className="mt-3 text-sm font-bold text-white">原因：{report.reason}</p>
+                      {report.detail && (
+                        <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-300">
+                          {report.detail}
+                        </p>
+                      )}
+
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
+                        <span>
+                          对象：{targetTypeLabel(report.target_type)}
+                          {report.target_id ? ` #${report.target_id}` : '（未提供 ID）'}
+                        </span>
+                        {report.target_url && isInternalPath(report.target_url) ? (
+                          <Link
+                            href={report.target_url}
+                            className="text-blue-400 transition hover:text-blue-300"
+                          >
+                            查看目标 ↗
+                          </Link>
+                        ) : report.target_url ? (
+                          <span className="break-all">链接：{report.target_url}</span>
+                        ) : null}
+                        <span>举报人：{profileName(report.reporter_id)}</span>
+                      </div>
+
+                      <div className="mt-3 border-t border-gray-700/60 pt-3 text-xs text-gray-400">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          <span>
+                            处理人：{report.handled_by ? profileName(report.handled_by) : '——'}
+                          </span>
+                          <span>
+                            处理时间：{report.handled_at ? formatTime(report.handled_at) : '——'}
+                          </span>
+                        </div>
+                        {report.handle_note && (
+                          <p className="mt-2 whitespace-pre-wrap break-words text-gray-300">
+                            处理备注：{report.handle_note}
+                          </p>
+                        )}
+                      </div>
+
+                      {report.status === 'open' || report.status === 'reviewing' ? (
+                        <div className="mt-4">
+                          {activeAction ? (
+                            <div className="rounded border border-orange-500/40 bg-[#232428] p-3">
+                              <p className="mb-2 text-sm text-white">
+                                将举报 #{report.id} 标记为「{STATUS_META[activeAction.next].label}」
+                              </p>
+                              <textarea
+                                value={activeAction.note}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setAction((previous) =>
+                                    previous && previous.reportId === report.id
+                                      ? { ...previous, note: value, error: null }
+                                      : previous
+                                  );
+                                }}
+                                rows={3}
+                                maxLength={1000}
+                                placeholder="请填写处理备注（必填），会展示给举报人。"
+                                className={`${inputClass} resize-y`}
+                              />
+                              {activeAction.error && (
+                                <p className="mt-1 text-xs text-red-400">{activeAction.error}</p>
+                              )}
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleActionSubmit(report)}
+                                  disabled={busy || activeAction.note.trim() === ''}
+                                  className="rounded bg-orange-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {busy ? '提交中...' : '确认提交'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelAction}
+                                  disabled={busy}
+                                  className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:text-white disabled:opacity-50"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {report.status === 'open' && (
+                                <button
+                                  type="button"
+                                  onClick={() => void applyUpdate(report, 'reviewing')}
+                                  disabled={busyId !== null}
+                                  className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {busy ? '处理中...' : '开始处理'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => startAction(report.id, 'resolved')}
+                                disabled={busyId !== null}
+                                className="rounded bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                标记已处理
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => startAction(report.id, 'rejected')}
+                                disabled={busyId !== null}
+                                className="rounded border border-gray-600 bg-[#232428] px-4 py-2 text-sm text-gray-300 transition hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                驳回
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="mt-5 flex flex-col items-center justify-between gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] px-4 py-3 shadow-lg sm:flex-row">
+                <p className="text-xs text-gray-500">
+                  共 {totalCount} 条 · 第 {currentPage} / {totalPages} 页
+                  <span className="ml-2 text-gray-600">（每页 {PAGE_SIZE} 条）</span>
+                </p>
+                <nav aria-label="举报列表分页" className="flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={loading || currentPage <= 1}
+                    className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    上一页
+                  </button>
+
+                  {pageItems.map((item, index) =>
+                    item === 'ellipsis' ? (
+                      <span key={`ellipsis-${index}`} className="px-1 text-xs text-gray-600">
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => goToPage(item)}
+                        disabled={loading}
+                        aria-current={item === currentPage ? 'page' : undefined}
+                        className={`min-w-8 rounded border px-2.5 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                          item === currentPage
+                            ? 'border-blue-500 bg-blue-600 font-bold text-white'
+                            : 'border-gray-600 text-gray-300 hover:border-blue-500 hover:text-white'
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    )
                   )}
 
-                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
-                    <span>
-                      对象：{targetTypeLabel(report.target_type)}
-                      {report.target_id ? ` #${report.target_id}` : '（未提供 ID）'}
-                    </span>
-                    {report.target_url && isInternalPath(report.target_url) ? (
-                      <Link
-                        href={report.target_url}
-                        className="text-blue-400 transition hover:text-blue-300"
-                      >
-                        查看目标 ↗
-                      </Link>
-                    ) : report.target_url ? (
-                      <span className="break-all">链接：{report.target_url}</span>
-                    ) : null}
-                    <span>举报人：{profileName(report.reporter_id)}</span>
-                  </div>
-
-                  <div className="mt-3 border-t border-gray-700/60 pt-3 text-xs text-gray-400">
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      <span>
-                        处理人：{report.handled_by ? profileName(report.handled_by) : '——'}
-                      </span>
-                      <span>
-                        处理时间：{report.handled_at ? formatTime(report.handled_at) : '——'}
-                      </span>
-                    </div>
-                    {report.handle_note && (
-                      <p className="mt-2 whitespace-pre-wrap break-words text-gray-300">
-                        处理备注：{report.handle_note}
-                      </p>
-                    )}
-                  </div>
-
-                  {report.status === 'open' || report.status === 'reviewing' ? (
-                    <div className="mt-4">
-                      {activeAction ? (
-                        <div className="rounded border border-orange-500/40 bg-[#232428] p-3">
-                          <p className="mb-2 text-sm text-white">
-                            将举报 #{report.id} 标记为「{STATUS_META[activeAction.next].label}」
-                          </p>
-                          <textarea
-                            value={activeAction.note}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setAction((previous) =>
-                                previous && previous.reportId === report.id
-                                  ? { ...previous, note: value, error: null }
-                                  : previous
-                              );
-                            }}
-                            rows={3}
-                            maxLength={1000}
-                            placeholder="请填写处理备注（必填），会展示给举报人。"
-                            className={`${inputClass} resize-y`}
-                          />
-                          {activeAction.error && (
-                            <p className="mt-1 text-xs text-red-400">{activeAction.error}</p>
-                          )}
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleActionSubmit(report)}
-                              disabled={busy || activeAction.note.trim() === ''}
-                              className="rounded bg-orange-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {busy ? '提交中...' : '确认提交'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelAction}
-                              disabled={busy}
-                              className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:text-white disabled:opacity-50"
-                            >
-                              取消
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {report.status === 'open' && (
-                            <button
-                              type="button"
-                              onClick={() => void applyUpdate(report, 'reviewing')}
-                              disabled={busyId !== null}
-                              className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {busy ? '处理中...' : '开始处理'}
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => startAction(report.id, 'resolved')}
-                            disabled={busyId !== null}
-                            className="rounded bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            标记已处理
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startAction(report.id, 'rejected')}
-                            disabled={busyId !== null}
-                            className="rounded border border-gray-600 bg-[#232428] px-4 py-2 text-sm text-gray-300 transition hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            驳回
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                  <button
+                    type="button"
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={loading || currentPage >= totalPages}
+                    className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    下一页
+                  </button>
+                </nav>
+              </div>
+            </>
+          ) : null}
+        </div>
       </div>
     </main>
   );

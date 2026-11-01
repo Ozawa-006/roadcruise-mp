@@ -1,7 +1,7 @@
 // app/admin/audit/page.tsx
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,10 +12,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// 当前数据量下一次性拉取最近 500 条，筛选与分页都在前端完成，避免每次切换筛选都请求数据库。
-// 说明：audit_log 会随运营时间持续增长；若后续单表记录明显超过这个量级，
-// 再把筛选和分页改为服务端实现（select + order + range + count），这里只作为兜底上限。
-const MAX_ROWS = 500;
+// 服务端分页：每次只取当前页的 50 条（select + count: 'exact' + range），
+// 表/动作筛选全部下推到 PostgREST，不再依赖一次性大 limit 兜底。
 const PAGE_SIZE = 50;
 
 const TABLE_OPTIONS = [
@@ -56,6 +54,34 @@ interface AuditLogRow {
   targetId: string | null;
   detail: unknown;
   createdAt: string;
+}
+
+interface AuditPageResult {
+  rows: AuditLogRow[];
+  totalCount: number;
+  error: string | null;
+}
+
+type PageItem = number | 'ellipsis';
+
+/** 生成页码按钮：当前页前后各 2 页 + 首尾页，中间用省略号连接。 */
+function buildPageItems(currentPage: number, totalPages: number): PageItem[] {
+  const visible = new Set<number>();
+  visible.add(1);
+  visible.add(totalPages);
+  for (let candidate = currentPage - 2; candidate <= currentPage + 2; candidate += 1) {
+    if (candidate >= 1 && candidate <= totalPages) visible.add(candidate);
+  }
+
+  const sorted = Array.from(visible).sort((left, right) => left - right);
+  const items: PageItem[] = [];
+  let previous = 0;
+  for (const pageNumber of sorted) {
+    if (previous !== 0 && pageNumber - previous > 1) items.push('ellipsis');
+    items.push(pageNumber);
+    previous = pageNumber;
+  }
+  return items;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -190,48 +216,62 @@ function tableLabel(tableName: string): string {
   return TABLE_LABELS[tableName] ?? tableName;
 }
 
-async function fetchAuditLogs(): Promise<{ rows: AuditLogRow[]; error: string | null }> {
-  const { data, error } = await supabase
-    .from('audit_log')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(MAX_ROWS);
+/**
+ * 只取指定页：count 与筛选条件共用同一条查询，range 决定实际返回的行。
+ * 注意：range(from, to) 的 from/to 从 0 开始且包含端点。
+ */
+async function fetchAuditLogs(
+  page: number,
+  tableFilter: TableFilter,
+  actionFilter: ActionFilter
+): Promise<AuditPageResult> {
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
 
-  if (error) return { rows: [], error: error.message };
+  let query = supabase
+    .from('audit_log')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (tableFilter !== 'all') query = query.eq('table_name', tableFilter);
+  if (actionFilter !== 'all') query = query.eq('action', actionFilter);
+
+  const { data, count, error } = await query;
+
+  if (error) return { rows: [], totalCount: 0, error: error.message };
 
   const rows = (data ?? [])
     .map((raw) => normalizeAuditRow(raw))
     .filter((row): row is AuditLogRow => row !== null);
 
-  return { rows, error: null };
+  // count 由 Content-Range 解析而来；缺失时至少保证当前页可用，避免误判为 0 条。
+  const totalCount = typeof count === 'number' ? count : (page - 1) * PAGE_SIZE + rows.length;
+  return { rows, totalCount, error: null };
 }
 
 export default function AdminAuditPage() {
   const [checking, setChecking] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [granted, setGranted] = useState(false);
   const [userLevel, setUserLevel] = useState(0);
   const [rows, setRows] = useState<AuditLogRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tableFilter, setTableFilter] = useState<TableFilter>('all');
   const [actionFilter, setActionFilter] = useState<ActionFilter>('all');
   const [page, setPage] = useState(1);
+  const [reloadToken, setReloadToken] = useState(0);
+  const listTopRef = useRef<HTMLDivElement | null>(null);
+  const scrollToTopPendingRef = useRef(false);
   const router = useRouter();
 
-  const loadLogs = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    const { rows: nextRows, error: fetchError } = await fetchAuditLogs();
-    setRows(nextRows);
-    setError(fetchError);
-    setLoading(false);
-  }, []);
-
+  // 1. 权限门禁：未登录 -> /login；低于 Lv.90 -> alert + /admin
   useEffect(() => {
     let active = true;
 
-    const checkAuthAndLoad = async () => {
+    const checkAuth = async () => {
       const {
         data: { user },
         error: authError,
@@ -275,40 +315,82 @@ export default function AdminAuditPage() {
       }
 
       setUserLevel(level);
+      setGranted(true);
       setChecking(false);
-      await loadLogs();
     };
 
-    checkAuthAndLoad();
+    void checkAuth();
     return () => {
       active = false;
     };
-  }, [router, loadLogs]);
+  }, [router]);
 
-  const filteredRows = useMemo(() => {
-    return rows.filter(
-      (row) =>
-        (tableFilter === 'all' || row.tableName === tableFilter) &&
-        (actionFilter === 'all' || row.action === actionFilter)
-    );
-  }, [rows, tableFilter, actionFilter]);
+  // 2. 服务端分页：页号 / 筛选条件 / 刷新令牌任一变化都只重新请求当前页。
+  useEffect(() => {
+    if (!granted) return;
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+
+      const result = await fetchAuditLogs(page, tableFilter, actionFilter);
+      if (cancelled) return;
+
+      if (result.error) {
+        // 保留现有数据，只提示错误 + 提供重试。
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
+
+      const lastPage = Math.max(1, Math.ceil(result.totalCount / PAGE_SIZE));
+      setTotalCount(result.totalCount);
+
+      // 越界保护（数据被删除后总页数变小）：回到最后一页重新请求，期间保持 loading。
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
+
+      setRows(result.rows);
+      setLoading(false);
+
+      if (scrollToTopPendingRef.current) {
+        scrollToTopPendingRef.current = false;
+        listTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [granted, page, tableFilter, actionFilter, reloadToken]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const pageRows = useMemo(
-    () => filteredRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [filteredRows, currentPage]
-  );
+  const hasFilters = tableFilter !== 'all' || actionFilter !== 'all';
+  const pageItems = buildPageItems(currentPage, totalPages);
 
-  const handleRefresh = async () => {
-    setPage(1);
-    await loadLogs();
+  const goToPage = (target: number) => {
+    if (loading) return;
+    const next = Math.min(Math.max(1, Math.trunc(target)), totalPages);
+    if (next === page) return;
+    scrollToTopPendingRef.current = true;
+    setPage(next);
+  };
+
+  const handleRefresh = () => {
+    setReloadToken((value) => value + 1);
   };
 
   const handleTableChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const next = TABLE_OPTIONS.find((option) => option.value === event.target.value);
     if (next) {
       setTableFilter(next.value);
+      // 改变筛选条件后回到第 1 页，避免停留在不存在的页码上。
       setPage(1);
     }
   };
@@ -421,169 +503,226 @@ export default function AdminAuditPage() {
 
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
             <span>
-              已加载 <span className="text-gray-300">{rows.length}</span> / {MAX_ROWS} 条
-            </span>
-            <span>
-              筛选后 <span className="text-gray-300">{filteredRows.length}</span> 条
+              共 <span className="text-gray-300">{totalCount}</span> 条 · 第{' '}
+              <span className="text-gray-300">{currentPage}</span> / {totalPages} 页
             </span>
             <span>每页 {PAGE_SIZE} 条</span>
-            {rows.length >= MAX_ROWS && (
-              <span className="text-orange-400">已达上限，仅显示最近 {MAX_ROWS} 条</span>
+            <span>服务端分页 · 仅请求当前页</span>
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="text-blue-400 transition hover:text-blue-300"
+              >
+                清除筛选
+              </button>
             )}
           </div>
         </section>
 
-        {loading ? (
-          <div className="rounded-lg border border-gray-700 bg-[#2c2d31] p-10 text-center text-sm text-gray-500 shadow-lg">
-            加载审计日志中...
-          </div>
-        ) : error ? (
-          <div
-            role="alert"
-            className="rounded-lg border border-red-700/60 bg-red-900/20 p-5 shadow-lg"
-          >
-            <p className="text-sm font-bold text-red-400">加载失败</p>
-            <p className="mt-1 break-all text-xs text-red-300/80">{error}</p>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="mt-3 rounded bg-red-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-red-600"
+        <div ref={listTopRef} className="scroll-mt-6 space-y-4">
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-700/60 bg-red-900/20 p-5 shadow-lg"
             >
-              重试
-            </button>
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-lg border border-gray-700 bg-[#2c2d31] p-10 text-center shadow-lg">
-            <p className="text-sm text-gray-400">暂无审计记录</p>
-            <p className="mt-1 text-xs text-gray-600">
-              数据库触发器会在关键变更发生后自动写入日志。
-            </p>
-          </div>
-        ) : filteredRows.length === 0 ? (
-          <div className="rounded-lg border border-gray-700 bg-[#2c2d31] p-10 text-center shadow-lg">
-            <p className="text-sm text-gray-400">没有符合当前筛选条件的记录</p>
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="mt-3 text-xs font-bold text-blue-400 transition hover:text-blue-300"
-            >
-              清除筛选
-            </button>
-          </div>
-        ) : (
-          <>
-            <section className="overflow-hidden rounded-lg border border-gray-700 bg-[#2c2d31] shadow-lg">
-              <div className="hidden grid-cols-[9.5rem_4.5rem_11rem_9rem_minmax(0,1fr)] gap-4 border-b border-gray-700 bg-[#232428] px-4 py-3 text-xs font-bold text-gray-500 lg:grid">
-                <span>时间</span>
-                <span>动作</span>
-                <span>目标</span>
-                <span>操作者</span>
-                <span>详情</span>
-              </div>
-
-              <div className="divide-y divide-gray-700/60">
-                {pageRows.map((row) => {
-                  const meta = actionMeta(row.action);
-                  return (
-                    <article
-                      key={row.id}
-                      className="grid grid-cols-1 gap-3 px-4 py-4 transition hover:bg-[#33343a]/60 lg:grid-cols-[9.5rem_4.5rem_11rem_9rem_minmax(0,1fr)] lg:items-start lg:gap-4"
-                    >
-                      <div className="flex items-center justify-between gap-3 lg:block">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                          时间
-                        </span>
-                        <time dateTime={row.createdAt} className="text-xs text-gray-400">
-                          {formatTime(row.createdAt)}
-                        </time>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3 lg:block">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                          动作
-                        </span>
-                        <span
-                          className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
-                        >
-                          {meta.label}
-                        </span>
-                      </div>
-
-                      <div className="flex items-start justify-between gap-3 lg:block">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                          目标
-                        </span>
-                        <div className="min-w-0 text-right lg:text-left">
-                          <p className="text-sm font-medium text-white">{tableLabel(row.tableName)}</p>
-                          <p className="break-all font-mono text-xs text-gray-500">
-                            {row.tableName}
-                            {row.targetId ? ` · #${row.targetId}` : ''}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start justify-between gap-3 lg:block">
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                          操作者
-                        </span>
-                        <div className="min-w-0 text-right lg:text-left">
-                          <p className="break-all text-sm text-gray-300">
-                            {row.actorLabel || '后台/系统'}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {row.actorRole !== null ? `Lv.${row.actorRole}` : 'Lv.—'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="min-w-0 border-t border-gray-700/60 pt-3 lg:border-0 lg:pt-0">
-                        <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                          详情
-                        </span>
-                        <p className="text-xs leading-relaxed text-gray-400">
-                          {summarizeDetail(row.detail)}
-                        </p>
-                        <details className="mt-2">
-                          <summary className="inline-flex cursor-pointer select-none items-center gap-1 text-xs text-blue-400 transition hover:text-blue-300">
-                            查看变更 JSON
-                            <span aria-hidden="true">▾</span>
-                          </summary>
-                          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded border border-gray-700 bg-[#18191c] p-3 text-[11px] leading-relaxed text-gray-300">
-                            {detailJson(row.detail)}
-                          </pre>
-                        </details>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-
-            <div className="flex flex-col items-center justify-between gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] px-4 py-3 shadow-lg sm:flex-row">
-              <p className="text-xs text-gray-500">
-                第 {currentPage} / {totalPages} 页 · 共 {filteredRows.length} 条
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage <= 1}
-                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  上一页
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  下一页
-                </button>
-              </div>
+              <p className="text-sm font-bold text-red-400">加载失败</p>
+              <p className="mt-1 break-all text-xs text-red-300/80">{error}</p>
+              <button
+                type="button"
+                onClick={handleRefresh}
+                className="mt-3 rounded bg-red-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-red-600"
+              >
+                重试
+              </button>
             </div>
-          </>
-        )}
+          )}
+
+          {loading && rows.length === 0 ? (
+            <div
+              aria-busy="true"
+              aria-live="polite"
+              className="space-y-3 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg"
+            >
+              <p className="text-xs text-gray-500">加载审计日志中...</p>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-12 animate-pulse rounded border border-gray-700/40 bg-[#232428]"
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {!loading && !error && rows.length === 0 ? (
+            <div className="rounded-lg border border-gray-700 bg-[#2c2d31] p-10 text-center shadow-lg">
+              {hasFilters ? (
+                <>
+                  <p className="text-sm text-gray-400">没有符合当前筛选条件的记录</p>
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="mt-3 text-xs font-bold text-blue-400 transition hover:text-blue-300"
+                  >
+                    清除筛选
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-400">暂无审计记录</p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    数据库触发器会在关键变更发生后自动写入日志。
+                  </p>
+                </>
+              )}
+            </div>
+          ) : null}
+
+          {rows.length > 0 ? (
+            <>
+              <section
+                aria-busy={loading}
+                className={`overflow-hidden rounded-lg border border-gray-700 bg-[#2c2d31] shadow-lg transition-opacity ${
+                  loading ? 'opacity-60' : ''
+                }`}
+              >
+                <div className="hidden grid-cols-[9.5rem_4.5rem_11rem_9rem_minmax(0,1fr)] gap-4 border-b border-gray-700 bg-[#232428] px-4 py-3 text-xs font-bold text-gray-500 lg:grid">
+                  <span>时间</span>
+                  <span>动作</span>
+                  <span>目标</span>
+                  <span>操作者</span>
+                  <span>详情</span>
+                </div>
+
+                <div className="divide-y divide-gray-700/60">
+                  {rows.map((row) => {
+                    const meta = actionMeta(row.action);
+                    return (
+                      <article
+                        key={row.id}
+                        className="grid grid-cols-1 gap-3 px-4 py-4 transition hover:bg-[#33343a]/60 lg:grid-cols-[9.5rem_4.5rem_11rem_9rem_minmax(0,1fr)] lg:items-start lg:gap-4"
+                      >
+                        <div className="flex items-center justify-between gap-3 lg:block">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
+                            时间
+                          </span>
+                          <time dateTime={row.createdAt} className="text-xs text-gray-400">
+                            {formatTime(row.createdAt)}
+                          </time>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 lg:block">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
+                            动作
+                          </span>
+                          <span
+                            className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
+                          >
+                            {meta.label}
+                          </span>
+                        </div>
+
+                        <div className="flex items-start justify-between gap-3 lg:block">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
+                            目标
+                          </span>
+                          <div className="min-w-0 text-right lg:text-left">
+                            <p className="text-sm font-medium text-white">{tableLabel(row.tableName)}</p>
+                            <p className="break-all font-mono text-xs text-gray-500">
+                              {row.tableName}
+                              {row.targetId ? ` · #${row.targetId}` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-start justify-between gap-3 lg:block">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
+                            操作者
+                          </span>
+                          <div className="min-w-0 text-right lg:text-left">
+                            <p className="break-all text-sm text-gray-300">
+                              {row.actorLabel || '后台/系统'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {row.actorRole !== null ? `Lv.${row.actorRole}` : 'Lv.—'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="min-w-0 border-t border-gray-700/60 pt-3 lg:border-0 lg:pt-0">
+                          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
+                            详情
+                          </span>
+                          <p className="text-xs leading-relaxed text-gray-400">
+                            {summarizeDetail(row.detail)}
+                          </p>
+                          <details className="mt-2">
+                            <summary className="inline-flex cursor-pointer select-none items-center gap-1 text-xs text-blue-400 transition hover:text-blue-300">
+                              查看变更 JSON
+                              <span aria-hidden="true">▾</span>
+                            </summary>
+                            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded border border-gray-700 bg-[#18191c] p-3 text-[11px] leading-relaxed text-gray-300">
+                              {detailJson(row.detail)}
+                            </pre>
+                          </details>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <div className="flex flex-col items-center justify-between gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] px-4 py-3 shadow-lg sm:flex-row">
+                <p className="text-xs text-gray-500">
+                  共 {totalCount} 条 · 第 {currentPage} / {totalPages} 页
+                  <span className="ml-2 text-gray-600">（每页 {PAGE_SIZE} 条）</span>
+                </p>
+                <nav aria-label="审计日志分页" className="flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={loading || currentPage <= 1}
+                    className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    上一页
+                  </button>
+
+                  {pageItems.map((item, index) =>
+                    item === 'ellipsis' ? (
+                      <span key={`ellipsis-${index}`} className="px-1 text-xs text-gray-600">
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => goToPage(item)}
+                        disabled={loading}
+                        aria-current={item === currentPage ? 'page' : undefined}
+                        className={`min-w-8 rounded border px-2.5 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                          item === currentPage
+                            ? 'border-blue-500 bg-blue-600 font-bold text-white'
+                            : 'border-gray-600 text-gray-300 hover:border-blue-500 hover:text-white'
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    )
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={loading || currentPage >= totalPages}
+                    className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    下一页
+                  </button>
+                </nav>
+              </div>
+            </>
+          ) : null}
+        </div>
       </div>
     </main>
   );

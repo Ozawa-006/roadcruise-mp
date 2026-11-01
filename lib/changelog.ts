@@ -21,10 +21,38 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.31v',
+    date: '2026-11-01',
+    title: '账号找回与后台分页',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新增忘记密码流程：登录页「忘记密码？」发送重置邮件，邮件链接进入 `/reset-password` 设置新密码（仅接受真实的重置链接，普通登录态无法直接改密）',
+      },
+      {
+        kind: 'feature',
+        text: '后台审计日志与举报处理改为服务端分页（每页 50 条，支持筛选、总数、页码）',
+      },
+      {
+        kind: 'feature',
+        text: '后台用户管理与处罚记录改为服务端分页 + 服务端搜索/筛选（昵称、专属 ID、SteamID、角色、动作、状态）',
+      },
+      {
+        kind: 'chore',
+        text: 'Supabase Auth 的 Site URL 改为 `https://www.roadcruise-mp.com`，Redirect allow list 同时包含带/不带 www 的域名',
+      },
+      {
+        kind: 'chore',
+        text: '注意：自助找回邮件需要项目配置自定义 SMTP 才能向所有用户发信（Supabase 默认邮件服务仅限项目成员）；代码流程已就绪',
+      },
+    ],
+  },
+  {
     version: '0.0.30v',
     date: '2026-11-01',
     title: '团队架构与社区治理',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

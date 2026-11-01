@@ -31,8 +31,8 @@ interface PendingState {
 function LoginForm() {
   const searchParams = useSearchParams();
 
-  // 视图状态：login(登录) | guide(注册门槛提示) | register_form(填表)
-  const [viewState, setViewState] = useState<'login' | 'guide' | 'register_form'>('login');
+  // 视图状态：login(登录) | guide(注册门槛提示) | register_form(填表) | forgot(找回密码)
+  const [viewState, setViewState] = useState<'login' | 'guide' | 'register_form' | 'forgot'>('login');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -149,6 +149,30 @@ function LoginForm() {
     setLoading(true);
     setMessage('');
 
+    // 找回密码：只发送重置邮件，不校验密码输入
+    if (viewState === 'forgot') {
+      if (!email.trim()) {
+        setMessage('请输入注册时使用的邮箱。');
+        setLoading(false);
+        return;
+      }
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) throw error;
+
+        // 不暴露“邮箱是否存在”，统一提示
+        setMessage('📧 如果该邮箱已注册，重置密码邮件已发送，请在 1 小时内点击邮件中的链接。');
+      } catch (error) {
+        const err = error as { message?: string };
+        setMessage(`发送失败：${err.message || '未知错误'}`);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (viewState === 'register_form' && password !== confirmPassword) {
       setMessage('两次输入的密码不一致，请检查！');
       setLoading(false);
@@ -225,8 +249,31 @@ function LoginForm() {
                 {loading ? '登录中...' : '登 录'}
               </button>
             </form>
+            <div className="mt-6 text-center space-y-2">
+              <button onClick={() => { setViewState('guide'); setMessage(''); }} className="text-sm text-blue-400 hover:underline block mx-auto">没有账号？去注册</button>
+              <button onClick={() => { setViewState('forgot'); setMessage(''); }} className="text-sm text-gray-400 hover:text-white hover:underline block mx-auto">忘记密码？</button>
+            </div>
+          </>
+        )}
+
+        {/* 视图四：找回密码（发送重置邮件） */}
+        {viewState === 'forgot' && (
+          <>
+            <h1 className="text-2xl font-bold mb-2 text-center">找回密码</h1>
+            <p className="text-center text-sm text-gray-400 mb-6">
+              输入注册时使用的邮箱，我们会发送一封重置密码邮件。
+            </p>
+            <form onSubmit={handleAuth} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-400 mb-1">邮箱地址</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-2 bg-[#18191c] border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-white" placeholder="you@example.com" />
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded transition mt-2 disabled:opacity-50">
+                {loading ? '发送中...' : '发送重置邮件'}
+              </button>
+            </form>
             <div className="mt-6 text-center">
-              <button onClick={() => { setViewState('guide'); setMessage(''); }} className="text-sm text-blue-400 hover:underline">没有账号？去注册</button>
+              <button onClick={() => { setViewState('login'); setMessage(''); }} className="text-sm text-blue-400 hover:underline">返回登录</button>
             </div>
           </>
         )}
