@@ -42,6 +42,10 @@ export const CHANGELOG: ChangelogEntry[] = [
         kind: 'chore',
         text: '已发布的中文帖子/公告不修改；新增 `supabase/bilingual-content.sql`',
       },
+      {
+        kind: 'fix',
+        text: '404 / 加载中 / 路由错误 / 全局错误页与语言切换提示在英文模式下不再出现中文',
+      },
     ],
   },
   {

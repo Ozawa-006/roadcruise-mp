@@ -29,7 +29,7 @@ export default function LanguageSwitcher({ compact = false }: { compact?: boolea
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="语言 / Language"
+        title={locale === 'en' ? 'Language' : '语言 / Language'}
         className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-gray-300 transition hover:text-white"
       >
         <span aria-hidden="true">🌐</span>
