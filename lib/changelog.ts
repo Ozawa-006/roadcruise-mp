@@ -27,11 +27,37 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.50v',
+    date: '2026-11-02',
+    title: 'Discord 账号绑定与身份组同步',
+    title_en: 'Discord account linking and role sync',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '账号设置新增 Discord 绑定：OAuth 连接/解除绑定，显示 Discord 用户名、是否已加入服务器；绑定后自动按映射同步身份组',
+      },
+      {
+        kind: 'feature',
+        text: '后台新增 Discord 集成管理页：站点角色 → Discord 身份组映射、已绑定账号列表、单个/全部同步、Bot 状态检查',
+      },
+      {
+        kind: 'chore',
+        text: '新增 discord_accounts / discord_oauth_states / discord_role_mappings 表与 OAuth/Bot API；需配置 DISCORD_CLIENT_ID、DISCORD_CLIENT_SECRET、DISCORD_BOT_TOKEN 后启用',
+      },
+    ],
+    items_en: [
+      'Account settings now support Discord linking: OAuth connect/unlink, shows Discord username and guild membership; roles sync automatically after linking',
+      'New Discord integration admin page: site role → Discord role mappings, linked accounts, per-user/all sync and bot status',
+      'Added discord_accounts / discord_oauth_states / discord_role_mappings tables and OAuth/Bot APIs; enable after setting DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET and DISCORD_BOT_TOKEN',
+    ],
+  },
+  {
     version: '0.0.49v',
     date: '2026-11-02',
     title: 'Discord 消息推送',
     title_en: 'Discord webhook notifications',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

@@ -43,6 +43,8 @@ const EN: Record<string, string> = {
   '操作审计': 'Audit Log',
   '查看关键操作记录（权限/车队/活动/规则）':
     'Review key actions (permissions, convoys, events, rules)',
+  'Discord 集成': 'Discord Integration',
+  '绑定账号 / 身份组映射 / 同步': 'Linked accounts / role mappings / sync',
   '系统核心设置（尚未开放）': 'Core System Settings (not available yet)',
   '预留模块：功能尚未上线，暂不可用。':
     'Reserved module: this feature is not live yet and is currently unavailable.',
@@ -316,6 +318,15 @@ export default function AdminDashboard() {
               <div className="text-4xl mb-4 group-hover:scale-110 transition">🛡️</div>
               <h2 className="text-xl font-bold text-white mb-2">{tr('操作审计')}</h2>
               <p className="text-sm text-gray-400">{tr('查看关键操作记录（权限/车队/活动/规则）')}</p>
+            </Link>
+          )}
+
+          {/* 🌟 Discord 集成 (Lv.90 高级社区经理及以上可见，与接口 requireStaff(90) 一致) */}
+          {canEditRules(roleLevel) && (
+            <Link href="/admin/discord" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-indigo-500 transition shadow-lg group block">
+              <div className="text-4xl mb-4 group-hover:scale-110 transition">💬</div>
+              <h2 className="text-xl font-bold text-white mb-2">{tr('Discord 集成')}</h2>
+              <p className="text-sm text-gray-400">{tr('绑定账号 / 身份组映射 / 同步')}</p>
             </Link>
           )}
 

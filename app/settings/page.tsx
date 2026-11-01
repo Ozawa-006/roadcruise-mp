@@ -119,6 +119,54 @@ const EN: Record<string, string> = {
     '❌ Unable to read the Steam library. Please set your profile and game details to public.',
   '❌ Steam 绑定失败，请稍后重试。': '❌ Steam binding failed, please try again later.',
 
+  // Discord 绑定
+  'Discord 绑定': 'Discord Linking',
+  '绑定 Discord 后可同步社区身份组；请先加入 Discord 服务器，再连接你的账号。':
+    'Link Discord to sync community roles. Join the Discord server first, then connect your account.',
+  '建议先加入 Discord 服务器，这样绑定后可以自动同步身份组。':
+    'We recommend joining the Discord server first so roles can sync after linking.',
+  'Discord 绑定暂未开放（管理员配置应用后可用）。':
+    'Discord linking is not available yet (an administrator must configure the Discord app first).',
+  '登录后才能绑定 Discord。': 'Sign in to link Discord.',
+  '尚未绑定 Discord 账号。': 'No Discord account linked yet.',
+  '连接 Discord': 'Connect Discord',
+  '正在跳转...': 'Redirecting...',
+  '加入服务器': 'Join the server',
+  '加入 Discord 服务器': 'Join the Discord server',
+  '✅ 已加入服务器': '✅ Joined the server',
+  '⚠️ 尚未加入服务器': '⚠️ Not in the server yet',
+  '绑定时间：{time}': 'Linked on {time}',
+  '解除绑定': 'Unlink',
+  '解除绑定中...': 'Unlinking...',
+  '确定要解除 Discord 绑定吗？解除后将停止同步 Discord 身份组。':
+    'Unlink your Discord account? Discord role syncing will stop.',
+  '✅ 已解除 Discord 绑定。': '✅ Discord account unlinked.',
+  '❌ 解除 Discord 绑定失败，请稍后重试。': '❌ Failed to unlink Discord, please try again later.',
+  '网络错误：无法解除 Discord 绑定，请稍后重试。':
+    'Network error: unable to unlink Discord, please try again later.',
+  '🎉 Discord 账号绑定成功！': '🎉 Discord account linked!',
+  '❌ Discord 绑定失败，请稍后重试。': '❌ Discord linking failed, please try again later.',
+  '❌ Discord 授权会话无效，请重新发起绑定。':
+    '❌ The Discord authorization session is invalid. Please start linking again.',
+  '❌ Discord 授权会话已过期，请重新发起绑定。':
+    '❌ The Discord authorization session has expired. Please start linking again.',
+  '❌ Discord 绑定保存失败，请稍后重试。':
+    '❌ Failed to save the Discord link, please try again later.',
+  'Discord 绑定状态加载失败，请稍后重试。':
+    'Failed to load Discord linking status, please try again later.',
+  '网络错误：无法加载 Discord 绑定状态，请稍后重试。':
+    'Network error: unable to load Discord linking status, please try again later.',
+  '无法加载 Discord 绑定状态：登录状态已失效，请重新登录。':
+    'Unable to load Discord linking status: your session has expired, please sign in again.',
+  '登录状态已失效，请重新登录后再绑定 Discord。':
+    'Your session has expired. Please sign in again before linking Discord.',
+  '无法发起 Discord 授权，请稍后重试。':
+    'Unable to start Discord authorization, please try again later.',
+  '网络错误：无法发起 Discord 授权，请稍后重试。':
+    'Network error: unable to start Discord authorization, please try again later.',
+  '暂时无法获取 Discord 绑定状态。': 'Unable to load Discord linking status right now.',
+  '重试': 'Retry',
+
   // 修改密码
   '账号安全': 'Account Security',
   '修改登录密码需要先验证当前密码；修改成功后请使用新密码重新登录。':
@@ -186,6 +234,38 @@ function getErrorMessage(
   return translate('未知错误');
 }
 
+// GET /api/discord/me 的返回结构；页面只展示其中一部分字段，其余字段保留以便按需使用。
+type DiscordAccountInfo = {
+  discord_id: string;
+  username: string;
+  global_name: string | null;
+  avatar_hash: string | null;
+  guild_member: boolean | null;
+  guild_roles: string[] | null;
+  linked_at: string | null;
+};
+
+type DiscordStatus = {
+  ok: boolean;
+  oauthConfigured: boolean;
+  botConfigured: boolean;
+  guildId: string | null;
+  inviteUrl: string | null;
+  linked: boolean;
+  account: DiscordAccountInfo | null;
+};
+
+// 跳转/链接地址只接受 http(s)，防止接口返回 javascript: 等协议被当成可点击链接。
+function isSafeHttpUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 function SettingsForm() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -221,6 +301,17 @@ function SettingsForm() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState('');
 
+  // Discord 绑定：status 为 null 且非加载中/非报错时显示占位；reloadKey 用于手动重试。
+  const [discordStatus, setDiscordStatus] = useState<DiscordStatus | null>(null);
+  const [discordLoading, setDiscordLoading] = useState(true);
+  const [discordBusy, setDiscordBusy] = useState(false);
+  const [discordError, setDiscordError] = useState('');
+  const [discordNotice, setDiscordNotice] = useState<{
+    text: string;
+    tone: 'success' | 'error';
+  } | null>(null);
+  const [discordReloadKey, setDiscordReloadKey] = useState(0);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
 
@@ -249,6 +340,33 @@ function SettingsForm() {
       };
       steamNotice = errorMessages[errorCode] ?? tr('❌ Steam 绑定失败，请稍后重试。');
       window.history.replaceState({}, '', '/settings');
+    }
+
+    // Discord OAuth 回调提示：/settings?discord=linked|error|invalid_state|...
+    // 读取后用 URLSearchParams 只移除 discord 参数，避免刷新页面时重复提示。
+    const discordResult = searchParams.get('discord');
+    if (discordResult) {
+      const discordMessages: Record<string, { text: string; tone: 'success' | 'error' }> = {
+        linked: { text: tr('🎉 Discord 账号绑定成功！'), tone: 'success' },
+        error: { text: tr('❌ Discord 绑定失败，请稍后重试。'), tone: 'error' },
+        invalid_state: { text: tr('❌ Discord 授权会话无效，请重新发起绑定。'), tone: 'error' },
+        state_expired: { text: tr('❌ Discord 授权会话已过期，请重新发起绑定。'), tone: 'error' },
+        not_configured: { text: tr('Discord 绑定暂未开放（管理员配置应用后可用）。'), tone: 'error' },
+        save_failed: { text: tr('❌ Discord 绑定保存失败，请稍后重试。'), tone: 'error' },
+      };
+      const discordMessage = discordMessages[discordResult] ?? {
+        text: tr('❌ Discord 绑定失败，请稍后重试。'),
+        tone: 'error' as const,
+      };
+      const remainingParams = new URLSearchParams(window.location.search);
+      remainingParams.delete('discord');
+      const remainingQuery = remainingParams.toString();
+      window.history.replaceState(
+        {},
+        '',
+        remainingQuery ? `/settings?${remainingQuery}` : '/settings'
+      );
+      queueMicrotask(() => setDiscordNotice(discordMessage));
     }
 
     // 放到微任务里提示，避免在 effect 内同步 setState 造成级联渲染。
@@ -293,6 +411,58 @@ function SettingsForm() {
       }
     };
   }, []);
+
+  // 登录后拉取 Discord 绑定状态；解除绑定或手动重试时通过 reloadKey 重新拉取。
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    const loadDiscordStatus = async () => {
+      setDiscordStatus(null);
+      setDiscordLoading(true);
+      setDiscordError('');
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) {
+          if (!cancelled) {
+            setDiscordError(tr('无法加载 Discord 绑定状态：登录状态已失效，请重新登录。'));
+          }
+          return;
+        }
+
+        const res = await fetch('/api/discord/me', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+        });
+        const data = (await res.json().catch(() => null)) as DiscordStatus | null;
+
+        if (!res.ok || !data?.ok) {
+          if (!cancelled) setDiscordError(tr('Discord 绑定状态加载失败，请稍后重试。'));
+          return;
+        }
+
+        if (!cancelled) setDiscordStatus(data);
+      } catch {
+        if (!cancelled) {
+          setDiscordError(tr('网络错误：无法加载 Discord 绑定状态，请稍后重试。'));
+        }
+      } finally {
+        if (!cancelled) setDiscordLoading(false);
+      }
+    };
+
+    void loadDiscordStatus();
+
+    return () => {
+      cancelled = true;
+    };
+    // tr 每次渲染都是新函数，刻意不列入依赖；仅在登录用户变化或手动重试时重新拉取。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, discordReloadKey]);
 
   const replacePreview = (selected: File | null) => {
     if (previewUrlRef.current) {
@@ -547,6 +717,106 @@ function SettingsForm() {
     }
   };
 
+  // 连接 Discord：先用会话 token 换一次性授权地址，再整页跳转到 Discord。
+  const handleDiscordConnect = async () => {
+    if (!user) return;
+
+    setDiscordError('');
+    setDiscordNotice(null);
+    setDiscordBusy(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setDiscordError(tr('登录状态已失效，请重新登录后再绑定 Discord。'));
+        return;
+      }
+
+      const res = await fetch('/api/auth/discord/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ nextPath: '/settings' }),
+        cache: 'no-store',
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: boolean; url?: string; error?: string }
+        | null;
+
+      if (!res.ok || !data?.url) {
+        if (res.status === 503 || data?.error === 'discord_not_configured') {
+          setDiscordError(tr('Discord 绑定暂未开放（管理员配置应用后可用）。'));
+        } else if (res.status === 401) {
+          setDiscordError(tr('登录状态已失效，请重新登录后再绑定 Discord。'));
+        } else {
+          setDiscordError(tr('无法发起 Discord 授权，请稍后重试。'));
+        }
+        return;
+      }
+
+      if (!isSafeHttpUrl(data.url)) {
+        setDiscordError(tr('无法发起 Discord 授权，请稍后重试。'));
+        return;
+      }
+
+      window.location.href = data.url;
+    } catch {
+      setDiscordError(tr('网络错误：无法发起 Discord 授权，请稍后重试。'));
+    } finally {
+      setDiscordBusy(false);
+    }
+  };
+
+  // 解除 Discord 绑定：成功后重新拉取状态，让卡片回到未绑定样式。
+  const handleDiscordUnlink = async () => {
+    if (!user) return;
+
+    if (!window.confirm(tr('确定要解除 Discord 绑定吗？解除后将停止同步 Discord 身份组。'))) {
+      return;
+    }
+
+    setDiscordError('');
+    setDiscordNotice(null);
+    setDiscordBusy(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setDiscordError(tr('登录状态已失效，请重新登录后再绑定 Discord。'));
+        return;
+      }
+
+      const res = await fetch('/api/auth/discord/unlink', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: 'no-store',
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+
+      if (!res.ok || !data?.ok) {
+        setDiscordError(tr('❌ 解除 Discord 绑定失败，请稍后重试。'));
+        return;
+      }
+
+      setDiscordNotice({ text: tr('✅ 已解除 Discord 绑定。'), tone: 'success' });
+      setDiscordReloadKey((key) => key + 1);
+    } catch {
+      setDiscordError(tr('网络错误：无法解除 Discord 绑定，请稍后重试。'));
+    } finally {
+      setDiscordBusy(false);
+    }
+  };
+
+  const handleDiscordReload = () => {
+    setDiscordReloadKey((key) => key + 1);
+  };
+
   // 修改密码：先验证当前密码（避免会话被他人接管时直接改密），再更新
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -595,6 +865,18 @@ function SettingsForm() {
 
   // 选好文件后优先展示本地预览，保存前不写数据库。
   const displayedAvatarUrl = previewUrl ?? avatarUrl;
+
+  // Discord 展示用派生值：名称优先 global_name；链接一律校验为 http(s)。
+  const discordAccount = discordStatus?.account ?? null;
+  const discordDisplayName =
+    discordAccount?.global_name?.trim() || discordAccount?.username?.trim() || '';
+  const rawDiscordInviteUrl = discordStatus?.inviteUrl ?? null;
+  const discordInviteUrl = isSafeHttpUrl(rawDiscordInviteUrl) ? rawDiscordInviteUrl : null;
+  const discordLinkedAt = discordAccount?.linked_at ? new Date(discordAccount.linked_at) : null;
+  const discordLinkedAtText =
+    discordLinkedAt && !Number.isNaN(discordLinkedAt.getTime())
+      ? discordLinkedAt.toLocaleString()
+      : '';
 
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('加载中...')}</div>;
 
@@ -753,6 +1035,135 @@ function SettingsForm() {
             {msg && <span className={`text-sm font-bold ${msg.includes('失败') || msg.includes('failed') ? 'text-red-400' : 'text-green-400'}`}>{msg}</span>}
           </div>
         </form>
+
+        {/* Discord 绑定：GET /api/discord/me 读状态，POST start / unlink 执行操作 */}
+        <div className="mt-6 border-t border-gray-700 pt-6">
+          <h2 className="text-lg font-bold text-white mb-1">{tr('Discord 绑定')}</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            {tr('绑定 Discord 后可同步社区身份组；请先加入 Discord 服务器，再连接你的账号。')}
+          </p>
+
+          {!user ? (
+            <p className="text-sm text-gray-400">{tr('登录后才能绑定 Discord。')}</p>
+          ) : (
+            <>
+              {discordNotice && (
+                <p
+                  className={`mb-3 text-sm font-bold ${
+                    discordNotice.tone === 'success' ? 'text-green-400' : 'text-red-400'
+                  }`}
+                  role="status"
+                >
+                  {discordNotice.text}
+                </p>
+              )}
+              {discordError && (
+                <p className="mb-3 text-sm text-red-400" role="alert">
+                  {discordError}
+                </p>
+              )}
+
+              {discordAccount ? (
+                <div className="bg-[#18191c] border border-gray-600 rounded p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-white text-sm font-bold truncate">
+                        {discordDisplayName}
+                      </span>
+                      {discordAccount.username && (
+                        <span className="text-xs text-gray-500 font-mono truncate">
+                          @{discordAccount.username}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs">
+                      {discordAccount.guild_member ? (
+                        <span className="text-green-400">{tr('✅ 已加入服务器')}</span>
+                      ) : (
+                        <span className="text-amber-400">{tr('⚠️ 尚未加入服务器')}</span>
+                      )}
+                    </div>
+                    {discordLinkedAtText && (
+                      <div className="text-xs text-gray-500">
+                        {tr('绑定时间：{time}', { time: discordLinkedAtText })}
+                      </div>
+                    )}
+                    {!discordAccount.guild_member && discordInviteUrl && (
+                      <a
+                        href={discordInviteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block text-xs text-[#5865F2] underline hover:text-blue-300"
+                      >
+                        {tr('加入 Discord 服务器')}
+                      </a>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDiscordUnlink}
+                    disabled={discordBusy}
+                    className="shrink-0 px-4 py-1.5 rounded text-sm font-bold bg-[#232428] border border-red-500/60 text-red-400 hover:bg-red-500/10 transition disabled:opacity-50"
+                  >
+                    {discordBusy ? tr('解除绑定中...') : tr('解除绑定')}
+                  </button>
+                </div>
+              ) : !discordStatus ? (
+                discordLoading ? (
+                  <p className="text-sm text-gray-400">{tr('加载中...')}</p>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {!discordError && (
+                      <p className="text-sm text-gray-400">
+                        {tr('暂时无法获取 Discord 绑定状态。')}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleDiscordReload}
+                      className="px-3 py-1 rounded text-xs font-bold bg-[#232428] border border-gray-600 text-gray-300 hover:text-white transition"
+                    >
+                      {tr('重试')}
+                    </button>
+                  </div>
+                )
+              ) : !discordStatus.oauthConfigured ? (
+                <div className="bg-[#18191c] border border-gray-600 rounded p-4">
+                  <p className="text-sm text-amber-400">
+                    {tr('Discord 绑定暂未开放（管理员配置应用后可用）。')}
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-[#18191c] border border-gray-600 rounded p-4 space-y-3">
+                  <p className="text-sm text-gray-300">{tr('尚未绑定 Discord 账号。')}</p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleDiscordConnect}
+                      disabled={discordBusy}
+                      className="px-4 py-1.5 rounded text-sm font-bold bg-[#5865F2] hover:bg-[#4752c4] text-white transition disabled:opacity-50"
+                    >
+                      {discordBusy ? tr('正在跳转...') : tr('连接 Discord')}
+                    </button>
+                    {discordInviteUrl && (
+                      <a
+                        href={discordInviteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-[#5865F2] underline hover:text-blue-300"
+                      >
+                        {tr('加入服务器')}
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {tr('建议先加入 Discord 服务器，这样绑定后可以自动同步身份组。')}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* 账号安全：修改密码 */}
         <div className="mt-6 border-t border-gray-700 pt-6">
