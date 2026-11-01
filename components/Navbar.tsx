@@ -185,6 +185,21 @@ export default function Navbar() {
     if (link) router.push(link);
   };
 
+  // 下拉内的「全部已读」：把当前用户的未读通知批量置为已读并刷新本地列表
+  const markAllAsRead = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', user.id)
+      .eq('is_read', false);
+    if (error) {
+      console.error('标记全部通知已读失败:', error.message);
+      return;
+    }
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+  };
+
   // 时间更新
   useEffect(() => {
     setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -251,6 +266,15 @@ export default function Navbar() {
                   <div className="absolute right-0 top-full mt-3 w-72 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 z-50">
                     <div className="px-4 py-2 border-b border-gray-700 flex justify-between items-center">
                       <p className="text-gray-300 font-bold text-sm">通知中心</p>
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void markAllAsRead()}
+                          className="text-[10px] text-blue-400 hover:text-blue-300 transition"
+                        >
+                          全部已读
+                        </button>
+                      )}
                     </div>
                     <div className="max-h-64 overflow-y-auto">
                       {notifications.length === 0 ? (
@@ -268,6 +292,13 @@ export default function Navbar() {
                         ))
                       )}
                     </div>
+                    <Link
+                      href="/notifications"
+                      onClick={() => setIsNotifOpen(false)}
+                      className="block px-4 py-2 text-center text-xs text-blue-400 hover:text-blue-300 hover:bg-[#333333] border-t border-gray-700 transition"
+                    >
+                      查看全部通知 →
+                    </Link>
                   </div>
                 )}
               </div>

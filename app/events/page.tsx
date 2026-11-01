@@ -283,6 +283,12 @@ export default function EventsListPage() {
               <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">活动</h1>
               <span className="text-lg font-bold text-gray-500 md:text-xl">/ Events</span>
             </div>
+            <Link
+              href="/events/calendar"
+              className="inline-flex items-center rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 text-xs font-bold text-orange-300 transition hover:border-orange-400 hover:text-white"
+            >
+              📅 日历视图 →
+            </Link>
             {canManage ? (
               <Link
                 href="/admin/events"

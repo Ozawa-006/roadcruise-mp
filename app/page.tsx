@@ -367,6 +367,7 @@ export default function Home() {
             <ul className="space-y-2 text-sm text-gray-400">
               <li><Link href="/forum" className="hover:text-blue-400">论坛首页</Link></li>
               <li><Link href="/news" className="hover:text-blue-400">新闻公告</Link></li>
+              <li><Link href="/changelog" className="hover:text-blue-400">更新日志</Link></li>
               <li><Link href="/rules" className="hover:text-blue-400">社区规则</Link></li>
               <li><Link href="/map" className="hover:text-blue-400">实时地图</Link></li>
               <li>
