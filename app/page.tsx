@@ -14,13 +14,10 @@ const supabase = createClient(
 export default function Home() {
   const [latestTopics, setLatestTopics] = useState<any[]>([]);
   const [stats, setStats] = useState({ users: 0, vtc: 0, events: 0, team: 0 });
-  
-  // 轮播图状态
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. 获取最新官方公告 (🌟 修复：增加 image_url 字段)
       const { data: topics } = await supabase
         .from('forum_topics')
         .select(`
@@ -32,7 +29,6 @@ export default function Home() {
         .limit(5);
       if (topics) setLatestTopics(topics);
 
-      // 2. 获取统计数据
       const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
       const { count: teamCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('role_level', 40);
       
@@ -46,18 +42,14 @@ export default function Home() {
     fetchData();
   }, []);
 
-  // 自动轮播定时器
   useEffect(() => {
     if (latestTopics.length <= 1) return;
-    
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % latestTopics.length);
-    }, 5000); // 5秒切换一次
-
+    }, 6000); // 延长到6秒，方便阅读
     return () => clearInterval(timer);
   }, [latestTopics.length]);
 
-  // 切换上一张/下一张
   const nextSlide = () => {
     if (latestTopics.length > 0) setCurrentIndex((prev) => (prev + 1) % latestTopics.length);
   };
@@ -69,13 +61,13 @@ export default function Home() {
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
       
-      {/* 🌟 第一区块：官方新闻轮播图 (TMP 风格) */}
+      {/* 🌟 第一区块：TMP风格欢迎页轮播 */}
       <section className="relative w-full h-[60vh] md:h-[70vh] bg-black overflow-hidden group">
         {latestTopics.length === 0 ? (
-          // 如果没有新闻数据，显示默认兜底图
+          // 兜底：如果没有新闻
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center">
             <div className="absolute inset-0 bg-black/60 z-0"></div>
-            <div className="relative z-10 text-center">
+            <div className="relative z-10 text-center flex flex-col items-center">
               <h1 className="text-4xl md:text-6xl font-black text-white mb-6 drop-shadow-lg">
                 Road Cruise Transport MP
               </h1>
@@ -85,51 +77,61 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          // 有新闻数据时，渲染轮播图
           <>
             {latestTopics.map((item, index) => (
               <div
                 key={item.id}
-                // 🌟 修复：移除 className 里写死的 bg-[url(...)]
                 className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex flex-col items-center justify-center bg-cover bg-center ${
                   index === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
                 }`}
-                // 🌟 修复：优先使用发帖时的配图
                 style={{ backgroundImage: `url(${item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'})` }}
               >
-                {/* 黑色遮罩 */}
                 <div className="absolute inset-0 bg-black/60 z-0"></div>
 
-                {/* 新闻内容 */}
-                <div className="relative z-10 text-center max-w-4xl px-6 flex flex-col items-center">
-                  <span className="text-blue-500 font-bold tracking-widest uppercase mb-2 text-sm md:text-base">Road Cruise News</span>
-                  <h1 className="text-3xl md:text-5xl font-black text-white mb-6 drop-shadow-lg leading-tight line-clamp-2">
-                    {item.title}
-                  </h1>
-                  <Link 
-                    href={`/forum/${item.category_id}/${item.id}`} 
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-md font-bold text-base transition shadow-lg mt-2"
-                  >
-                    Read More (阅读更多)
-                  </Link>
+                {/* 🌟 核心：TMP风格的双栏欢迎区 */}
+                <div className="relative z-10 w-full max-w-7xl mx-auto px-6 md:px-10 flex flex-col md:flex-row items-center justify-between">
+                  {/* 左侧：卖点列表 */}
+                  <div className="text-white space-y-3 mb-8 md:mb-0">
+                    <h2 className="text-xl md:text-2xl font-bold mb-4 flex items-center gap-2">
+                      <span className="w-1.5 h-6 bg-blue-500 inline-block"></span> 
+                      Why join us?
+                    </h2>
+                    <ul className="space-y-2 text-sm md:text-base text-gray-200">
+                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Thousands of players</li>
+                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Strong and Fair Game Moderation Team</li>
+                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Dedicated Servers</li>
+                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Great Community</li>
+                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> All that is missing is you!</li>
+                    </ul>
+                  </div>
+
+                  {/* 右侧：行动号召按钮 */}
+                  <div className="text-center">
+                    <Link 
+                      href="/login" 
+                      className="inline-block bg-blue-600 hover:bg-blue-500 text-white px-10 py-3 rounded font-bold text-lg transition shadow-[0_0_15px_rgba(59,130,246,0.5)] hover:scale-105 transform"
+                    >
+                      Join today!
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))}
 
-            {/* 左右切换按钮 */}
+            {/* 🌟 修复：左右切换按钮（常驻显示，半透明背景） */}
             {latestTopics.length > 1 && (
               <>
                 <button 
                   onClick={prevSlide}
-                  className="absolute left-0 top-0 bottom-0 w-16 bg-white/5 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all opacity-0 group-hover:opacity-100"
+                  className="absolute left-0 top-0 bottom-0 w-16 bg-white/10 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all duration-300"
                 >
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
                 </button>
                 <button 
                   onClick={nextSlide}
-                  className="absolute right-0 top-0 bottom-0 w-16 bg-white/5 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all opacity-0 group-hover:opacity-100"
+                  className="absolute right-0 top-0 bottom-0 w-16 bg-white/10 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all duration-300"
                 >
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
                 </button>
 
                 {/* 底部小圆点指示器 */}
@@ -150,7 +152,7 @@ export default function Home() {
         )}
       </section>
 
-      {/* 🌟 第二区块：VTC Events */}
+      {/* 第二区块：VTC Events */}
       <section className="py-16 bg-[#111111] border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-end mb-8 border-b border-gray-800 pb-4">
@@ -183,7 +185,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 🌟 第三区块：我们的服务 */}
+      {/* 第三区块：我们的服务 */}
       <section className="py-16 max-w-7xl mx-auto px-6">
         <h2 className="text-2xl font-bold text-white text-center mb-10">
           <span className="border-b-2 border-blue-500 pb-2">我们的服务</span>
@@ -216,7 +218,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 🌟 第四区块：数据统计 */}
+      {/* 第四区块：数据统计 */}
       <section className="bg-[#111111] py-12 border-y border-gray-800">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           <div>
@@ -238,10 +240,9 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 🌟 第五区块：终极页脚 */}
+      {/* 第五区块：终极页脚 */}
       <footer className="bg-[#0a0a0a] pt-16 pb-8 mt-auto">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-          
           <div className="col-span-1 md:col-span-1">
             <Link href="/" className="text-xl lg:text-2xl font-black italic tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-red-500 inline-block mb-4">
               Road Cruise Transport MP
