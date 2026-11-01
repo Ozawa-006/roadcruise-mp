@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
+import RichTextEditor from '@/components/RichTextEditor';
 import Link from 'next/link';
 import { canPostOfficialTopic, levelOf } from '../../../../lib/permissions';
 
@@ -186,14 +187,14 @@ export default function NewTopicPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">正文内容</label>
-            <textarea 
+            <RichTextEditor
+              label="正文内容"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-48 focus:outline-none focus:border-blue-500"
-              placeholder="在这里输入详细内容..."
+              onChange={setContent}
+              placeholder="在这里输入详细内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题"
+              rows={8}
               required
-            ></textarea>
+            />
           </div>
 
           <div>

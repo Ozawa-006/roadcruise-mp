@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
+import RichText from '@/components/RichText';
+import RichTextEditor from '@/components/RichTextEditor';
+import { plainTextExcerpt } from '@/lib/rich-text';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -579,18 +582,13 @@ export default function VtcNewsPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="vtc-news-content" className="block text-sm font-bold text-gray-400 mb-2">
-                    正文（纯文本）
-                  </label>
-                  <textarea
-                    id="vtc-news-content"
+                  <RichTextEditor
+                    label="正文（支持 Markdown）"
                     value={content}
-                    onChange={(event) => setContent(event.target.value)}
+                    onChange={setContent}
                     rows={8}
-                    placeholder="支持换行，暂不支持 Markdown / HTML。"
-                    className={`${inputClass} leading-relaxed resize-y`}
+                    placeholder="支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。"
                   />
-                  <p className="mt-1 text-xs text-gray-500">当前 {content.length} 字</p>
                 </div>
 
                 {formError && <p className="text-xs text-red-400 font-bold break-words">{formError}</p>}
@@ -650,9 +648,7 @@ export default function VtcNewsPage() {
                 // 按 Unicode 码点截断，避免把 emoji 的代理对切断
                 const chars = Array.from(item.content);
                 const tooLong = chars.length > SUMMARY_LENGTH;
-                const body = isManager || expanded || !tooLong
-                  ? item.content
-                  : `${chars.slice(0, SUMMARY_LENGTH).join('')}…`;
+                const showFull = isManager || expanded || !tooLong;
                 const edited =
                   Boolean(item.updatedAt) &&
                   Boolean(item.createdAt) &&
@@ -706,9 +702,16 @@ export default function VtcNewsPage() {
                       )}
                     </div>
 
-                    <p className="mt-3 text-sm leading-6 text-gray-300 whitespace-pre-wrap break-words">
-                      {body || '（无正文）'}
-                    </p>
+                    {showFull && item.content.trim() ? (
+                      <RichText
+                        text={item.content}
+                        className="mt-3 text-sm leading-6 text-gray-300"
+                      />
+                    ) : (
+                      <p className="mt-3 text-sm leading-6 text-gray-300 whitespace-pre-wrap break-words">
+                        {showFull ? '（无正文）' : plainTextExcerpt(item.content, SUMMARY_LENGTH)}
+                      </p>
+                    )}
 
                     {!isManager && tooLong && (
                       <button

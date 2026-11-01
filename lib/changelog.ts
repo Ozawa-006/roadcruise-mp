@@ -21,10 +21,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.28v',
+    date: '2026-11-01',
+    title: '安全富文本与头像管理',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '发帖/回帖、新闻公告、车队新闻、活动描述支持安全富文本（Markdown 子集：加粗/斜体/行内代码/链接/图片/引用/列表/二三级标题），自研解析无第三方依赖',
+      },
+      {
+        kind: 'feature',
+        text: '新增富文本编辑器：工具栏、实时预览、字数统计；链接/图片 URL 只允许 http(s)，非法语法按纯文本展示，全程不使用 innerHTML',
+      },
+      {
+        kind: 'feature',
+        text: '头像管理增强：仅允许 JPG/PNG/WebP 且 ≤2MB、选择后本地预览、替换时清理旧 Storage 头像、支持移除头像',
+      },
+      {
+        kind: 'chore',
+        text: '历史纯文本帖子/公告保持原样显示（换行保留），无需数据迁移',
+      },
+    ],
+  },
+  {
     version: '0.0.27v',
     date: '2026-11-01',
     title: '安全审计与内容初始化',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'security',

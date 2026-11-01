@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import RichTextEditor from '@/components/RichTextEditor';
 import { canManageAnnouncements, levelOf } from '@/lib/permissions';
 
 const supabase = createClient(
@@ -124,8 +125,14 @@ export default function AdminNewsPage() {
           </div>
 
           <div>
-            <label className="block text-gray-400 mb-1 text-sm">正文内容</label>
-            <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 p-3 rounded text-white h-40 focus:outline-none focus:border-blue-500" required ></textarea>
+            <RichTextEditor
+              label="正文内容"
+              value={content}
+              onChange={setContent}
+              rows={8}
+              required
+              placeholder="支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题"
+            />
           </div>
           
           <button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 w-full py-3 rounded font-bold text-lg transition disabled:opacity-50 shadow-lg">

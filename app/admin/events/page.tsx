@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import RichTextEditor from '@/components/RichTextEditor';
 import { canAccessAdmin, levelOf } from '@/lib/permissions';
 
 const supabase = createClient(
@@ -486,18 +487,14 @@ export default function AdminEventsPage() {
               </div>
 
               <div>
-                <label htmlFor="event-description" className={labelClass}>
-                  活动描述
-                </label>
-                <textarea
-                  id="event-description"
+                <RichTextEditor
+                  label="活动描述"
                   value={form.description}
-                  onChange={(e) =>
-                    setForm((previous) => ({ ...previous, description: e.target.value }))
+                  onChange={(value) =>
+                    setForm((previous) => ({ ...previous, description: value }))
                   }
                   rows={4}
-                  className={inputClass}
-                  placeholder="支持换行，活动详情页会原样展示。"
+                  placeholder="支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。"
                 />
               </div>
 

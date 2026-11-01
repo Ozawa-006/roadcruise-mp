@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { createClient, type User } from '@supabase/supabase-js';
 import Navbar from '@/components/Navbar';
+import RichText from '@/components/RichText';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -496,9 +497,14 @@ export default function EventDetailPage() {
 
                 <div className="mt-6 border-t border-gray-700 pt-5">
                   <h2 className="text-sm font-bold text-gray-400">活动介绍</h2>
-                  <p className="mt-3 whitespace-pre-wrap text-base leading-7 text-gray-300">
-                    {event.description?.trim() || '暂无活动详情。'}
-                  </p>
+                  {event.description?.trim() ? (
+                    <RichText
+                      text={event.description}
+                      className="mt-3 text-base leading-7 text-gray-300"
+                    />
+                  ) : (
+                    <p className="mt-3 text-base leading-7 text-gray-300">暂无活动详情。</p>
+                  )}
                 </div>
               </div>
             </article>

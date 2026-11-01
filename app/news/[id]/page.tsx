@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
+import RichText from '@/components/RichText';
 import Link from 'next/link';
 
 const supabase = createClient(
@@ -74,10 +75,8 @@ export default function NewsDetailPage() {
       {/* 正文内容区 */}
       <div className="max-w-4xl mx-auto w-full px-6 md:px-10 py-12">
         <div className="bg-[#111111] border border-gray-800 rounded-2xl p-6 md:p-10 shadow-2xl">
-          {/* 使用 whitespace-pre-wrap 保留玩家输入的换行符 */}
-          <p className="text-gray-300 text-lg leading-loose whitespace-pre-wrap">
-            {article.content}
-          </p>
+          {/* 富文本渲染：旧纯文本内容会原样保留换行 */}
+          <RichText text={article.content} className="text-gray-300 text-lg leading-loose" />
         </div>
 
         {/* 底部返回按钮 */}

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation'; 
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
+import RichText from '@/components/RichText';
+import RichTextEditor from '@/components/RichTextEditor';
 import Link from 'next/link';
 import { ROLE_LEVEL, levelOf } from '@/lib/permissions';
 
@@ -174,9 +176,10 @@ export default function TopicDetailPage() {
               </div>
             </div>
             
-            <div className="text-gray-300 text-base leading-relaxed whitespace-pre-wrap mb-6">
-              {topic.content}
-            </div>
+            <RichText
+              text={topic.content}
+              className="text-gray-300 text-base leading-relaxed mb-6"
+            />
             {topic.image_url && (
               <div className="mt-6">
                 <img src={topic.image_url} alt="配图" className="max-w-full h-auto rounded-lg border border-gray-700 shadow-md" />
@@ -216,9 +219,10 @@ export default function TopicDetailPage() {
                   <span>#{index + 2}</span>
                 </div>
                 
-                <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap mb-4">
-                  {reply.content}
-                </div>
+                <RichText
+                  text={reply.content}
+                  className="text-gray-300 text-sm leading-relaxed mb-4"
+                />
                 
                 <div className="flex justify-end pt-2 border-t border-gray-700/50">
                   <button 
@@ -256,14 +260,15 @@ export default function TopicDetailPage() {
                 </div>
               )}
 
-              <textarea 
-                id="reply-box"
-                value={replyContent}
-                onChange={(e) => setReplyContent(e.target.value)}
-                className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-32 focus:outline-none focus:border-blue-500 mb-4"
-                placeholder={quoteUser ? `回复 @${quoteUser}...` : "写下你的看法..."}
-                required
-              ></textarea>
+              <div id="reply-box" className="mb-4">
+                <RichTextEditor
+                  value={replyContent}
+                  onChange={setReplyContent}
+                  rows={5}
+                  required
+                  placeholder={quoteUser ? `回复 @${quoteUser}...` : '写下你的看法...'}
+                />
+              </div>
               <div className="text-right">
                 <button 
                   type="submit" 
