@@ -46,6 +46,10 @@ export const CHANGELOG: ChangelogEntry[] = [
         kind: 'chore',
         text: '已预置 5 个职位与 TMP 风格通用/专属问题（默认关闭，由后台开启）',
       },
+      {
+        kind: 'fix',
+        text: '总开关关闭时公开页不再把任何职位显示为「开放中」；问题类型切换去掉不安全的类型断言',
+      },
     ],
   },
   {

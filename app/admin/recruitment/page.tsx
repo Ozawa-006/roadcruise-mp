@@ -1795,11 +1795,16 @@ export default function AdminRecruitmentPage() {
                                       <select
                                         id={`question-type-${question.id}`}
                                         value={question.type}
-                                        onChange={(event) =>
-                                          updateQuestion(questionIndex, {
-                                            type: event.target.value as QuestionType,
-                                          })
-                                        }
+                                        onChange={(event) => {
+                                          const nextType = event.target.value;
+                                          if (
+                                            nextType === 'text' ||
+                                            nextType === 'textarea' ||
+                                            nextType === 'select'
+                                          ) {
+                                            updateQuestion(questionIndex, { type: nextType });
+                                          }
+                                        }}
                                         disabled={editorBusy}
                                         className={inputClass}
                                       >

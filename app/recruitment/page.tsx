@@ -534,8 +534,11 @@ export default function RecruitmentPage() {
 
   const currentSettings = settings ?? DEFAULT_SETTINGS;
   const isOpen = currentSettings.is_open;
-  const openPositionCount = positions.filter((position) => position.is_open).length;
-  const hasOpenPosition = isOpen && openPositionCount > 0;
+  // 总开关关闭时，即使职位行 is_open=true 也不对外展示为「开放中」。
+  const openPositionCount = isOpen
+    ? positions.filter((position) => position.is_open).length
+    : 0;
+  const hasOpenPosition = openPositionCount > 0;
   const recruitStatus: RecruitStatus = !isOpen
     ? 'closed'
     : openPositionCount > 0
@@ -1069,13 +1072,12 @@ export default function RecruitmentPage() {
                     你还没有提交过申请。
                   </p>
                 ) : (
-                  <>
-                    <ul
-                      aria-busy={applicationsLoading}
-                      className={`space-y-4 transition-opacity ${
-                        applicationsLoading ? 'opacity-60' : ''
-                      }`}
-                    >
+                  <ul
+                    aria-busy={applicationsLoading}
+                    className={`space-y-4 transition-opacity ${
+                      applicationsLoading ? 'opacity-60' : ''
+                    }`}
+                  >
                       {applications.map((application) => {
                         const meta = STATUS_META[application.status];
                         const answerItems = buildAnswerItems(
@@ -1155,14 +1157,7 @@ export default function RecruitmentPage() {
                           </li>
                         );
                       })}
-                    </ul>
-
-                    {applications.length >= MAX_APPLICATIONS && (
-                      <p className="mt-3 text-center text-xs text-gray-500">
-                        仅显示最近 {MAX_APPLICATIONS} 条申请。
-                      </p>
-                    )}
-                  </>
+                  </ul>
                 )}
               </section>
             )}
