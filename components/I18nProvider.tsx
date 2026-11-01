@@ -37,6 +37,11 @@ export function I18nProvider({
     }
   }, []);
 
+  // 同步 <html lang>，便于无障碍与 SEO（SSR 由根布局设置，切换后由这里更新）。
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   return <LocaleContext.Provider value={locale}>{children}</LocaleContext.Provider>;
 }
 

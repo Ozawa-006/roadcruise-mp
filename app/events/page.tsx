@@ -20,7 +20,7 @@ const EN: Record<string, string> = {
   // —— 分区标题与计数 ——
   '即将开始': 'Upcoming',
   '已结束的活动': 'Past events',
-  '{count} 个': '{count} events',
+  '{count} 个': '{count}',
   // —— 加载 / 错误 / 空状态 ——
   '正在获取活动列表…': 'Loading events…',
   '加载失败，请稍后重试': 'Failed to load. Please try again later.',
