@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Navbar from '../../components/Navbar';
 import { getLocale } from '../../lib/i18n-server';
 import { tr } from '../../lib/i18n';
+import { DISCORD_INVITE_URL } from '../../lib/discord';
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getLocale();
@@ -56,6 +57,9 @@ const EN: Record<string, string> = {
   '游戏服务器': 'Game servers',
   '查看服务器开放状态；当前尚未配置，显示「即将开放」。':
     'Check server availability; none are configured yet, so they show as “coming soon”.',
+  'Discord 社区': 'Discord Community',
+  '实时交流、组队联运、活动与公告第一时间获取。':
+    'Real-time chat, convoy planning, plus announcements and events as they happen.',
 
   // ---------- FAQ 区块标题 ----------
   '常见问题': 'Frequently asked questions',
@@ -219,20 +223,21 @@ function QuickLink({
   description,
   accent,
   icon,
+  external = false,
 }: {
   href: string;
   title: string;
   description: string;
   accent: Accent;
   icon: ReactNode;
+  /** 站外链接（如 Discord 邀请）：用 <a> 新标签页打开。 */
+  external?: boolean;
 }) {
   const styles = ACCENT_STYLES[accent];
+  const className = `group flex h-full flex-col gap-3 rounded-xl border border-gray-700 bg-[#2c2d31] p-4 transition hover:bg-[#323338] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${styles.hover}`;
 
-  return (
-    <Link
-      href={href}
-      className={`group flex h-full flex-col gap-3 rounded-xl border border-gray-700 bg-[#2c2d31] p-4 transition hover:bg-[#323338] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${styles.hover}`}
-    >
+  const content = (
+    <>
       <span
         className={`flex h-10 w-10 items-center justify-center rounded-lg border ${styles.icon}`}
       >
@@ -253,6 +258,20 @@ function QuickLink({
         </span>
         <span className="mt-1 block text-xs leading-5 text-gray-500">{description}</span>
       </span>
+    </>
+  );
+
+  if (external) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={href} className={className}>
+      {content}
     </Link>
   );
 }
@@ -414,6 +433,18 @@ export default async function SupportPage() {
                     strokeWidth={1.8}
                     d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
                   />
+                </svg>
+              }
+            />
+            <QuickLink
+              href={DISCORD_INVITE_URL}
+              title={tr(locale, EN, 'Discord 社区')}
+              description={tr(locale, EN, '实时交流、组队联运、活动与公告第一时间获取。')}
+              accent="violet"
+              external
+              icon={
+                <svg aria-hidden="true" className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M20.317 4.369a19.79 19.79 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.056 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.009c.12.099.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
                 </svg>
               }
             />

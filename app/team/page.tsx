@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { useTr, useLocale } from '../../components/I18nProvider';
 import Navbar from '../../components/Navbar';
+import { DISCORD_INVITE_URL } from '../../lib/discord';
 import { roleLabelEn } from '../../lib/permissions';
 
 const supabase = createClient(
@@ -120,6 +121,8 @@ const EN: Record<string, string> = {
     'for recruitment posts. Positions open only when needed; the process and requirements follow the announcement.',
   '对职位或申请流程有疑问，可到论坛帮助版块咨询；举报与申诉请走专用入口，不要在公开帖中发布他人隐私。':
     'If you have questions about ranks or the application process, ask in the forum help section. For reports and appeals, use the dedicated entry and never post other people’s private information publicly.',
+  '加入 Discord': 'Join Discord',
+  '实时交流、组队联运与社区活动': 'Real-time chat, convoys and community events',
   '帮助中心': 'Help center',
   '常见问题与操作指引': 'FAQs and how-to guides',
   '举报与申诉': 'Reports & appeals',
@@ -944,6 +947,17 @@ export default function TeamPage() {
               <p className="mt-3 text-xs leading-5 text-gray-500">
                 {tr('对职位或申请流程有疑问，可到论坛帮助版块咨询；举报与申诉请走专用入口，不要在公开帖中发布他人隐私。')}
               </p>
+              <a
+                href={DISCORD_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm font-bold text-blue-300 transition hover:border-blue-400 hover:bg-blue-500/20 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                <span aria-hidden="true">💬</span>
+                {tr('加入 Discord')}
+                <span aria-hidden="true">→</span>
+              </a>
+              <p className="mt-1.5 text-[11px] text-gray-500">{tr('实时交流、组队联运与社区活动')}</p>
             </div>
 
             <div className="grid shrink-0 gap-2 sm:grid-cols-2 lg:w-[420px]">

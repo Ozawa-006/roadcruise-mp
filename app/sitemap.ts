@@ -50,6 +50,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.5,
     },
     {
+      url: `${BASE_URL}/discord`,
+      lastModified,
+      changeFrequency: 'weekly',
+      priority: 0.6,
+    },
+    {
       url: `${BASE_URL}/servers`,
       lastModified,
       changeFrequency: 'daily',

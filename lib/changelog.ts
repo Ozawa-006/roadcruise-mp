@@ -27,11 +27,42 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.47v',
+    date: '2026-11-02',
+    title: 'Discord 社区接入',
+    title_en: 'Discord community integration',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新增 Discord 社区页 `/discord`：邀请链接、服务器图标、成员/在线人数、加入指引、规则/活动入口与常见问题',
+      },
+      {
+        kind: 'feature',
+        text: '全站入口：导航栏、页脚、帮助中心、团队页均可一键加入 Discord',
+      },
+      {
+        kind: 'feature',
+        text: '新增只读接口 `/api/discord/invite`，服务端读取 Discord 邀请信息并缓存 5 分钟',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `lib/discord.ts`（邀请码/邀请链接/信息读取）；sitemap 收录 `/discord`',
+      },
+    ],
+    items_en: [
+      'Added the Discord community page `/discord`: invite link, server icon, member/online counts, how to join, rules/events links and FAQ',
+      'Site-wide entry points: navbar, footer, Help & Support and Team pages can open Discord in one click',
+      'Added a read-only `/api/discord/invite` endpoint that fetches invite info server-side with a 5-minute cache',
+      'Added `lib/discord.ts` (invite code/link/fetch helper); `/discord` is included in the sitemap',
+    ],
+  },
+  {
     version: '0.0.46v',
     date: '2026-11-02',
     title: '后台英文化、编辑历史、举报升级与公告统一',
     title_en: 'English admin, edit history, report escalation and unified announcements',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { attemptSteamBind } from '../lib/steam-bind-client';
 import { ROLE_LEVEL, levelOf } from '../lib/permissions';
+import { DISCORD_INVITE_URL } from '../lib/discord';
 import LanguageSwitcher from './LanguageSwitcher';
 import { useTr } from './I18nProvider';
 
@@ -18,7 +19,14 @@ const supabase = createClient(
 const PLAYERS_POLL_INTERVAL_MS = 30_000;
 
 /** 移动端主导航项（桌面端仍使用下方完整导航，含活动下拉）。 */
-const MOBILE_NAV_ITEMS = [
+type MobileNavItem = {
+  href: string;
+  label: string;
+  /** 站外链接（如 Discord 邀请）：用 <a> 新标签页打开。 */
+  external?: boolean;
+};
+
+const MOBILE_NAV_ITEMS: readonly MobileNavItem[] = [
   { href: '/forum', label: '论坛 (Forum)' },
   { href: '/events', label: '活动 (Events)' },
   { href: '/map', label: '实时地图' },
@@ -27,6 +35,7 @@ const MOBILE_NAV_ITEMS = [
   { href: '/team', label: '团队' },
   { href: '/rules', label: '社区规则' },
   { href: '/support', label: '帮助与支持' },
+  { href: DISCORD_INVITE_URL, label: 'Discord', external: true },
 ];
 
 /**
@@ -465,6 +474,17 @@ export default function Navbar() {
           <Link href="/rules" className="hover:text-white transition">{tr('社区规则')}</Link>
           <Link href="/support" className="hover:text-white transition">{tr('帮助与支持')}</Link>
 
+          {/* Discord 社区外链（新标签页打开） */}
+          <a
+            href={DISCORD_INVITE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-white transition inline-flex items-center gap-1"
+          >
+            <span aria-hidden="true">💬</span>
+            Discord
+          </a>
+
           {/* 🌟 全局搜索框 (带分类下拉) */}
           <form onSubmit={handleSearch} className="relative ml-4 flex items-center bg-[#232428] border border-gray-700 rounded-full focus-within:border-blue-500 transition-all focus-within:w-80 w-64 h-8">
             <select 
@@ -499,16 +519,30 @@ export default function Navbar() {
           className="md:hidden border-t border-gray-800 bg-[#1a1a1a] px-4 py-3"
         >
           <div className="grid grid-cols-2 gap-2 text-sm">
-            {MOBILE_NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setIsMobileNavOpen(false)}
-                className="rounded-lg border border-gray-800 bg-[#232428] px-3 py-2.5 text-gray-300 transition hover:border-blue-500/50 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-              >
-                {tr(item.label)}
-              </Link>
-            ))}
+            {MOBILE_NAV_ITEMS.map((item) =>
+              item.external ? (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setIsMobileNavOpen(false)}
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-800 bg-[#232428] px-3 py-2.5 text-gray-300 transition hover:border-blue-500/50 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                >
+                  <span aria-hidden="true">💬</span>
+                  {tr(item.label)}
+                </a>
+              ) : (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setIsMobileNavOpen(false)}
+                  className="rounded-lg border border-gray-800 bg-[#232428] px-3 py-2.5 text-gray-300 transition hover:border-blue-500/50 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                >
+                  {tr(item.label)}
+                </Link>
+              )
+            )}
           </div>
         </nav>
       )}

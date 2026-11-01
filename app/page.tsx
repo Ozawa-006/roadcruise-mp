@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../components/Navbar';
 import Link from 'next/link';
 import { plainTextExcerpt } from '@/lib/rich-text';
+import { DISCORD_INVITE_URL } from '@/lib/discord';
 import { useLocale, useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
@@ -92,6 +93,7 @@ const EN = {
   '遇到技术问题或社区疑问？我们的支持团队会尽快为您解答。': 'Technical issue or community question? Our support team will help you as soon as possible.',
   '社区互动': 'Community',
   '通过 Discord、论坛等多种渠道，与全球玩家分享你的卡车生活。': 'Share your trucking life with players worldwide via Discord, the forum and more.',
+  '加入我们的 Discord →': 'Join us on Discord →',
   '创建您自己的活动': 'Create your own events',
   '想自己办联运？我们有专门的预约系统帮您安排。': 'Want to host a convoy? Our dedicated booking system helps you plan it.',
 
@@ -111,6 +113,7 @@ const EN = {
   '社区规则': 'Community rules',
   '举报与申诉': 'Reports & appeals',
   '帮助中心': 'Help center',
+  'Discord 社区': 'Discord Community',
   '客户端下载': 'Client download',
   '条款与政策': 'Terms & policies',
   '隐私政策 (Privacy)': 'Privacy Policy',
@@ -467,6 +470,12 @@ export default function Home() {
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
             <h3 className="text-lg font-bold text-white mb-2">{tr('社区互动')}</h3>
             <p className="text-sm text-gray-400">{tr('通过 Discord、论坛等多种渠道，与全球玩家分享你的卡车生活。')}</p>
+            <Link
+              href="/discord"
+              className="mt-3 inline-block text-xs font-bold text-blue-400 hover:text-blue-300 transition"
+            >
+              {tr('加入我们的 Discord →')}
+            </Link>
           </div>
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
             <h3 className="text-lg font-bold text-white mb-2">{tr('创建您自己的活动')}</h3>
@@ -520,6 +529,16 @@ export default function Home() {
               <li><Link href="/map" className="hover:text-blue-400">{tr('实时地图')}</Link></li>
               <li><Link href="/reports" className="hover:text-blue-400">{tr('举报与申诉')}</Link></li>
               <li><Link href="/support" className="hover:text-blue-400">{tr('帮助中心')}</Link></li>
+              <li>
+                <a
+                  href={DISCORD_INVITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-blue-400"
+                >
+                  {tr('Discord 社区')}
+                </a>
+              </li>
               <li><Link href="/download" className="hover:text-blue-400">{tr('客户端下载')}</Link></li>
             </ul>
           </div>
