@@ -209,8 +209,8 @@ export default function UserManagementPage() {
           )}
         </div>
 
-        <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg overflow-visible">
-          <div className="overflow-x-auto min-h-[300px]">
+        <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
+          <div className="min-h-[400px]"> {/* 去掉 overflow 限制，加高一点以防万一 */}
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
                 <tr className="bg-[#232428] text-gray-400 text-sm border-b border-gray-700">
