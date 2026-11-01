@@ -42,6 +42,10 @@ export const CHANGELOG: ChangelogEntry[] = [
         kind: 'chore',
         text: '发信域名 `mail.roadcruise-mp.com` 完成 SPF / DKIM / DMARC / MX 解析验证',
       },
+      {
+        kind: 'fix',
+        text: '修复找回密码邮件链接落到首页的问题：根布局检测到 recovery hash 时自动跳转 `/reset-password`',
+      },
     ],
   },
   {

@@ -9,6 +9,10 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// 在 supabase-js 消费 URL hash 之前捕获（模块加载时执行），用于判断这是不是重置密码链接。
+const INITIAL_RECOVERY_HASH =
+  typeof window !== 'undefined' ? window.location.hash : '';
+
 type PageState = 'checking' | 'ready' | 'invalid' | 'done';
 
 export default function ResetPasswordPage() {
@@ -22,7 +26,7 @@ export default function ResetPasswordPage() {
     let active = true;
 
     // 在 supabase-js 消费 URL hash 之前读取，判断这是不是“重置密码”链接。
-    const initialHash = typeof window !== 'undefined' ? window.location.hash : '';
+    const initialHash = INITIAL_RECOVERY_HASH;
     const looksLikeRecovery =
       /type=recovery/.test(initialHash) || /type%3Drecovery/i.test(initialHash);
     let sawRecoveryEvent = false;

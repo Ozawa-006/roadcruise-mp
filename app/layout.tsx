@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,7 +52,21 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/*
+          Supabase 的找回密码链接会把用户带回站点根地址（#access_token=...&type=recovery）。
+          在页面脚本之前检测并转到 /reset-password，保证“忘记密码”邮件点开即进入设置新密码页。
+        */}
+        <Script
+          id="recovery-redirect"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var h=window.location.hash||'';if(h.indexOf('type=recovery')!==-1){window.location.replace('/reset-password'+h);}}catch(e){}})();",
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }
