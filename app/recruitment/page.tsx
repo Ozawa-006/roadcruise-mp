@@ -1,10 +1,20 @@
 // app/recruitment/page.tsx
-// 公开招募页：展示 recruitment_settings（单行）中的文案与职位，并允许已登录且
-// 通过 Steam 验证的玩家提交 recruitment_applications。页面只读设置，不提供管理入口。
-// 数据库侧约束（前端不重复实现，仅做提示与错误兜底）：
-//   · recruitment_settings 匿名可读；
-//   · INSERT 要求 user_id = auth.uid()、rct_is_steam_verified() 且 is_open = true；
-//   · 同一用户同时只能有一条 pending/reviewing 申请，重复插入返回 23505。
+// 公开招募页（RCT MP）。
+//
+// 数据流（只读公开表 + 登录用户自己的申请）：
+//   1. recruitment_settings（id=1）→ 总开关 is_open / 标题 / 介绍 / 要求；
+//   2. recruitment_positions      → 职位、独立 is_open、排序、每个职位的专属 questions；
+//   3. supabase.auth.getUser()    → 申请表单与「我的申请」的登录态；
+//   4. recruitment_applications   → 提交申请、读取本人最近 10 条申请。
+//
+// 数据库是唯一事实来源：本页不修改设置、不写 SQL、不重复实现 RLS；
+// 提交前只做前端必填校验，并把数据库错误翻译成玩家可读的提示。
+// 已知约束（由数据库保证）：
+//   · INSERT 要求登录 + Steam 已验证 + recruitment_settings.is_open + 该职位 is_open；
+//   · 同一用户同一职位同时只能有一条 pending/reviewing 申请（重复插入 23505 / 409）；
+//   · RLS 只允许登录用户 SELECT 自己的申请；
+//   · positions.questions 为 jsonb 数组，单项形如
+//     { id, label, type: 'text'|'textarea'|'select', required, options? }。
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
@@ -20,40 +30,61 @@ const supabase = createClient(
 const DEFAULT_TITLE = '加入 RCT MP 团队';
 const MAX_APPLICATIONS = 10;
 const MAX_CONTACT = 120;
-const MAX_MESSAGE = 1000;
 
 type ApplicationStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected';
+type RecruitStatus = 'open' | 'closed' | 'empty';
+type QuestionType = 'text' | 'textarea' | 'select';
 
 interface RecruitmentSettings {
   is_open: boolean;
   title: string;
   intro: string;
   requirements: string;
-  positions: string;
-  updated_at: string | null;
 }
 
-interface PositionInfo {
-  title: string;
-  department: string | null;
-  description: string | null;
+interface Question {
+  id: string;
+  label: string;
+  type: QuestionType;
+  required: boolean;
+  options: string[];
+}
+
+interface Position {
+  id: number;
+  name: string;
+  department: string;
+  description: string;
+  questions: Question[];
+  is_open: boolean;
+  sort_order: number;
 }
 
 interface ApplicationRow {
   id: string;
+  position_id: number | null;
   position: string;
+  contact: string | null;
+  answers: Record<string, string>;
   status: ApplicationStatus;
   handle_note: string | null;
   created_at: string;
 }
 
-interface Notice {
-  kind: 'success' | 'error';
+interface AnswerItem {
+  id: string;
+  label: string;
+  value: string;
+}
+
+interface SuccessNotice {
+  positionId: number;
   text: string;
 }
 
 interface DbErrorInfo {
   code: string | null;
+  status: number | null;
   message: string;
 }
 
@@ -62,20 +93,53 @@ const DEFAULT_SETTINGS: RecruitmentSettings = {
   title: DEFAULT_TITLE,
   intro: '',
   requirements: '',
-  positions: '',
-  updated_at: null,
 };
 
 const STATUS_META: Record<ApplicationStatus, { label: string; className: string }> = {
-  pending: { label: '待处理', className: 'border-orange-500/40 bg-orange-500/15 text-orange-300' },
-  reviewing: { label: '审核中', className: 'border-blue-500/40 bg-blue-500/15 text-blue-300' },
-  accepted: { label: '已通过', className: 'border-green-500/40 bg-green-500/15 text-green-300' },
-  rejected: { label: '未通过', className: 'border-gray-600 bg-[#232428] text-gray-400' },
+  pending: {
+    label: '待处理',
+    className: 'border-orange-500/40 bg-orange-500/15 text-orange-300',
+  },
+  reviewing: {
+    label: '审核中',
+    className: 'border-blue-500/40 bg-blue-500/15 text-blue-300',
+  },
+  accepted: {
+    label: '已通过',
+    className: 'border-green-500/40 bg-green-500/15 text-green-300',
+  },
+  rejected: {
+    label: '未通过',
+    className: 'border-gray-600 bg-[#232428] text-gray-400',
+  },
+};
+
+const RECRUIT_STATUS_META: Record<RecruitStatus, { label: string; className: string }> = {
+  open: {
+    label: '招募中',
+    className: 'border-green-500/40 bg-green-500/15 text-green-300',
+  },
+  closed: {
+    label: '招募暂未开放',
+    className: 'border-gray-600 bg-[#232428] text-gray-400',
+  },
+  empty: {
+    label: '暂无开放职位',
+    className: 'border-gray-600 bg-[#232428] text-gray-400',
+  },
 };
 
 const inputClass =
-  'w-full rounded border border-gray-600 bg-[#18191c] p-3 text-white placeholder:text-gray-600 focus:border-blue-500 focus:outline-none';
+  'w-full rounded border border-gray-600 bg-[#18191c] p-3 text-white placeholder:text-gray-600 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 const labelClass = 'mb-1 block text-sm text-gray-400';
+const primaryButtonClass =
+  'rounded bg-blue-600 px-6 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50';
+const secondaryButtonClass =
+  'rounded border border-gray-600 bg-[#232428] px-6 py-2.5 text-sm font-bold text-gray-200 transition hover:border-gray-500 disabled:cursor-not-allowed disabled:opacity-50';
+const ctaPrimaryClass =
+  'rounded bg-blue-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-blue-700';
+const ctaSecondaryClass =
+  'rounded border border-gray-600 bg-[#232428] px-5 py-2 text-sm font-bold text-gray-200 transition hover:border-gray-500';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -87,18 +151,23 @@ function asText(value: unknown): string | null {
   return null;
 }
 
+function asId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 function errorMessage(error: unknown): string {
   if (isRecord(error)) {
     const message = asText(error.message);
-    if (message && message.trim()) return message;
+    if (message && message.trim()) return message.trim();
   }
-  return '操作失败，请稍后重试';
+  return '加载失败，请稍后重试';
 }
 
-/**
- * 设置行缺失或字段异常时退回「暂未开放」的安全默认值，
- * 避免因为文案问题让页面整体崩掉。
- */
 function toSettings(raw: unknown): RecruitmentSettings {
   if (!isRecord(raw)) return DEFAULT_SETTINGS;
 
@@ -107,60 +176,118 @@ function toSettings(raw: unknown): RecruitmentSettings {
     title: asText(raw.title)?.trim() || DEFAULT_TITLE,
     intro: asText(raw.intro) ?? '',
     requirements: asText(raw.requirements) ?? '',
-    positions: asText(raw.positions) ?? '',
-    updated_at: asText(raw.updated_at),
   };
 }
 
-/**
- * positions 每行一个职位，格式为「职位 | 部门 | 说明」。
- * 字段缺失时容错：只有职位也可解析；说明中多余的 | 会重新拼接。
- */
-function parsePositions(raw: string): PositionInfo[] {
-  return raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('#'))
-    .map((line) => {
-      const [rawTitle = '', rawDepartment = '', ...rest] = line
-        .split('|')
-        .map((part) => part.trim());
-      const title = rawTitle.trim();
-      if (!title) return null;
+function isQuestionType(value: unknown): value is QuestionType {
+  return value === 'text' || value === 'textarea' || value === 'select';
+}
 
-      return {
-        title,
-        department: rawDepartment || null,
-        description: rest.join(' | ').trim() || null,
-      };
-    })
-    .filter((item): item is PositionInfo => item !== null);
+function toQuestion(raw: unknown): Question | null {
+  if (!isRecord(raw)) return null;
+
+  const id = asText(raw.id)?.trim();
+  const label = asText(raw.label)?.trim();
+  if (!id || !label) return null;
+
+  const options = Array.isArray(raw.options)
+    ? Array.from(
+        new Set(
+          raw.options
+            .map((option) => asText(option)?.trim() ?? '')
+            .filter((option) => option.length > 0)
+        )
+      )
+    : [];
+
+  return {
+    id,
+    label,
+    type: isQuestionType(raw.type) ? raw.type : 'text',
+    required: raw.required === true,
+    options,
+  };
+}
+
+function toQuestions(raw: unknown): Question[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: unknown[] = raw;
+  return rows.map(toQuestion).filter((question): question is Question => question !== null);
+}
+
+function toPosition(raw: unknown): Position | null {
+  if (!isRecord(raw)) return null;
+
+  const id = asId(raw.id);
+  const name = asText(raw.name)?.trim();
+  if (id === null || !name) return null;
+
+  const sortOrder = typeof raw.sort_order === 'number' ? raw.sort_order : Number(raw.sort_order);
+
+  return {
+    id,
+    name,
+    department: (asText(raw.department) ?? '').trim(),
+    description: asText(raw.description) ?? '',
+    questions: toQuestions(raw.questions),
+    is_open: raw.is_open === true,
+    sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
+  };
+}
+
+function toPositions(data: unknown): Position[] {
+  if (!Array.isArray(data)) return [];
+  const rows: unknown[] = data;
+  return rows
+    .map(toPosition)
+    .filter((position): position is Position => position !== null)
+    .sort((left, right) => left.sort_order - right.sort_order || left.id - right.id);
 }
 
 function isApplicationStatus(value: unknown): value is ApplicationStatus {
-  return value === 'pending' || value === 'reviewing' || value === 'accepted' || value === 'rejected';
+  return (
+    value === 'pending' ||
+    value === 'reviewing' ||
+    value === 'accepted' ||
+    value === 'rejected'
+  );
+}
+
+function toAnswers(raw: unknown): Record<string, string> {
+  if (!isRecord(raw)) return {};
+
+  const answers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const text = asText(value);
+    if (text !== null) answers[key] = text;
+  }
+  return answers;
 }
 
 function toApplicationRow(raw: unknown): ApplicationRow | null {
   if (!isRecord(raw)) return null;
 
-  const id = asText(raw.id);
+  const id = asText(raw.id)?.trim();
   const createdAt = asText(raw.created_at);
   if (!id || !createdAt) return null;
 
   return {
     id,
+    position_id: asId(raw.position_id),
     position: asText(raw.position)?.trim() || '未填写职位',
+    contact: typeof raw.contact === 'string' && raw.contact.trim() ? raw.contact : null,
+    answers: toAnswers(raw.answers),
     status: isApplicationStatus(raw.status) ? raw.status : 'pending',
     handle_note:
-      typeof raw.handle_note === 'string' && raw.handle_note.trim() ? raw.handle_note.trim() : null,
+      typeof raw.handle_note === 'string' && raw.handle_note.trim() ? raw.handle_note : null,
     created_at: createdAt,
   };
 }
 
 function toApplicationRows(data: unknown): ApplicationRow[] {
   if (!Array.isArray(data)) return [];
-  return data.map(toApplicationRow).filter((row): row is ApplicationRow => row !== null);
+  const rows: unknown[] = data;
+  return rows.map(toApplicationRow).filter((row): row is ApplicationRow => row !== null);
 }
 
 function formatTime(value: string): string {
@@ -170,88 +297,158 @@ function formatTime(value: string): string {
 }
 
 function toDbErrorInfo(error: unknown): DbErrorInfo {
-  if (isRecord(error)) {
-    const message = asText(error.message)?.trim();
-    return {
-      code: asText(error.code),
-      message: message || '提交失败，请稍后重试。',
-    };
-  }
-  return { code: null, message: '提交失败，请稍后重试。' };
+  if (!isRecord(error)) return { code: null, status: null, message: '' };
+
+  const rawStatus = error.status;
+  const status =
+    typeof rawStatus === 'number'
+      ? rawStatus
+      : typeof rawStatus === 'string' && rawStatus.trim() !== ''
+        ? Number(rawStatus)
+        : null;
+
+  return {
+    code: asText(error.code),
+    status: status !== null && Number.isFinite(status) ? status : null,
+    message: asText(error.message)?.trim() ?? '',
+  };
 }
 
-/** 把数据库错误翻译成玩家能理解的中文提示。 */
+/** 把数据库/网络错误翻译成玩家能理解的提示；其余错误保留 error.message。 */
 function submitErrorText(error: unknown): string {
   const info = toDbErrorInfo(error);
 
-  if (info.code === '23505' || /duplicate key|unique constraint/i.test(info.message)) {
-    return '你已有一条待处理的申请，请等待审核';
+  if (
+    info.code === '23505' ||
+    info.status === 409 ||
+    /duplicate key|unique constraint/i.test(info.message)
+  ) {
+    return '你已申请过该职位，请等待审核';
   }
 
-  if (info.code === '42501' || /row-level security|policy|permission|not authorized/i.test(info.message)) {
-    return '提交被拒绝：请先完成 Steam 验证后再申请（需绑定正版 Steam 账号）。';
+  if (
+    info.code === '42501' ||
+    info.status === 403 ||
+    /row-level security|permission denied|not authorized|policy/i.test(info.message)
+  ) {
+    return '该职位已关闭或你尚未通过 Steam 验证';
   }
 
-  return `提交失败：${info.message}`;
+  return info.message || '提交失败，请稍后重试';
+}
+
+/**
+ * 把 answers 映射为可展示的条目：
+ *   · 职位仍存在 → 按职位当前 questions 的顺序与 label 展示；
+ *   · 职位已删除（position_id 为空或查不到）→ 直接显示 question id；
+ *   · 职位存在但问题后来被删掉 → 该答案回退显示 question id。
+ * 空字符串不展示，避免出现大量「未填写」噪音。
+ */
+function buildAnswerItems(
+  answers: Record<string, string>,
+  position: Position | undefined
+): AnswerItem[] {
+  const items: AnswerItem[] = [];
+  const used = new Set<string>();
+
+  if (position) {
+    for (const question of position.questions) {
+      const value = answers[question.id];
+      if (typeof value === 'string' && value !== '') {
+        items.push({ id: question.id, label: question.label, value });
+        used.add(question.id);
+      }
+    }
+  }
+
+  for (const [id, value] of Object.entries(answers)) {
+    if (used.has(id) || value === '') continue;
+    items.push({ id, label: id, value });
+  }
+
+  return items;
 }
 
 export default function RecruitmentPage() {
+  // 公开数据：设置 + 职位
   const [settings, setSettings] = useState<RecruitmentSettings | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(true);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [settingsReload, setSettingsReload] = useState(0);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [pageReload, setPageReload] = useState(0);
 
-  const [authLoading, setAuthLoading] = useState(true);
+  // 登录态
   const [userId, setUserId] = useState<string | null>(null);
-  const [steamVerified, setSteamVerified] = useState<boolean | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
+  // 申请表单（同一时间只选中一个职位）
+  const [selectedPositionId, setSelectedPositionId] = useState<number | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [contact, setContact] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<SuccessNotice | null>(null);
+
+  // 我的申请
   const [applications, setApplications] = useState<ApplicationRow[]>([]);
-  // 登录后列表立即进入加载态，避免先闪一帧「还没有申请」。
   const [applicationsLoading, setApplicationsLoading] = useState(true);
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
   const [applicationsReload, setApplicationsReload] = useState(0);
+  const [expandedApplications, setExpandedApplications] = useState<Record<string, boolean>>({});
 
-  const [position, setPosition] = useState('');
-  const [contact, setContact] = useState('');
-  const [message, setMessage] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
-
-  // 1. 招募设置（匿名可读，无需登录）
+  // 1. 公开数据：设置行 + 全部职位（匿名可读，按 sort_order / id 排序）。
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      setSettingsLoading(true);
-      setSettingsError(null);
+      setPageLoading(true);
+      setPageError(null);
 
       try {
-        const { data, error } = await supabase
-          .from('recruitment_settings')
-          .select('is_open,title,intro,requirements,positions,updated_at')
-          .eq('id', 1)
-          .maybeSingle();
+        const [settingsResult, positionsResult] = await Promise.all([
+          supabase
+            .from('recruitment_settings')
+            .select('is_open,title,intro,requirements')
+            .eq('id', 1)
+            .maybeSingle(),
+          supabase
+            .from('recruitment_positions')
+            .select('id,name,department,description,questions,is_open,sort_order')
+            .order('sort_order', { ascending: true })
+            .order('id', { ascending: true }),
+        ]);
 
         if (cancelled) return;
 
-        if (error) {
-          setSettingsError(error.message);
+        if (settingsResult.error || positionsResult.error) {
+          setPageError(
+            settingsResult.error?.message ??
+              positionsResult.error?.message ??
+              '加载失败，请稍后重试'
+          );
           setSettings(null);
+          setPositions([]);
           return;
         }
 
-        const nextSettings = toSettings(data);
-        setSettings(nextSettings);
+        // 设置行缺失时按「未开放」处理，页面仍可展示职位与说明。
+        setSettings(toSettings(settingsResult.data));
+        setPositions(toPositions(positionsResult.data));
 
-        const firstPosition = parsePositions(nextSettings.positions)[0]?.title ?? '';
-        setPosition((current) => current || firstPosition);
+        // 数据刷新后收起旧表单，避免用过期职位提交。
+        setSelectedPositionId(null);
+        setAnswers({});
+        setFormError(null);
+        setSuccess(null);
+        setExpandedApplications({});
       } catch (error) {
         if (!cancelled) {
-          setSettingsError(errorMessage(error));
+          setPageError(errorMessage(error));
           setSettings(null);
+          setPositions([]);
         }
       } finally {
-        if (!cancelled) setSettingsLoading(false);
+        if (!cancelled) setPageLoading(false);
       }
     };
 
@@ -260,58 +457,38 @@ export default function RecruitmentPage() {
     return () => {
       cancelled = true;
     };
-  }, [settingsReload]);
+  }, [pageReload]);
 
-  // 2. 登录状态 + Steam 验证状态（仅作提示，最终以数据库 RLS 为准）
+  // 2. 登录态：先 getUser，再监听登录/退出，保证表单与「我的申请」同步。
   useEffect(() => {
     let cancelled = false;
 
-    const checkAuth = async () => {
+    const init = async () => {
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-
-        if (cancelled) return;
-
-        if (!user) {
-          setUserId(null);
-          setSteamVerified(null);
-          return;
-        }
-
-        setUserId(user.id);
-
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('steam_verified')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        if (cancelled) return;
-        setSteamVerified(
-          !error && isRecord(data) && typeof data.steam_verified === 'boolean'
-            ? data.steam_verified
-            : null
-        );
+        if (!cancelled) setUserId(user?.id ?? null);
       } catch {
-        if (!cancelled) {
-          setUserId(null);
-          setSteamVerified(null);
-        }
+        if (!cancelled) setUserId(null);
       } finally {
         if (!cancelled) setAuthLoading(false);
       }
     };
 
-    void checkAuth();
+    void init();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id ?? null);
+    });
 
     return () => {
       cancelled = true;
+      listener.subscription.unsubscribe();
     };
   }, []);
 
-  // 3. 我的申请（登录后显示，最近 10 条）
+  // 3. 我的申请：登录后读取最近 10 条（RLS 只返回本人数据）。
   useEffect(() => {
     if (!userId) return;
 
@@ -324,7 +501,7 @@ export default function RecruitmentPage() {
       try {
         const { data, error } = await supabase
           .from('recruitment_applications')
-          .select('id,position,status,handle_note,created_at')
+          .select('id,position_id,position,contact,answers,status,handle_note,created_at')
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(MAX_APPLICATIONS);
@@ -355,148 +532,188 @@ export default function RecruitmentPage() {
     };
   }, [userId, applicationsReload]);
 
+  const currentSettings = settings ?? DEFAULT_SETTINGS;
+  const isOpen = currentSettings.is_open;
+  const openPositionCount = positions.filter((position) => position.is_open).length;
+  const hasOpenPosition = isOpen && openPositionCount > 0;
+  const recruitStatus: RecruitStatus = !isOpen
+    ? 'closed'
+    : openPositionCount > 0
+      ? 'open'
+      : 'empty';
+  const headerBadge = pageLoading
+    ? { label: '加载中', className: RECRUIT_STATUS_META.closed.className }
+    : pageError
+      ? { label: '加载失败', className: RECRUIT_STATUS_META.closed.className }
+      : RECRUIT_STATUS_META[recruitStatus];
+
+  const selectedPosition =
+    selectedPositionId === null
+      ? null
+      : (positions.find((position) => position.id === selectedPositionId) ?? null);
+  // 只有「总开关开启 + 该职位 is_open」时才能看到/提交申请表单。
+  const activePosition =
+    selectedPosition && isOpen && selectedPosition.is_open ? selectedPosition : null;
+
+  const positionById = new Map<number, Position>(
+    positions.map((position) => [position.id, position])
+  );
+
+  const togglePosition = (position: Position) => {
+    if (submitting) return;
+
+    setFormError(null);
+    setSuccess(null);
+
+    if (selectedPositionId === position.id) {
+      setSelectedPositionId(null);
+      setAnswers({});
+      return;
+    }
+
+    setSelectedPositionId(position.id);
+    // 不同职位的问题 id 可能重复，切换职位时清空答案，避免串题。
+    setAnswers({});
+  };
+
+  const closeForm = () => {
+    if (submitting) return;
+    setSelectedPositionId(null);
+    setAnswers({});
+    setFormError(null);
+  };
+
+  const updateAnswer = (questionId: string, value: string) => {
+    setAnswers((previous) => ({ ...previous, [questionId]: value }));
+    setFormError(null);
+  };
+
+  const toggleApplication = (applicationId: string) => {
+    setExpandedApplications((previous) => ({
+      ...previous,
+      [applicationId]: !previous[applicationId],
+    }));
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting) return;
 
-    if (!settings?.is_open) {
-      setNotice({ kind: 'error', text: '招募当前未开放，暂时无法提交申请。' });
+    if (!activePosition) {
+      setFormError('该职位已关闭，请刷新页面后重试。');
       return;
     }
 
     if (!userId) {
-      setNotice({ kind: 'error', text: '登录状态已失效，请重新登录后再提交。' });
+      setFormError('请先登录后申请');
       return;
     }
 
-    const trimmedPosition = position.trim();
     const trimmedContact = contact.trim();
-    const trimmedMessage = message.trim();
-
-    if (!trimmedPosition) {
-      setNotice({ kind: 'error', text: '请选择或填写申请职位。' });
-      return;
-    }
     if (trimmedContact.length > MAX_CONTACT) {
-      setNotice({ kind: 'error', text: `联系方式不能超过 ${MAX_CONTACT} 字。` });
+      setFormError(`联系方式不能超过 ${MAX_CONTACT} 个字。`);
       return;
     }
-    if (!trimmedMessage) {
-      setNotice({ kind: 'error', text: '请填写申请说明。' });
-      return;
-    }
-    if (trimmedMessage.length > MAX_MESSAGE) {
-      setNotice({ kind: 'error', text: `申请说明不能超过 ${MAX_MESSAGE} 字。` });
-      return;
+
+    // 收集 answers：必填项前端校验非空；可选留空不写入，避免空字符串噪音。
+    const collected: Record<string, string> = {};
+    for (const question of activePosition.questions) {
+      const value = (answers[question.id] ?? '').trim();
+      if (question.required && value === '') {
+        setFormError(`请填写「${question.label}」`);
+        return;
+      }
+      if (value !== '') collected[question.id] = value;
     }
 
     setSubmitting(true);
-    setNotice(null);
+    setFormError(null);
 
     try {
       const { error } = await supabase.from('recruitment_applications').insert({
         user_id: userId,
-        position: trimmedPosition,
-        contact: trimmedContact || null,
-        message: trimmedMessage,
+        position_id: activePosition.id,
+        position: activePosition.name,
+        contact: trimmedContact === '' ? null : trimmedContact,
+        answers: collected,
       });
 
       if (error) {
-        setNotice({ kind: 'error', text: submitErrorText(error) });
+        setFormError(submitErrorText(error));
         return;
       }
 
-      setPosition('');
+      const appliedName = activePosition.name;
+      const appliedId = activePosition.id;
+
+      setAnswers({});
       setContact('');
-      setMessage('');
-      setNotice({
-        kind: 'success',
-        text: '✅ 申请已提交，我们会尽快审核。你可以在下方「我的申请」中查看进度。',
+      setSelectedPositionId(null);
+      setSuccess({
+        positionId: appliedId,
+        text: `✅ 已成功申请「${appliedName}」，我们会尽快审核，请留意通知。`,
       });
       setApplicationsReload((value) => value + 1);
     } catch (error) {
-      setNotice({ kind: 'error', text: submitErrorText(error) });
+      setFormError(submitErrorText(error));
     } finally {
       setSubmitting(false);
     }
   };
-
-  const currentSettings = settings ?? DEFAULT_SETTINGS;
-  const isOpen = currentSettings.is_open;
-  const positions = parsePositions(currentSettings.positions);
-  const positionOptions = Array.from(new Set(positions.map((item) => item.title)));
 
   return (
     <div className="min-h-screen bg-[#18191c] font-sans text-gray-300">
       <Navbar />
 
       <main className="mx-auto w-full max-w-4xl px-4 py-10 md:px-6">
-        <header className="mb-8 border-b border-gray-700 pb-5">
-          <div className="flex flex-wrap items-center gap-3">
+        <header className="mb-8 border-b border-gray-700 pb-6">
+          <p className="text-xs font-bold uppercase tracking-[0.3em] text-orange-400">
+            Recruitment
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-bold text-white">{currentSettings.title}</h1>
-            {settingsLoading ? (
-              <span className="inline-flex items-center rounded border border-gray-600 bg-[#232428] px-2.5 py-1 text-xs font-bold text-gray-400">
-                加载中
-              </span>
-            ) : (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-bold ${headerBadge.className}`}
+            >
               <span
-                className={`inline-flex items-center rounded border px-2.5 py-1 text-xs font-bold ${
-                  isOpen
-                    ? 'border-green-500/40 bg-green-500/15 text-green-300'
-                    : 'border-gray-600 bg-[#232428] text-gray-400'
+                aria-hidden="true"
+                className={`h-1.5 w-1.5 rounded-full ${
+                  !pageLoading && !pageError && recruitStatus === 'open'
+                    ? 'bg-green-400'
+                    : 'bg-gray-500'
                 }`}
-              >
-                {isOpen ? '招募中' : '暂未开放'}
-              </span>
-            )}
+              />
+              {headerBadge.label}
+            </span>
           </div>
           <p className="mt-2 text-sm text-gray-500">
-            加入 RCT MP 团队，和一群热爱欧卡2的玩家一起运营社区、组织联运。
+            Road Cruise Transport MP 社区团队公开招募，欢迎热爱欧卡与联运的玩家加入。
           </p>
         </header>
 
-        {settingsLoading ? (
-          <div className="rounded-xl border border-gray-700 bg-[#2c2d31] px-6 py-16 text-center text-sm text-gray-500 shadow-lg">
-            正在加载招募信息...
+        {pageLoading ? (
+          <div aria-busy="true" aria-live="polite" className="space-y-4">
+            <p className="text-center text-sm text-gray-500">正在加载招募信息...</p>
+            <div className="h-28 animate-pulse rounded-xl border border-gray-700/40 bg-[#232428]" />
+            <div className="h-40 animate-pulse rounded-xl border border-gray-700/40 bg-[#232428]" />
+            <div className="h-24 animate-pulse rounded-xl border border-gray-700/40 bg-[#232428]" />
           </div>
-        ) : settingsError ? (
+        ) : pageError ? (
           <div
             role="alert"
             className="rounded-xl border border-red-500/40 bg-red-500/10 px-6 py-10 text-center shadow-lg"
           >
-            <p className="text-sm text-red-300">加载招募信息失败：{settingsError}</p>
+            <p className="text-sm text-red-300">加载招募信息失败：{pageError}</p>
             <button
               type="button"
-              onClick={() => setSettingsReload((value) => value + 1)}
-              className="mt-5 rounded bg-blue-600 px-6 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700"
+              onClick={() => setPageReload((value) => value + 1)}
+              className="mt-5 rounded bg-red-700 px-5 py-2 text-sm font-bold text-white transition hover:bg-red-600"
             >
               重试
             </button>
           </div>
         ) : (
           <>
-            {!isOpen && (
-              <section className="mb-6 rounded-xl border border-gray-700 bg-[#2c2d31] p-6 text-center shadow-lg">
-                <div className="text-3xl">📢</div>
-                <h2 className="mt-2 text-lg font-bold text-white">招募暂未开放</h2>
-                <p className="mt-2 text-sm text-gray-400">招募暂未开放，请关注新闻公告。</p>
-                <div className="mt-5 flex flex-wrap justify-center gap-3">
-                  <Link
-                    href="/news"
-                    className="rounded bg-blue-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-blue-700"
-                  >
-                    查看新闻公告
-                  </Link>
-                  <Link
-                    href="/team"
-                    className="rounded border border-gray-600 bg-[#232428] px-5 py-2 text-sm font-bold text-gray-200 transition hover:border-gray-500"
-                  >
-                    了解现有团队
-                  </Link>
-                </div>
-              </section>
-            )}
-
             {currentSettings.intro.trim() && (
               <section className="mt-6 rounded-xl border border-gray-700 bg-[#2c2d31] p-5 shadow-lg md:p-6">
                 <h2 className="text-lg font-bold text-white">关于招募</h2>
@@ -515,181 +732,308 @@ export default function RecruitmentPage() {
               </section>
             )}
 
-            <section className="mt-6">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-bold text-white">开放职位</h2>
-                {positions.length > 0 && (
-                  <span className="text-xs text-gray-500">共 {positions.length} 个职位</span>
-                )}
-              </div>
-
-              {positions.length === 0 ? (
-                <p className="rounded-xl border border-gray-700 bg-[#232428] px-4 py-8 text-center text-sm text-gray-500">
-                  暂无职位信息，请关注后续公告。
+            {!hasOpenPosition && (
+              <section className="mt-6 rounded-xl border border-gray-700 bg-[#2c2d31] p-6 text-center shadow-lg">
+                <div className="text-3xl" aria-hidden="true">
+                  📢
+                </div>
+                <h2 className="mt-2 text-lg font-bold text-white">
+                  {currentSettings.is_open ? '暂无开放职位' : '招募暂未开放'}
+                </h2>
+                <p className="mt-2 text-sm text-gray-400">
+                  请关注新闻公告，下一轮招募开放后会第一时间在这里公布。
                 </p>
-              ) : (
-                <ul className="grid gap-4 sm:grid-cols-2">
-                  {positions.map((item, index) => (
-                    <li
-                      key={`${item.title}-${index}`}
-                      className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-bold text-white">{item.title}</h3>
-                        {item.department && (
-                          <span className="rounded border border-orange-500/40 bg-orange-500/10 px-2 py-0.5 text-xs text-orange-300">
-                            {item.department}
-                          </span>
-                        )}
-                      </div>
-                      {item.description ? (
-                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-400">
-                          {item.description}
-                        </p>
-                      ) : (
-                        <p className="mt-2 text-xs text-gray-500">职位说明待补充。</p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {isOpen && (
-              <section id="apply" className="mt-8">
-                <h2 className="text-xl font-bold text-white">提交申请</h2>
-
-                <div className="mt-4 rounded-xl border border-gray-700 bg-[#2c2d31] p-5 shadow-lg md:p-6">
-                  {authLoading ? (
-                    <p className="py-6 text-center text-sm text-gray-500">正在确认登录状态...</p>
-                  ) : !userId ? (
-                    <div className="py-4 text-center">
-                      <p className="text-sm text-gray-300">请先登录后申请。</p>
-                      <Link
-                        href="/login"
-                        className="mt-5 inline-block rounded bg-blue-600 px-6 py-2.5 font-bold text-white transition hover:bg-blue-700"
-                      >
-                        前往登录
-                      </Link>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSubmit} className="space-y-5">
-                      {steamVerified === false && (
-                        <p className="rounded border border-orange-500/40 bg-orange-500/10 px-4 py-3 text-sm text-orange-300">
-                          你的账号尚未完成 Steam 验证，提交前请先在{' '}
-                          <Link href="/profile" className="underline hover:text-orange-200">
-                            个人资料
-                          </Link>{' '}
-                          完成验证。
-                        </p>
-                      )}
-
-                      <div>
-                        <label htmlFor="recruitment-position" className={labelClass}>
-                          申请职位 <span className="text-red-400">*</span>
-                        </label>
-                        {positionOptions.length > 0 ? (
-                          <select
-                            id="recruitment-position"
-                            value={position}
-                            onChange={(event) => setPosition(event.target.value)}
-                            className={inputClass}
-                            required
-                          >
-                            <option value="">请选择职位</option>
-                            {positionOptions.map((title) => (
-                              <option key={title} value={title}>
-                                {title}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            id="recruitment-position"
-                            type="text"
-                            value={position}
-                            onChange={(event) => setPosition(event.target.value)}
-                            className={inputClass}
-                            placeholder="例如：社区版主"
-                            maxLength={80}
-                            required
-                          />
-                        )}
-                      </div>
-
-                      <div>
-                        <label htmlFor="recruitment-contact" className={labelClass}>
-                          联系方式（选填）
-                        </label>
-                        <input
-                          id="recruitment-contact"
-                          type="text"
-                          value={contact}
-                          onChange={(event) => setContact(event.target.value)}
-                          className={inputClass}
-                          placeholder="邮箱 / Discord / QQ 等"
-                          maxLength={MAX_CONTACT}
-                        />
-                        <div className="mt-1 flex justify-end text-xs text-gray-500">
-                          <span className={contact.length >= MAX_CONTACT ? 'text-orange-400' : ''}>
-                            {contact.length}/{MAX_CONTACT}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label htmlFor="recruitment-message" className={labelClass}>
-                          申请说明 <span className="text-red-400">*</span>
-                        </label>
-                        <textarea
-                          id="recruitment-message"
-                          value={message}
-                          onChange={(event) => setMessage(event.target.value)}
-                          className={`${inputClass} min-h-[140px] resize-y`}
-                          rows={6}
-                          maxLength={MAX_MESSAGE}
-                          required
-                          placeholder="请介绍你的游戏时长、可投入时间、相关经验，以及想加入这个职位的原因。"
-                        />
-                        <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
-                          <span>请如实填写，方便我们评估。</span>
-                          <span className={message.length >= MAX_MESSAGE ? 'text-orange-400' : ''}>
-                            {message.length}/{MAX_MESSAGE}
-                          </span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={submitting}
-                        className="w-full rounded bg-blue-600 py-3 font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {submitting ? '提交中...' : '提交申请'}
-                      </button>
-
-                      {notice && (
-                        <p
-                          role="status"
-                          aria-live="polite"
-                          className={`whitespace-pre-line rounded border px-4 py-3 text-sm ${
-                            notice.kind === 'success'
-                              ? 'border-green-500/40 bg-green-500/10 text-green-300'
-                              : 'border-red-500/40 bg-red-500/10 text-red-300'
-                          }`}
-                        >
-                          {notice.text}
-                        </p>
-                      )}
-                    </form>
-                  )}
+                <div className="mt-5 flex flex-wrap justify-center gap-3">
+                  <Link href="/news" className={ctaPrimaryClass}>
+                    查看新闻公告
+                  </Link>
+                  <Link href="/team" className={ctaSecondaryClass}>
+                    了解现有团队
+                  </Link>
                 </div>
               </section>
             )}
 
+            <section className="mt-8">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-bold text-white">招募职位</h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    共 {positions.length} 个职位
+                    {openPositionCount > 0 ? ` · ${openPositionCount} 个开放中` : ''}
+                  </p>
+                </div>
+              </div>
+
+              {positions.length === 0 ? (
+                <p className="rounded-xl border border-gray-700 bg-[#232428] px-4 py-10 text-center text-sm text-gray-500">
+                  暂无职位信息，请关注新闻公告与下一轮招募。
+                </p>
+              ) : (
+                <ul className="space-y-4">
+                  {positions.map((position) => {
+                    const available = isOpen && position.is_open;
+                    const selected = activePosition?.id === position.id;
+                    const questionCount = position.questions.length;
+                    const formId = `position-application-${position.id}`;
+
+                    return (
+                      <li key={position.id}>
+                        <article
+                          className={`rounded-xl border p-5 shadow-lg transition ${
+                            available
+                              ? 'border-gray-700 bg-[#2c2d31]'
+                              : 'border-gray-800 bg-[#232428]'
+                          } ${selected ? 'ring-2 ring-blue-500/50' : ''}`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3
+                              className={`text-base font-bold ${
+                                available ? 'text-white' : 'text-gray-400'
+                              }`}
+                            >
+                              {position.name}
+                            </h3>
+                            {position.department && (
+                              <span
+                                className={`rounded border px-2 py-0.5 text-xs ${
+                                  available
+                                    ? 'border-orange-500/40 bg-orange-500/10 text-orange-300'
+                                    : 'border-gray-700 bg-[#2c2d31] text-gray-500'
+                                }`}
+                              >
+                                {position.department}
+                              </span>
+                            )}
+                            <span
+                              className={`rounded border px-2 py-0.5 text-xs font-bold ${
+                                available
+                                  ? 'border-green-500/40 bg-green-500/15 text-green-300'
+                                  : 'border-gray-700 bg-[#2c2d31] text-gray-500'
+                              }`}
+                            >
+                              {available ? '开放中' : '暂未开放'}
+                            </span>
+                          </div>
+
+                          <p
+                            className={`mt-2 whitespace-pre-wrap break-words text-sm leading-6 ${
+                              available ? 'text-gray-400' : 'text-gray-500'
+                            }`}
+                          >
+                            {position.description.trim() || '职位说明待补充。'}
+                          </p>
+
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-700/60 pt-3">
+                            <span className="text-xs text-gray-500">
+                              {available
+                                ? `问题数量：${questionCount}${
+                                    questionCount === 0 ? '（无需额外填写）' : ''
+                                  }`
+                                : '暂未开放，暂不接受申请'}
+                            </span>
+                            {available ? (
+                              <button
+                                type="button"
+                                onClick={() => togglePosition(position)}
+                                aria-expanded={selected}
+                                aria-controls={selected ? formId : undefined}
+                                className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700"
+                              >
+                                {selected ? '收起申请' : '申请该职位'}
+                              </button>
+                            ) : null}
+                          </div>
+                        </article>
+
+                        {success && success.positionId === position.id && (
+                          <p
+                            role="status"
+                            className="mt-3 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm text-green-300"
+                          >
+                            {success.text}
+                          </p>
+                        )}
+
+                        {selected && activePosition && (
+                          <div
+                            id={formId}
+                            className="mt-3 rounded-xl border border-blue-500/40 bg-[#232428] p-5 shadow-lg"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700/70 pb-3">
+                              <h4 className="text-base font-bold text-white">
+                                申请「{position.name}」
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={closeForm}
+                                disabled={submitting}
+                                className="text-xs text-gray-400 transition hover:text-white disabled:opacity-50"
+                              >
+                                收起
+                              </button>
+                            </div>
+
+                            {authLoading ? (
+                              <p className="py-8 text-center text-sm text-gray-500">
+                                正在确认登录状态...
+                              </p>
+                            ) : !userId ? (
+                              <div className="py-8 text-center">
+                                <p className="text-sm text-gray-300">请先登录后申请</p>
+                                <Link
+                                  href="/login"
+                                  className="mt-4 inline-block rounded bg-blue-600 px-6 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700"
+                                >
+                                  前往登录
+                                </Link>
+                              </div>
+                            ) : (
+                              <form onSubmit={handleSubmit} noValidate className="mt-4 space-y-5">
+                                {activePosition.questions.map((question, index) => {
+                                  const fieldId = `question-${activePosition.id}-${index}`;
+                                  const value = answers[question.id] ?? '';
+
+                                  return (
+                                    <div key={`${question.id}-${index}`}>
+                                      <label htmlFor={fieldId} className={labelClass}>
+                                        {question.label}
+                                        {question.required && (
+                                          <>
+                                            <span className="ml-1 text-red-400" aria-hidden="true">
+                                              *
+                                            </span>
+                                            <span className="sr-only">（必填）</span>
+                                          </>
+                                        )}
+                                      </label>
+
+                                      {question.type === 'textarea' ? (
+                                        <textarea
+                                          id={fieldId}
+                                          rows={4}
+                                          value={value}
+                                          required={question.required}
+                                          onChange={(event) =>
+                                            updateAnswer(question.id, event.target.value)
+                                          }
+                                          className={`${inputClass} resize-y`}
+                                        />
+                                      ) : question.type === 'select' &&
+                                        question.options.length > 0 ? (
+                                        <select
+                                          id={fieldId}
+                                          value={value}
+                                          required={question.required}
+                                          onChange={(event) =>
+                                            updateAnswer(question.id, event.target.value)
+                                          }
+                                          className={inputClass}
+                                        >
+                                          <option value="">请选择</option>
+                                          {question.options.map((option, optionIndex) => (
+                                            <option
+                                              key={`${option}-${optionIndex}`}
+                                              value={option}
+                                            >
+                                              {option}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        // select 未配置 options 时退化为文本输入，避免题目永远无法填写。
+                                        <input
+                                          id={fieldId}
+                                          type="text"
+                                          value={value}
+                                          required={question.required}
+                                          onChange={(event) =>
+                                            updateAnswer(question.id, event.target.value)
+                                          }
+                                          className={inputClass}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {activePosition.questions.length === 0 && (
+                                  <p className="text-sm text-gray-500">
+                                    该职位没有额外问题，填写联系方式后即可提交。
+                                  </p>
+                                )}
+
+                                <div>
+                                  <label htmlFor="recruitment-contact" className={labelClass}>
+                                    联系方式（可选）
+                                  </label>
+                                  <input
+                                    id="recruitment-contact"
+                                    type="text"
+                                    value={contact}
+                                    maxLength={MAX_CONTACT}
+                                    placeholder="邮箱 / Discord / QQ 等"
+                                    onChange={(event) => {
+                                      setContact(event.target.value);
+                                      setFormError(null);
+                                    }}
+                                    className={inputClass}
+                                  />
+                                  <div className="mt-1 flex justify-end text-xs text-gray-500">
+                                    <span
+                                      className={
+                                        contact.length >= MAX_CONTACT ? 'text-orange-400' : ''
+                                      }
+                                    >
+                                      {contact.length}/{MAX_CONTACT}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {formError && (
+                                  <p
+                                    role="alert"
+                                    className="whitespace-pre-line rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+                                  >
+                                    {formError}
+                                  </p>
+                                )}
+
+                                <div className="flex flex-wrap gap-3">
+                                  <button
+                                    type="submit"
+                                    disabled={submitting}
+                                    className={primaryButtonClass}
+                                  >
+                                    {submitting ? '提交中...' : '提交申请'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={closeForm}
+                                    disabled={submitting}
+                                    className={secondaryButtonClass}
+                                  >
+                                    取消
+                                  </button>
+                                </div>
+                              </form>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+
             {userId && (
               <section className="mt-10">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-xl font-bold text-white">我的申请</h2>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">我的申请</h2>
+                    <p className="mt-1 text-xs text-gray-500">仅显示最近 {MAX_APPLICATIONS} 条。</p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setApplicationsReload((value) => value + 1)}
@@ -700,59 +1044,125 @@ export default function RecruitmentPage() {
                   </button>
                 </div>
 
-                {applicationsError && (
-                  <p
+                {applicationsLoading && applications.length === 0 ? (
+                  <div aria-busy="true" className="space-y-3">
+                    <div className="h-24 animate-pulse rounded-lg border border-gray-700/40 bg-[#232428]" />
+                    <div className="h-24 animate-pulse rounded-lg border border-gray-700/40 bg-[#232428]" />
+                  </div>
+                ) : applicationsError ? (
+                  <div
                     role="alert"
-                    className="rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+                    className="flex flex-col gap-2 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    加载失败：{applicationsError}
-                  </p>
-                )}
-
-                {applicationsLoading ? (
-                  <p className="py-8 text-center text-sm text-gray-500">加载中...</p>
-                ) : applicationsError ? null : applications.length === 0 ? (
+                    <span className="break-all">加载失败：{applicationsError}</span>
+                    <button
+                      type="button"
+                      onClick={() => setApplicationsReload((value) => value + 1)}
+                      disabled={applicationsLoading}
+                      className="shrink-0 rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
+                    >
+                      重试
+                    </button>
+                  </div>
+                ) : applications.length === 0 ? (
                   <p className="rounded border border-gray-700 bg-[#232428] px-4 py-8 text-center text-sm text-gray-500">
                     你还没有提交过申请。
                   </p>
                 ) : (
-                  <ul className="space-y-4">
-                    {applications.map((application) => {
-                      const meta = STATUS_META[application.status];
-                      return (
-                        <li
-                          key={application.id}
-                          className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg"
-                        >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-bold text-white">
-                              {application.position}
-                            </span>
-                            <span
-                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
-                            >
-                              {meta.label}
-                            </span>
-                            <span className="ml-auto text-xs text-gray-500">
-                              {formatTime(application.created_at)}
-                            </span>
-                          </div>
+                  <>
+                    <ul
+                      aria-busy={applicationsLoading}
+                      className={`space-y-4 transition-opacity ${
+                        applicationsLoading ? 'opacity-60' : ''
+                      }`}
+                    >
+                      {applications.map((application) => {
+                        const meta = STATUS_META[application.status];
+                        const answerItems = buildAnswerItems(
+                          application.answers,
+                          positionById.get(application.position_id ?? -1)
+                        );
+                        const expanded = expandedApplications[application.id] === true;
 
-                          {application.handle_note && (
-                            <p className="mt-3 whitespace-pre-wrap break-words rounded border border-gray-700 bg-[#232428] px-3 py-2 text-xs text-gray-300">
-                              处理备注：{application.handle_note}
-                            </p>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                        return (
+                          <li
+                            key={application.id}
+                            className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded border border-gray-600 bg-[#232428] px-2 py-0.5 text-sm font-bold text-white">
+                                {application.position}
+                              </span>
+                              <span
+                                className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
+                              >
+                                {meta.label}
+                              </span>
+                              <span className="ml-auto text-xs text-gray-500">
+                                {formatTime(application.created_at)}
+                              </span>
+                            </div>
 
-                {applications.length >= MAX_APPLICATIONS && (
-                  <p className="mt-3 text-center text-xs text-gray-500">
-                    仅显示最近 {MAX_APPLICATIONS} 条申请。
-                  </p>
+                            {application.contact && (
+                              <p className="mt-2 break-all text-xs text-gray-500">
+                                联系方式：
+                                <span className="text-gray-300">{application.contact}</span>
+                              </p>
+                            )}
+
+                            {application.handle_note && (
+                              <p className="mt-3 whitespace-pre-wrap break-words rounded border border-gray-700 bg-[#232428] px-3 py-2 text-xs text-gray-300">
+                                处理备注：{application.handle_note}
+                              </p>
+                            )}
+
+                            {answerItems.length > 0 ? (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleApplication(application.id)}
+                                  aria-expanded={expanded}
+                                  className="text-xs text-blue-400 transition hover:text-blue-300"
+                                >
+                                  {expanded
+                                    ? '收起填写内容'
+                                    : `查看填写内容（${answerItems.length} 项）`}
+                                </button>
+
+                                {expanded && (
+                                  <dl className="mt-2 space-y-2 border-t border-gray-700/60 pt-3">
+                                    {answerItems.map((item, index) => (
+                                      <div
+                                        key={`${item.id}-${index}`}
+                                        className="grid gap-1 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]"
+                                      >
+                                        <dt className="break-words text-xs text-gray-500">
+                                          {item.label}
+                                        </dt>
+                                        <dd className="whitespace-pre-wrap break-words text-sm text-gray-300">
+                                          {item.value}
+                                        </dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="mt-3 text-xs italic text-gray-500">
+                                未填写额外问题。
+                              </p>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {applications.length >= MAX_APPLICATIONS && (
+                      <p className="mt-3 text-center text-xs text-gray-500">
+                        仅显示最近 {MAX_APPLICATIONS} 条申请。
+                      </p>
+                    )}
+                  </>
                 )}
               </section>
             )}

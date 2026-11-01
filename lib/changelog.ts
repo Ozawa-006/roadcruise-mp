@@ -21,10 +21,38 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.36v',
+    date: '2026-11-01',
+    title: '招募职位独立开关与专属问题',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '每个招募职位可单独「开放/关闭」，公开页只显示开放中的职位；总开关关闭时全部不可申请',
+      },
+      {
+        kind: 'feature',
+        text: '每个职位可配置专属申请问题（文本/多行/下拉、是否必填、下拉选项）；公开页按职位动态生成申请表单，答案随申请保存',
+      },
+      {
+        kind: 'feature',
+        text: '后台支持职位增删改、排序、逐职位开关、问题编辑器；申请列表可按职位/状态筛选并展开查看答案',
+      },
+      {
+        kind: 'chore',
+        text: '数据库新增 `recruitment_positions`；申请记录新增 `position_id`/`answers`；唯一约束改为「同一用户同一职位只能有一条待处理」',
+      },
+      {
+        kind: 'chore',
+        text: '已预置 5 个职位与 TMP 风格通用/专属问题（默认关闭，由后台开启）',
+      },
+    ],
+  },
+  {
     version: '0.0.35v',
     date: '2026-11-01',
     title: '招募系统上线',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
