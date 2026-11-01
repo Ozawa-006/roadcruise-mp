@@ -502,7 +502,7 @@ export default function AdminRecruitmentPage() {
         .from('recruitment_settings')
         .update({ is_open: next, updated_by: userId })
         .eq('id', 1)
-        .select('id')
+        .select('id,updated_at')
         .maybeSingle();
 
       if (error) {
@@ -519,6 +519,9 @@ export default function AdminRecruitmentPage() {
         });
         return;
       }
+
+      const updatedAt = isRecord(data) ? asText(data.updated_at) : null;
+      if (updatedAt) setSettingsUpdatedAt(updatedAt);
 
       setSettingsNotice({
         kind: 'success',
@@ -709,9 +712,13 @@ export default function AdminRecruitmentPage() {
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-400">
                 招募状态：
-                <span className={isOpen ? 'font-bold text-green-400' : 'font-bold text-gray-300'}>
-                  {isOpen ? '已开启' : '已关闭'}
-                </span>
+                {settingsLoading ? (
+                  <span className="font-bold text-gray-300">加载中...</span>
+                ) : (
+                  <span className={isOpen ? 'font-bold text-green-400' : 'font-bold text-gray-300'}>
+                    {isOpen ? '已开启' : '已关闭'}
+                  </span>
+                )}
               </span>
               <button
                 type="button"
