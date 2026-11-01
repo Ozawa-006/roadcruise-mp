@@ -46,12 +46,12 @@ export default function ForumHome() {
         .limit(5);
       if (hot) setHotTopics(hot);
 
-            // 4. 获取“在线”成员（用最近活跃的 8 位用户代替）
+      // 🌟 4. 获取“在线”成员（修改：拉取最近活跃的 32 位用户）
       const { data: users } = await supabase
         .from('profiles')
         .select('id, display_name, avatar_url, role')
-        .order('updated_at', { ascending: false }) // ✅ 改成 updated_at
-        .limit(8);
+        .order('updated_at', { ascending: false })
+        .limit(32); // 改为 32，这样人多时能铺满好几行
       if (users) setRecentUsers(users);
 
       setLoading(false);
@@ -143,13 +143,14 @@ export default function ForumHome() {
               </div>
             </div>
 
-            {/* 当前在线成员 (用最近注册代替) */}
+            {/* 当前在线成员 */}
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                 <span className="text-sm font-bold text-gray-400">当前在线成员</span>
               </div>
-              <div className="p-4 grid grid-cols-4 md:grid-cols-8 gap-4">
+              {/* 🌟 优化排版：手机上 4 列，平板 6 列，大屏 8 列；增加上下行间距 */}
+              <div className="p-4 grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-y-6 gap-x-4">
                 {recentUsers.map(u => (
                   <Link href={`/profile/${u.id}`} key={u.id} className="flex flex-col items-center group cursor-pointer">
                     <div className="w-12 h-12 rounded bg-[#18191c] border border-gray-600 overflow-hidden group-hover:border-blue-500 transition shadow">
@@ -233,7 +234,7 @@ export default function ForumHome() {
               </div>
               <div className="p-2">
                 {recentUsers.slice(0, 5).map(u => (
-                                    <Link href={`/profile/${u.id}`} key={u.id} className="flex items-center gap-3 p-2 hover:bg-[#3a3b40] rounded transition border-b border-gray-700/50 last:border-0 block">
+                  <Link href={`/profile/${u.id}`} key={u.id} className="flex items-center gap-3 p-2 hover:bg-[#3a3b40] rounded transition border-b border-gray-700/50 last:border-0 block">
                     <div className="w-8 h-8 rounded-full bg-[#18191c] border border-gray-600 overflow-hidden">
                       {u.avatar_url ? (
                         <img src={u.avatar_url} className="w-full h-full object-cover" />
