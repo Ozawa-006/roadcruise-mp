@@ -98,6 +98,11 @@ export default function TopicDetailPage() {
   const [replyError, setReplyError] = useState<ReplyFeedback | null>(null);
   const [replyNotice, setReplyNotice] = useState<ReplyFeedback | null>(null);
 
+  // 回复删除状态：deletingReplyId 为正在删除的回复 id（busy id），防止重复点击
+  const [deletingReplyId, setDeletingReplyId] = useState<string | null>(null);
+  const [replyDeleteError, setReplyDeleteError] = useState('');
+  const [replyDeleteNotice, setReplyDeleteNotice] = useState('');
+
   // 举报入口：url 使用当前真实路径，未登录也可以跳转（/reports 自行提示登录）
   const currentPath = pathname || `/forum/${String(id)}/${String(topicId)}`;
   const reportHref = (targetType: 'topic' | 'reply', targetId: string): string =>
@@ -377,6 +382,53 @@ export default function TopicDetailPage() {
     }
   };
 
+  const handleDeleteReply = async (reply: ForumReply) => {
+    if (deletingReplyId !== null) return;
+    if (!window.confirm('确定删除这条回复吗？此操作不可恢复。')) return;
+
+    const replyId = String(reply.id);
+    setDeletingReplyId(replyId);
+    setReplyDeleteError('');
+    setReplyDeleteNotice('');
+
+    try {
+      const { error } = await supabase.from('forum_replies').delete().eq('id', reply.id);
+
+      if (error) {
+        setReplyDeleteError(`删除回复失败：${error.message}`);
+        return;
+      }
+
+      // 如果正在内联编辑这条回复，删除成功后收起编辑框，避免残留无效编辑态。
+      if (editingReplyId === replyId) {
+        setEditingReplyId(null);
+        setReplyEditContent('');
+      }
+
+      // 回复数 replies_count 由数据库触发器维护，这里只重新拉取总数，不手动改该字段。
+      const counted = await countReplies();
+      const total = Math.max(0, counted ?? replyTotal - 1);
+      // 顺带刷新帖子，让本地 topic.replies_count 与触发器结果保持一致。
+      await fetchTopic();
+      const pageAfterDelete = Math.max(1, Math.ceil(total / REPLY_PAGE_SIZE));
+      // 当前页被删空且不是第 1 页时回退上一页。
+      const targetPage =
+        replyPage > 1 && replyPage > pageAfterDelete
+          ? replyPage - 1
+          : Math.min(replyPage, pageAfterDelete);
+
+      const loadedPage = await loadReplyPage(targetPage, total);
+      if (loadedPage !== null && loadedPage !== replyPage) scrollToReplies();
+      setReplyDeleteNotice('回复已删除');
+    } catch (error: unknown) {
+      setReplyDeleteError(
+        error instanceof Error ? `删除回复失败：${error.message}` : '删除回复失败，请稍后重试。'
+      );
+    } finally {
+      setDeletingReplyId(null);
+    }
+  };
+
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;
   if (!topic) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">帖子不存在或已被删除</div>;
 
@@ -529,16 +581,32 @@ export default function TopicDetailPage() {
         <div
           ref={repliesSectionRef}
           className="space-y-4 scroll-mt-6"
-          aria-busy={repliesLoading}
+          aria-busy={repliesLoading || deletingReplyId !== null}
         >
           <h3 className="text-xl font-bold text-white mb-4 pl-2 border-l-4 border-blue-500">
             全部回复 ({replyTotal})
           </h3>
+
+          {replyDeleteNotice && (
+            <p role="status" className="mb-2 text-sm font-bold text-green-400">
+              {replyDeleteNotice}
+            </p>
+          )}
+
+          {replyDeleteError && (
+            <p role="alert" className="mb-2 text-sm font-bold text-red-400">
+              {replyDeleteError}
+            </p>
+          )}
           
           {replies.map((reply, index) => {
             const replyId = String(reply.id);
             const editingThisReply = editingReplyId === replyId;
             const canEditReply =
+              !!user &&
+              (user.id === reply.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
+            // 删除权限与数据库 DELETE 策略同口径：作者本人或 Lv.70+。
+            const canDeleteReply =
               !!user &&
               (user.id === reply.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
             const replyBusy = savingReplyId !== null;
@@ -630,6 +698,16 @@ export default function TopicDetailPage() {
                         className="text-xs font-bold text-blue-400 transition hover:text-blue-300 disabled:opacity-50"
                       >
                         编辑
+                      </button>
+                    )}
+                    {canDeleteReply && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteReply(reply)}
+                        disabled={deletingReplyId !== null}
+                        className="text-xs font-bold text-red-400 transition hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {deletingReplyId === replyId ? '删除中...' : '删除'}
                       </button>
                     )}
                     <Link

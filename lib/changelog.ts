@@ -21,10 +21,38 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.40v',
+    date: '2026-11-01',
+    title: '实习期提醒与回复删除',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '每个实习职位可配置实习期天数（默认 30 天）；通过实习申请后记录实习起止时间，后台显示「实习中 / 实习已到期 / 已转正」',
+      },
+      {
+        kind: 'feature',
+        text: '新增每日定时任务：实习期剩余 3 天内且未转正时，自动提醒所有 Lv.40+ 管理层与本人（7 天内不重复提醒）',
+      },
+      {
+        kind: 'feature',
+        text: '招募申请状态变化（开始审核/通过/拒绝）会自动通知其他管理层，便于协同处理',
+      },
+      {
+        kind: 'feature',
+        text: '论坛回复支持删除：作者本人或 Lv.70+ 管理层可删除，回复数由数据库触发器自动更新',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `vercel.json` 每日 Cron（UTC 01:00）与 `/api/cron/recruitment-reminders`（CRON_SECRET 校验）；新增 `supabase/recruitment-trainee.sql`',
+      },
+    ],
+  },
+  {
     version: '0.0.39v',
     date: '2026-11-01',
     title: '审核权限与历史申请职位同步',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'security',

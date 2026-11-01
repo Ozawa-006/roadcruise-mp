@@ -44,6 +44,10 @@ const ANSWER_PREVIEW_ITEMS = 2;
 const ANSWER_PREVIEW_CHARS = 160;
 const COPY_TITLE_MAX_LENGTH = 120;
 const COPY_TEXT_MAX_LENGTH = 3000;
+// 实习期天数：数据库约束为 1-365 的整数，默认 30 天。
+const TRAINEE_DAYS_MIN = 1;
+const TRAINEE_DAYS_MAX = 365;
+const TRAINEE_DAYS_DEFAULT = 30;
 // 审核权限静态提示：实际校验在 RPC 内（该职位对应部门经理及以上）。
 const REVIEW_PERMISSION_HINT = '仅该职位对应部门经理及以上可审核（社区线需社区经理及以上）';
 
@@ -53,6 +57,7 @@ type DecisionStatus = 'accepted' | 'rejected';
 type QuestionType = 'text' | 'textarea' | 'select';
 type PositionFilter = 'all' | number;
 type PageItem = number | 'ellipsis';
+type TraineeStatus = 'active' | 'expired' | 'promoted';
 
 interface RecruitmentSettings {
   is_open: boolean;
@@ -87,6 +92,8 @@ interface PositionRow {
   assign_role: string | null;
   is_trainee: boolean;
   trainee_role: string | null;
+  /** 实习期天数（1-365，默认 30）：通过时用于计算 trainee_until。 */
+  trainee_days: number;
   updated_at: string | null;
 }
 
@@ -109,6 +116,12 @@ interface ApplicationRow {
   handled_by: string | null;
   handle_note: string | null;
   promoted_at: string | null;
+  /** 实习开始时间：rct_recruitment_accept 通过实习岗位时写入。 */
+  trainee_started_at: string | null;
+  /** 实习结束时间（开始时间 + 职位 trainee_days 天）。 */
+  trainee_until: string | null;
+  /** 到期提醒邮件的发送时间，由每日 Cron 写入。 */
+  reminder_sent_at: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -162,6 +175,8 @@ interface PositionDraft {
   is_trainee: boolean;
   /** 空串表示不授予实习角色（非实习或留空时保存为 null）。 */
   trainee_role: string;
+  /** 实习期天数输入框的原始值（字符串），保存时校验为 1-365 的整数。 */
+  trainee_days: string;
   questions: QuestionDraft[];
 }
 
@@ -181,6 +196,21 @@ const STATUS_META: Record<RecruitmentStatus, { label: string; className: string 
   rejected: {
     label: '未通过',
     className: 'border-red-500/40 bg-red-500/15 text-red-300',
+  },
+};
+
+const TRAINEE_STATUS_META: Record<TraineeStatus, { label: string; className: string }> = {
+  active: {
+    label: '实习中',
+    className: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+  },
+  expired: {
+    label: '实习已到期',
+    className: 'border-red-500/40 bg-red-500/15 text-red-300',
+  },
+  promoted: {
+    label: '已转正',
+    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
   },
 };
 
@@ -227,6 +257,22 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
+/** 数据库读取的实习期天数：仅接受 1-365 的整数，异常值回退默认 30。 */
+function toTraineeDays(value: unknown): number {
+  const parsed = asNumber(value);
+  if (parsed === null || !Number.isInteger(parsed)) return TRAINEE_DAYS_DEFAULT;
+  if (parsed < TRAINEE_DAYS_MIN || parsed > TRAINEE_DAYS_MAX) return TRAINEE_DAYS_DEFAULT;
+  return parsed;
+}
+
+/** 表单输入的实习期天数：必须是 1-365 的整数，否则返回 null（由调用方提示错误）。 */
+function parseTraineeDays(value: string): number | null {
+  const parsed = asNumber(value.trim());
+  if (parsed === null || !Number.isInteger(parsed)) return null;
+  if (parsed < TRAINEE_DAYS_MIN || parsed > TRAINEE_DAYS_MAX) return null;
+  return parsed;
+}
+
 function isRecruitmentStatus(value: unknown): value is RecruitmentStatus {
   return (
     value === 'pending' ||
@@ -249,6 +295,17 @@ function formatTime(value: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('zh-CN');
+}
+
+/** 实习期日期文案：YYYY/MM/DD（按本地时区）；空值与非法值回退原始文案。 */
+function formatDate(value: string | null): string {
+  if (!value) return '——';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}/${month}/${day}`;
 }
 
 /** 生成页码按钮：当前页前后各 2 页 + 首尾页，中间用省略号连接。 */
@@ -352,6 +409,7 @@ function toPositionRow(raw: unknown): PositionRow | null {
       typeof raw.trainee_role === 'string' && raw.trainee_role.trim() !== ''
         ? raw.trainee_role.trim()
         : null,
+    trainee_days: toTraineeDays(raw.trainee_days),
     updated_at: asText(raw.updated_at),
   };
 }
@@ -414,6 +472,9 @@ function toApplicationRow(raw: unknown): ApplicationRow | null {
     handle_note:
       typeof raw.handle_note === 'string' && raw.handle_note.trim() ? raw.handle_note : null,
     promoted_at: asText(raw.promoted_at),
+    trainee_started_at: asText(raw.trainee_started_at),
+    trainee_until: asText(raw.trainee_until),
+    reminder_sent_at: asText(raw.reminder_sent_at),
     created_at: createdAt,
     updated_at: asText(raw.updated_at),
   };
@@ -422,6 +483,18 @@ function toApplicationRow(raw: unknown): ApplicationRow | null {
 function toApplicationRows(data: unknown): ApplicationRow[] {
   if (!Array.isArray(data)) return [];
   return data.map(toApplicationRow).filter((row): row is ApplicationRow => row !== null);
+}
+
+/**
+ * 实习状态：已转正（promoted_at 非空）优先于到期判断；
+ * 未转正且 trainee_until 已过则视为「实习已到期」，其余为「实习中」。
+ */
+function traineeStatusOf(application: ApplicationRow): TraineeStatus {
+  if (application.promoted_at) return 'promoted';
+  if (!application.trainee_until) return 'active';
+  const until = new Date(application.trainee_until);
+  if (Number.isNaN(until.getTime())) return 'active';
+  return until.getTime() <= Date.now() ? 'expired' : 'active';
 }
 
 function toProfileMap(data: unknown): Record<string, ProfileInfo> {
@@ -807,7 +880,7 @@ export default function AdminRecruitmentPage() {
         const { data, error } = await supabase
           .from('recruitment_positions')
           .select(
-            'id,name,department,description,questions,is_open,sort_order,assign_role,is_trainee,trainee_role,updated_at'
+            'id,name,department,description,questions,is_open,sort_order,assign_role,is_trainee,trainee_role,trainee_days,updated_at'
           )
           .order('sort_order', { ascending: true })
           .order('id', { ascending: true });
@@ -1324,6 +1397,7 @@ export default function AdminRecruitmentPage() {
       assign_role: position.assign_role ?? '',
       is_trainee: position.is_trainee,
       trainee_role: position.trainee_role ?? '',
+      trainee_days: String(position.trainee_days),
       questions: toQuestionDrafts(position.questions),
     });
     setEditorError(null);
@@ -1406,6 +1480,15 @@ export default function AdminRecruitmentPage() {
       return;
     }
 
+    // 实习期天数：实习岗位必须填 1-365 的整数；非实习岗位沿用当前值（缺失时写默认 30）。
+    const traineeDays = parseTraineeDays(editing.trainee_days);
+    if (editing.is_trainee && traineeDays === null) {
+      setEditorError(
+        `实习期天数必须是 ${TRAINEE_DAYS_MIN}-${TRAINEE_DAYS_MAX} 之间的整数（默认 ${TRAINEE_DAYS_DEFAULT}）。`
+      );
+      return;
+    }
+
     setEditorBusy(true);
     setEditorError(null);
 
@@ -1423,6 +1506,7 @@ export default function AdminRecruitmentPage() {
             editing.is_trainee && editing.trainee_role.trim() !== ''
               ? editing.trainee_role.trim()
               : null,
+          trainee_days: traineeDays ?? TRAINEE_DAYS_DEFAULT,
         })
         .eq('id', editing.id)
         .select('id')
@@ -2047,6 +2131,11 @@ export default function AdminRecruitmentPage() {
                             实习岗位
                           </span>
                         )}
+                        {position.is_trainee && (
+                          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">
+                            实习期 {position.trainee_days} 天
+                          </span>
+                        )}
                         <span className="text-xs text-gray-500">排序 {position.sort_order}</span>
                         <span className="text-xs text-gray-500">
                           {position.questions.length} 个问题
@@ -2209,6 +2298,33 @@ export default function AdminRecruitmentPage() {
                           <p className="mt-1 text-xs text-gray-500">
                             勾选后通过申请授予实习角色，转正时改为授予「通过后授予角色」。
                           </p>
+                          {editing.is_trainee && (
+                            <div className="mt-3">
+                              <label
+                                htmlFor={`edit-trainee-days-${editing.id}`}
+                                className={labelClass}
+                              >
+                                实习期天数（{TRAINEE_DAYS_MIN}-{TRAINEE_DAYS_MAX} 天）
+                              </label>
+                              <input
+                                id={`edit-trainee-days-${editing.id}`}
+                                type="number"
+                                min={TRAINEE_DAYS_MIN}
+                                max={TRAINEE_DAYS_MAX}
+                                step={1}
+                                value={editing.trainee_days}
+                                onChange={(event) =>
+                                  updateEditor({ trainee_days: event.target.value })
+                                }
+                                placeholder={String(TRAINEE_DAYS_DEFAULT)}
+                                disabled={editorBusy}
+                                className={inputClass}
+                              />
+                              <p className="mt-1 text-xs text-gray-500">
+                                通过申请时从当天开始计算实习期，默认 {TRAINEE_DAYS_DEFAULT} 天。
+                              </p>
+                            </div>
+                          )}
                         </div>
                         {editing.is_trainee && (
                           <div className="md:col-span-2">
@@ -2574,6 +2690,14 @@ export default function AdminRecruitmentPage() {
                   const positionName =
                     position?.name ?? (application.position.trim() || '未知职位');
                   const positionDeleted = application.position_id === null;
+                  // 实习信息只在「已通过 + 职位为实习岗位」时展示；已转正优先，不再提示到期。
+                  const isTraineeApplication =
+                    application.status === 'accepted' && position?.is_trainee === true;
+                  const traineeStatus = isTraineeApplication
+                    ? traineeStatusOf(application)
+                    : null;
+                  const traineeMeta =
+                    traineeStatus !== null ? TRAINEE_STATUS_META[traineeStatus] : null;
                   const activeDecision =
                     decision !== null && decision.applicationId === application.id
                       ? decision
@@ -2635,6 +2759,25 @@ export default function AdminRecruitmentPage() {
                         联系方式：
                         <span className="text-gray-300">{application.contact ?? '——'}</span>
                       </p>
+
+                      {isTraineeApplication && traineeMeta && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                          <span
+                            className={`inline-flex items-center rounded border px-2 py-0.5 font-bold ${traineeMeta.className}`}
+                          >
+                            {traineeMeta.label}
+                          </span>
+                          <span className="text-gray-400">
+                            实习期：{formatDate(application.trainee_started_at)} 至{' '}
+                            {formatDate(application.trainee_until)}
+                          </span>
+                          {application.reminder_sent_at && (
+                            <span className="text-gray-500">
+                              已发到期提醒：{formatTime(application.reminder_sent_at)}
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       <div className="mt-3">
                         <p className="text-xs text-gray-500">问题回答</p>
