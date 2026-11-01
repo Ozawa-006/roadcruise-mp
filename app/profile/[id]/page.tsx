@@ -26,6 +26,76 @@ function vtcRoleLabel(role: string | null | undefined): string {
   return (role && VTC_ROLE_LABELS[role]) || '车手';
 }
 
+// 资料页只展示“生效中的禁言/封禁”数量与状态，不展示原因等隐私信息。
+type SanctionAction = 'mute' | 'ban';
+
+interface ActiveSanction {
+  id: number;
+  action: SanctionAction;
+  expires_at: string | null;
+}
+
+interface SanctionBadge {
+  label: string;
+  detail: string;
+  className: string;
+}
+
+function sanctionId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function toActiveSanctions(data: unknown): ActiveSanction[] {
+  if (!Array.isArray(data)) return [];
+
+  const list: ActiveSanction[] = [];
+  for (const item of data) {
+    if (typeof item !== 'object' || item === null) continue;
+    const row = item as Record<string, unknown>;
+    const id = sanctionId(row.id);
+    const action: SanctionAction | null =
+      row.action === 'mute' || row.action === 'ban' ? row.action : null;
+    if (id === null || !action) continue;
+    list.push({
+      id,
+      action,
+      expires_at: typeof row.expires_at === 'string' ? row.expires_at : null,
+    });
+  }
+  return list;
+}
+
+function buildSanctionBadge(sanctions: ActiveSanction[]): SanctionBadge | null {
+  const hasBan = sanctions.some((item) => item.action === 'ban');
+  const primary: SanctionAction | null = hasBan
+    ? 'ban'
+    : sanctions.some((item) => item.action === 'mute')
+      ? 'mute'
+      : null;
+  if (!primary) return null;
+
+  const matching = sanctions.filter((item) => item.action === primary);
+  const expiries = matching
+    .map((item) => item.expires_at)
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value));
+
+  return {
+    label: primary === 'ban' ? '封禁中' : '禁言中',
+    detail: expiries.length > 0 ? `至 ${new Date(Math.min(...expiries)).toLocaleString('zh-CN')}` : '永久',
+    className:
+      primary === 'ban'
+        ? 'border-red-500/50 bg-red-500/15 text-red-300'
+        : 'border-blue-500/50 bg-blue-500/15 text-blue-300',
+  };
+}
+
 export default function ProfilePage() {
   const params = useParams();
   const router = useRouter();
@@ -39,11 +109,17 @@ export default function ProfilePage() {
   const [roleDisplayName, setRoleDisplayName] = useState('注册司机');
   const [roleLevel, setRoleLevel] = useState(0);
 
+  // 生效中的禁言/封禁（只用于 Active bans 计数与状态徽章）
+  const [activeSanctions, setActiveSanctions] = useState<ActiveSanction[]>([]);
+
   const [myTopics, setMyTopics] = useState<any[]>([]);
   const [myRepliesCount, setMyRepliesCount] = useState(0);
 
   useEffect(() => {
     const loadData = async () => {
+      // 切换资料页时先清空，避免短暂显示上一个用户的处罚状态
+      setActiveSanctions([]);
+
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
@@ -97,6 +173,28 @@ export default function ProfilePage() {
         return;
       }
 
+      // 查询生效中的禁言/封禁：RLS 只有本人或 Lv.40+ 能读到别人的记录；
+      // 查询失败或无权限时按 0 处理，不打扰资料页，也不展示原因等隐私信息。
+      try {
+        const nowIso = new Date().toISOString();
+        const { data: sanctionData, error: sanctionError } = await supabase
+          .from('moderation_actions')
+          .select('id, action, expires_at')
+          .eq('user_id', viewId)
+          .in('action', ['mute', 'ban'])
+          .is('revoked_at', null)
+          .lte('created_at', nowIso)
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+
+        if (sanctionError) {
+          setActiveSanctions([]);
+        } else {
+          setActiveSanctions(toActiveSanctions(sanctionData));
+        }
+      } catch {
+        setActiveSanctions([]);
+      }
+
       const { data: topicsData } = await supabase
         .from('forum_topics')
         .select('id, title, category_id, created_at, replies_count')
@@ -125,6 +223,7 @@ export default function ProfilePage() {
   const avatarUrl = profile.avatar_url;
   
   const isOwnProfile = currentUser?.id === profile.id;
+  const sanctionBadge = buildSanctionBadge(activeSanctions);
   
   // 🌟 核心修改 2：用动态等级来判断能不能看后台入口（Lv.40 工作人员及以上，且只能看自己的）
   const showAdminEntry = canAccessAdmin(roleLevel) && isOwnProfile;
@@ -188,6 +287,14 @@ export default function ProfilePage() {
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
                 <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
                 <span className="text-sm font-bold text-gray-400">Player Info</span>
+                {sanctionBadge && (
+                  <span
+                    className={`ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-bold ${sanctionBadge.className}`}
+                  >
+                    {sanctionBadge.label}
+                    <span className="hidden font-normal opacity-80 sm:inline">{sanctionBadge.detail}</span>
+                  </span>
+                )}
               </div>
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -203,7 +310,7 @@ export default function ProfilePage() {
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile.steam_id || '未绑定'}</span></p>
                     {/* 🌟 替换：动态职位 */}
                     <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={canAccessAdmin(roleLevel) ? 'text-red-400 font-bold' : 'text-green-400'}>{roleDisplayName}</span></p>
-                    <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">0</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">{activeSanctions.length}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Linked games:</span> <span className="text-white">Euro Truck Simulator 2</span></p>
                     <p><span className="text-gray-500 inline-block w-28">In-game status:</span> <span className="text-gray-500">Offline</span></p>
                     

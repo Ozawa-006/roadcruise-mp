@@ -21,10 +21,42 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.30v',
+    date: '2026-11-01',
+    title: '团队架构与社区治理',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新增「团队与组织架构」页 `/team`：按部门分组展示在任成员，完整职位一览与沟通/汇报关系说明（参考 TruckersMP 官方团队页口径，非晋升阶梯）',
+      },
+      {
+        kind: 'feature',
+        text: '新增处罚管理 `/admin/moderation`：警告 / 禁言 / 封禁（可设时长）、撤销、最近记录；生效中的禁言/封禁会阻止发帖、回帖、车队新闻、举报与活动报名',
+      },
+      {
+        kind: 'feature',
+        text: '个人资料页显示真实「当前处罚」状态（禁言中/封禁中与到期时间），不再写死 0',
+      },
+      {
+        kind: 'feature',
+        text: '首页资讯统一为官方公告数据源：后台 `/admin/news` 发布的公告直接展示在首页轮播，不再与论坛公告版块两套内容',
+      },
+      {
+        kind: 'feature',
+        text: '论坛回复分页（每页 20 条），长帖不再一次性加载全部回复',
+      },
+      {
+        kind: 'chore',
+        text: '数据库新增 moderation_actions（RLS + 发文拦截触发器等）；roles 表改为公开只读以支撑团队页',
+      },
+    ],
+  },
+  {
     version: '0.0.29v',
     date: '2026-11-01',
     title: '社区治理与帮助中心',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

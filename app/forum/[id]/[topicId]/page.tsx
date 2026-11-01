@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
@@ -25,6 +25,7 @@ interface ForumTopic {
   author_id: string;
   image_url: string | null;
   created_at: string;
+  replies_count?: number | null;
   profiles?: TopicAuthorProfile | null;
   forum_categories?: { name: string | null } | null;
 }
@@ -51,6 +52,15 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+/** 回复分页：每页 20 条 */
+const REPLY_PAGE_SIZE = 20;
+
+/** 回复列表查询字段：保持原有 profiles embed 不变 */
+const REPLY_SELECT = `
+  *,
+  profiles:author_id (display_name, avatar_url, role)
+`;
+
 export default function TopicDetailPage() {
   const [quoteUser, setQuoteUser] = useState('');
   const [quoteContent, setQuoteContent] = useState('');
@@ -60,7 +70,11 @@ export default function TopicDetailPage() {
 
   const [topic, setTopic] = useState<ForumTopic | null>(null);
   const [replies, setReplies] = useState<ForumReply[]>([]);
+  const [replyPage, setReplyPage] = useState(1);
+  const [replyTotal, setReplyTotal] = useState(0);
+  const [repliesLoading, setRepliesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const repliesSectionRef = useRef<HTMLDivElement | null>(null);
 
   // 用户与权限状态
   const [user, setUser] = useState<CurrentUser | null>(null);
@@ -89,8 +103,7 @@ export default function TopicDetailPage() {
   const reportHref = (targetType: 'topic' | 'reply', targetId: string): string =>
     `/reports?type=${targetType}&id=${encodeURIComponent(targetId)}&url=${encodeURIComponent(currentPath)}`;
 
-  const fetchTopicAndReplies = async () => {
-    // 1. 获取帖子信息
+  const fetchTopic = async (): Promise<ForumTopic | null> => {
     const { data: topicData } = await supabase
       .from('forum_topics')
       .select(`
@@ -101,24 +114,78 @@ export default function TopicDetailPage() {
       .eq('id', topicId)
       .single();
 
-    if (topicData) setTopic(topicData);
+    if (!topicData) return null;
+    const nextTopic = topicData as ForumTopic;
+    setTopic(nextTopic);
+    return nextTopic;
+  };
 
-    // 2. 获取回复列表
-    const { data: replyData } = await supabase
+  const countReplies = async (): Promise<number | null> => {
+    const { count, error } = await supabase
       .from('forum_replies')
-      .select(`
-        *,
-        profiles:author_id (display_name, avatar_url, role)
-      `)
-      .eq('topic_id', topicId)
-      .order('created_at', { ascending: true });
+      .select('id', { count: 'exact', head: true })
+      .eq('topic_id', topicId);
 
-    if (replyData) setReplies(replyData);
-    setLoading(false);
+    if (error) return null;
+    return count ?? null;
+  };
+
+  const scrollToReplies = () => {
+    repliesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  /** 按全局总数加载指定页，返回实际加载的页码；失败时返回 null（保留当前页） */
+  const loadReplyPage = async (targetPage: number, total: number): Promise<number | null> => {
+    const totalPages = Math.max(1, Math.ceil(Math.max(0, total) / REPLY_PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, Math.floor(targetPage)), totalPages);
+    const from = (safePage - 1) * REPLY_PAGE_SIZE;
+    const to = from + REPLY_PAGE_SIZE - 1;
+
+    setRepliesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('forum_replies')
+        .select(REPLY_SELECT)
+        .eq('topic_id', topicId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to);
+
+      if (error) return null;
+
+      setReplies((data ?? []) as ForumReply[]);
+      setReplyTotal(Math.max(0, total));
+      setReplyPage(safePage);
+      return safePage;
+    } finally {
+      setRepliesLoading(false);
+    }
+  };
+
+  const goToReplyPage = async (targetPage: number) => {
+    if (repliesLoading) return;
+    const totalPages = Math.max(1, Math.ceil(replyTotal / REPLY_PAGE_SIZE));
+    const nextPage = Math.min(Math.max(1, targetPage), totalPages);
+    if (nextPage === replyPage) return;
+
+    const loadedPage = await loadReplyPage(nextPage, replyTotal);
+    if (loadedPage !== null) scrollToReplies();
   };
 
   useEffect(() => {
-    fetchTopicAndReplies();
+    let cancelled = false;
+
+    const load = async () => {
+      const topicData = await fetchTopic();
+      if (cancelled) return;
+
+      const total = (await countReplies()) ?? topicData?.replies_count ?? 0;
+      if (cancelled) return;
+
+      await loadReplyPage(1, total);
+      if (!cancelled) setLoading(false);
+    };
+    void load();
     
     // 检查当前用户是否登录，并获取权限等级（只依据 role_level）
     const getUser = async () => {
@@ -130,7 +197,11 @@ export default function TopicDetailPage() {
         setCurrentLevel(levelOf(data?.role_level));
       }
     };
-    getUser();
+    void getUser();
+
+    return () => {
+      cancelled = true;
+    };
   }, [topicId]);
 
   const handleReply = async (e: React.FormEvent) => {
@@ -162,7 +233,15 @@ export default function TopicDetailPage() {
       setReplyContent('');
       setQuoteUser('');
       setQuoteContent('');
-      await fetchTopicAndReplies();
+
+      // 刷新帖子（含最新 replies_count）与总回复数，然后跳到最后一页。
+      const topicData = await fetchTopic();
+      const counted = await countReplies();
+      // 至少包含刚发布的这条回复，避免计数延迟导致停留在旧页。
+      const total = Math.max(counted ?? 0, replyTotal + 1, topicData?.replies_count ?? 0);
+      const lastPage = Math.max(1, Math.ceil(total / REPLY_PAGE_SIZE));
+      const loadedPage = await loadReplyPage(lastPage, total);
+      if (loadedPage !== null) scrollToReplies();
     } else {
       alert('回复失败: ' + error.message);
     }
@@ -303,6 +382,7 @@ export default function TopicDetailPage() {
 
   const canEditTopic =
     !!user && (user.id === topic.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
+  const replyTotalPages = Math.max(1, Math.ceil(replyTotal / REPLY_PAGE_SIZE));
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans pb-12">
@@ -446,9 +526,13 @@ export default function TopicDetailPage() {
         </div>
 
         {/* 🌟 回复列表区 */}
-        <div className="space-y-4">
+        <div
+          ref={repliesSectionRef}
+          className="space-y-4 scroll-mt-6"
+          aria-busy={repliesLoading}
+        >
           <h3 className="text-xl font-bold text-white mb-4 pl-2 border-l-4 border-blue-500">
-            全部回复 ({replies.length})
+            全部回复 ({replyTotal})
           </h3>
           
           {replies.map((reply, index) => {
@@ -481,7 +565,7 @@ export default function TopicDetailPage() {
                 <div className="flex-1 p-6">
                   <div className="flex justify-between items-center text-xs text-gray-500 mb-4 border-b border-gray-700 pb-3">
                     <span>发表于：{new Date(reply.created_at).toLocaleString()}</span>
-                    <span>#{index + 2}</span>
+                    <span>#{(replyPage - 1) * REPLY_PAGE_SIZE + index + 2}</span>
                   </div>
 
                   {editingThisReply ? (
@@ -571,6 +655,39 @@ export default function TopicDetailPage() {
               </div>
             );
           })}
+
+          {replies.length === 0 && (
+            <div className="rounded-lg border border-dashed border-gray-700 bg-[#232428]/60 p-8 text-center text-sm text-gray-500">
+              还没有回复，来发表你的看法吧。
+            </div>
+          )}
+
+          {replyTotalPages > 1 && (
+            <nav
+              aria-label="回复分页"
+              className="flex flex-wrap items-center justify-center gap-3 rounded-lg border border-gray-700 bg-[#232428] px-4 py-3"
+            >
+              <button
+                type="button"
+                onClick={() => void goToReplyPage(replyPage - 1)}
+                disabled={repliesLoading || replyPage <= 1}
+                className="rounded border border-gray-600 bg-[#18191c] px-4 py-1.5 text-sm font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                上一页
+              </button>
+              <span className="text-sm text-gray-400">
+                第 <span className="font-bold text-white">{replyPage}</span> / {replyTotalPages} 页
+              </span>
+              <button
+                type="button"
+                onClick={() => void goToReplyPage(replyPage + 1)}
+                disabled={repliesLoading || replyPage >= replyTotalPages}
+                className="rounded border border-gray-600 bg-[#18191c] px-4 py-1.5 text-sm font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                下一页
+              </button>
+            </nav>
+          )}
         </div>
 
         {/* 回复输入框 */}

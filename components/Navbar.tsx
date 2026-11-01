@@ -15,6 +15,18 @@ const supabase = createClient(
 /** 在线人数轮询间隔：30 秒，页面隐藏时暂停。 */
 const PLAYERS_POLL_INTERVAL_MS = 30_000;
 
+/** 移动端主导航项（桌面端仍使用下方完整导航，含活动下拉）。 */
+const MOBILE_NAV_ITEMS = [
+  { href: '/forum', label: '论坛 (Forum)' },
+  { href: '/events', label: '活动 (Events)' },
+  { href: '/map', label: '实时地图' },
+  { href: '/servers', label: '服务器列表' },
+  { href: '/vtc', label: '车队 (VTC)' },
+  { href: '/team', label: '团队' },
+  { href: '/rules', label: '社区规则' },
+  { href: '/support', label: '帮助与支持' },
+];
+
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
   const [players, setPlayers] = useState<number | null>(null); 
@@ -33,6 +45,7 @@ export default function Navbar() {
   // 菜单与通知状态
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   
   const menuRef = useRef<HTMLDivElement>(null); 
@@ -346,6 +359,26 @@ export default function Navbar() {
           Road Cruise Transport MP
         </Link>
 
+        {/* 📱 移动端菜单开关（桌面端隐藏） */}
+        <button
+          type="button"
+          onClick={() => setIsMobileNavOpen((open) => !open)}
+          aria-expanded={isMobileNavOpen}
+          aria-controls="mobile-nav"
+          aria-label={isMobileNavOpen ? '关闭导航菜单' : '打开导航菜单'}
+          className="md:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-700 bg-[#232428] text-gray-300 transition hover:border-gray-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+        >
+          {isMobileNavOpen ? (
+            <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
+
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium text-gray-300">
           
           {/* 语言切换 */}
@@ -391,6 +424,7 @@ export default function Navbar() {
           <Link href="/map" className="hover:text-white transition flex items-center gap-1">实时地图</Link>
           <Link href="/servers" className="hover:text-white transition">服务器列表</Link>
           <Link href="/vtc" className="hover:text-white transition">车队 (VTC)</Link>
+          <Link href="/team" className="hover:text-white transition">团队</Link>
           <Link href="/rules" className="hover:text-white transition">社区规则</Link>
           <Link href="/support" className="hover:text-white transition">帮助与支持</Link>
 
@@ -419,6 +453,28 @@ export default function Navbar() {
           </form>
         </nav>
       </div>
+
+      {/* 📱 移动端主导航（仅小屏显示，链接与桌面端保持一致） */}
+      {isMobileNavOpen && (
+        <nav
+          id="mobile-nav"
+          aria-label="移动端主导航"
+          className="md:hidden border-t border-gray-800 bg-[#1a1a1a] px-4 py-3"
+        >
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            {MOBILE_NAV_ITEMS.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setIsMobileNavOpen(false)}
+                className="rounded-lg border border-gray-800 bg-[#232428] px-3 py-2.5 text-gray-300 transition hover:border-blue-500/50 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

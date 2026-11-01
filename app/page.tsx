@@ -5,11 +5,34 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../components/Navbar';
 import Link from 'next/link';
+import { plainTextExcerpt } from '@/lib/rich-text';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+/** 首页轮播读取的「官方公告」字段（announcements 表） */
+type Announcement = {
+  id: number | string;
+  title: string | null;
+  content: string | null;
+  type: string | null;
+  image_url: string | null;
+  link_url: string | null;
+  created_at: string | null;
+};
+
+/** 轮播摘要长度：保持 2 行以内 */
+const ANNOUNCEMENT_SUMMARY_LENGTH = 100;
+
+/** 公告创建时间统一按中文环境展示 */
+function formatAnnouncementTime(value: string | null): string {
+  if (!value) return '时间待定';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '时间待定';
+  return date.toLocaleString('zh-CN');
+}
 
 /** 首页「VTC Events」卡片使用的最小活动字段（含报名人数） */
 type UpcomingEvent = {
@@ -23,24 +46,22 @@ type UpcomingEvent = {
 };
 
 export default function Home() {
-  const [latestTopics, setLatestTopics] = useState<any[]>([]);
+  const [latestAnnouncements, setLatestAnnouncements] = useState<Announcement[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [stats, setStats] = useState({ users: 0, vtc: 0, events: 0, team: 0 });
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. 获取最新官方公告
-      const { data: topics } = await supabase
-        .from('forum_topics')
-        .select(`
-          id, title, category_id, created_at, replies_count, image_url,
-          profiles:author_id (display_name)
-        `)
-        .eq('category_id', 1)
+      // 1. 获取最新官方公告（与 /news、后台 /admin/news 使用同一数据源）
+      const { data: announcementData, error: announcementError } = await supabase
+        .from('announcements')
+        .select('id,title,content,type,image_url,link_url,created_at')
         .order('created_at', { ascending: false })
         .limit(5);
-      if (topics) setLatestTopics(topics);
+      if (!announcementError && announcementData) {
+        setLatestAnnouncements(announcementData as Announcement[]);
+      }
 
       // 2. 获取统计数据
       const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
@@ -104,18 +125,18 @@ export default function Home() {
 
   // 🌟 5秒自动轮播
   useEffect(() => {
-    if (latestTopics.length <= 1) return;
+    if (latestAnnouncements.length <= 1) return;
     const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % latestTopics.length);
+      setCurrentIndex((prev) => (prev + 1) % latestAnnouncements.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, [latestTopics.length]);
+  }, [latestAnnouncements.length]);
 
   const nextSlide = () => {
-    if (latestTopics.length > 0) setCurrentIndex((prev) => (prev + 1) % latestTopics.length);
+    if (latestAnnouncements.length > 0) setCurrentIndex((prev) => (prev + 1) % latestAnnouncements.length);
   };
   const prevSlide = () => {
-    if (latestTopics.length > 0) setCurrentIndex((prev) => (prev - 1 + latestTopics.length) % latestTopics.length);
+    if (latestAnnouncements.length > 0) setCurrentIndex((prev) => (prev - 1 + latestAnnouncements.length) % latestAnnouncements.length);
   };
 
   return (
@@ -125,7 +146,7 @@ export default function Home() {
       {/* 🌟 第一区块：完美融合TMP风格的大屏幕轮播图 */}
       <section className="relative w-full h-[65vh] md:h-[75vh] bg-black overflow-hidden group">
         
-        {latestTopics.length === 0 ? (
+        {latestAnnouncements.length === 0 ? (
           // 兜底：没有新闻的时候
           <div className="absolute inset-0 flex items-center justify-center">
             <img src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop" className="absolute inset-0 w-full h-full object-cover -z-20" alt="Background" />
@@ -139,7 +160,7 @@ export default function Home() {
           // 有新闻数据时，渲染轮播
           <>
             {/* 背景图层 */}
-            {latestTopics.map((item, index) => (
+            {latestAnnouncements.map((item, index) => (
               <div
                 key={`bg-${item.id}`}
                 className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
@@ -149,7 +170,7 @@ export default function Home() {
                 <img 
                   src={item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'} 
                   className="w-full h-full object-cover"
-                  alt="News Background"
+                  alt={item.title?.trim() || '官方公告配图'}
                 />
                 <div className="absolute inset-0 bg-black/60"></div>
               </div>
@@ -173,35 +194,63 @@ export default function Home() {
                 </ul>
               </div>
 
-              {/* 右侧：动态轮播的新闻标题 */}
-              <div className="w-full md:w-1/2 flex flex-col items-center md:items-start justify-center text-center md:text-left h-64 relative pointer-events-auto">
-                {latestTopics.map((item, index) => (
-                  <div
-                    key={`content-${item.id}`}
-                    className={`absolute inset-0 flex flex-col justify-center transition-all duration-1000 ease-in-out ${
-                      index === currentIndex ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-4 z-0 pointer-events-none'
-                    }`}
-                  >
-                    <span className="text-blue-500 font-bold tracking-widest uppercase mb-2 text-sm">Road Cruise News</span>
-                    <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white mb-6 drop-shadow-lg leading-tight line-clamp-3">
-                      {item.title}
-                    </h1>
-                    <div>
-                      <Link 
-                        href={`/forum/${item.category_id}/${item.id}`} 
-                        className="inline-block bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-md font-bold text-base md:text-lg transition shadow-lg transform hover:scale-105"
-                      >
-                        Read More (阅读更多)
-                      </Link>
+              {/* 右侧：动态轮播的官方公告 */}
+              <div className="w-full md:w-1/2 flex flex-col items-center md:items-start justify-center text-center md:text-left h-64 md:h-[21rem] relative pointer-events-auto">
+                {latestAnnouncements.map((item, index) => {
+                  const typeLabel = item.type?.trim() || '公告';
+                  const title = item.title?.trim() || '未命名公告';
+                  const summary = item.content
+                    ? plainTextExcerpt(item.content, ANNOUNCEMENT_SUMMARY_LENGTH)
+                    : '';
+                  const publishedAt = formatAnnouncementTime(item.created_at);
+
+                  return (
+                    <div
+                      key={`content-${item.id}`}
+                      className={`absolute inset-0 flex flex-col justify-center transition-all duration-1000 ease-in-out ${
+                        index === currentIndex ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-4 z-0 pointer-events-none'
+                      }`}
+                    >
+                      <div className="mb-2 md:mb-3 flex flex-wrap items-center justify-center gap-2 md:justify-start">
+                        <span className="text-blue-500 font-bold tracking-widest uppercase text-sm">Road Cruise News</span>
+                        <span className="rounded border border-blue-500/40 bg-blue-500/15 px-2.5 py-0.5 text-xs font-bold text-blue-300">
+                          {typeLabel}
+                        </span>
+                      </div>
+                      <h1 className="text-xl md:text-3xl lg:text-4xl font-black text-white mb-2 md:mb-3 drop-shadow-lg leading-tight line-clamp-2">
+                        <Link href={`/news/${item.id}`} className="transition hover:text-blue-200">
+                          {title}
+                        </Link>
+                      </h1>
+                      {summary && (
+                        <p className="mb-2 md:mb-3 max-w-xl text-sm md:text-base text-gray-300 leading-5 md:leading-6 line-clamp-2">
+                          {summary}
+                        </p>
+                      )}
+                      <p className="mb-2 md:mb-4 text-xs text-gray-400">发布于 {publishedAt}</p>
+                      <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
+                        <Link
+                          href={`/news/${item.id}`}
+                          className="inline-block bg-orange-500 hover:bg-orange-600 text-white px-6 md:px-8 py-2 md:py-3 rounded-md font-bold text-sm md:text-base transition shadow-lg transform hover:scale-105"
+                        >
+                          阅读全文
+                        </Link>
+                        <Link
+                          href="/news"
+                          className="text-sm font-bold text-gray-300 hover:text-white transition"
+                        >
+                          查看更多公告 →
+                        </Link>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
             </div>
 
             {/* 🌟 TMP风格的左右切换大箭头 */}
-            {latestTopics.length > 1 && (
+            {latestAnnouncements.length > 1 && (
               <>
                 <button 
                   onClick={prevSlide}
@@ -218,7 +267,7 @@ export default function Home() {
 
                 {/* 底部小圆点指示器 */}
                 <div className="absolute bottom-8 left-0 right-0 flex justify-center space-x-3 z-20">
-                  {latestTopics.map((_, index) => (
+                  {latestAnnouncements.map((_, index) => (
                     <button
                       key={index}
                       onClick={() => setCurrentIndex(index)}
@@ -367,6 +416,7 @@ export default function Home() {
             <ul className="space-y-2 text-sm text-gray-400">
               <li><Link href="/forum" className="hover:text-blue-400">论坛首页</Link></li>
               <li><Link href="/news" className="hover:text-blue-400">新闻公告</Link></li>
+              <li><Link href="/team" className="hover:text-blue-400">团队成员</Link></li>
               <li><Link href="/changelog" className="hover:text-blue-400">更新日志</Link></li>
               <li><Link href="/rules" className="hover:text-blue-400">社区规则</Link></li>
               <li><Link href="/map" className="hover:text-blue-400">实时地图</Link></li>

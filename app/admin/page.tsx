@@ -98,6 +98,15 @@ export default function AdminDashboard() {
             </Link>
           )}
 
+          {/* 🌟 处罚管理 (Lv.40 工作人员及以上可见) */}
+          {canAccessAdmin(roleLevel) && (
+            <Link href="/admin/moderation" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-red-500 transition shadow-lg group block">
+              <div className="text-4xl mb-4 group-hover:scale-110 transition">⚖️</div>
+              <h2 className="text-xl font-bold text-white mb-2">处罚管理</h2>
+              <p className="text-sm text-gray-400">警告、禁言、封禁与撤销。</p>
+            </Link>
+          )}
+
           {/* 🌟 社区规则管理 (Lv.90 高级社区经理及以上可见) */}
           {canEditRules(roleLevel) && (
             <Link href="/admin/rules" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-purple-500 transition shadow-lg group block">
