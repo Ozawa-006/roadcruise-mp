@@ -238,14 +238,15 @@ export default function AdminAuditPage() {
       } = await supabase.auth.getUser();
 
       if (!active) return;
+      // 未登录时 getUser() 会返回 AuthSessionMissingError，先按“未登录”处理，避免误显示错误页。
+      if (!user) {
+        router.push('/login');
+        return;
+      }
       if (authError) {
         setError(authError.message);
         setLoading(false);
         setChecking(false);
-        return;
-      }
-      if (!user) {
-        router.push('/login');
         return;
       }
 
