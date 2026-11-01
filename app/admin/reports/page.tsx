@@ -3,7 +3,8 @@
 // 数据库侧约束：
 //   · SELECT 全部举报、UPDATE 状态要求 rct_role_level() >= 40；
 //   · 触发器 trg_reports_touch_handled 自动补 handled_at / handled_by；
-//   · 触发器 trg_reports_notify 在状态变化时给举报人写 notifications（type='report'）。
+//   · 触发器 trg_reports_notify 在状态变化时给举报人写 notifications（type='report'）；
+//   · notify_stage / last_notified_at 由数据库侧超时升级通知维护，本页只读展示超时徽章。
 // 列表为服务端分页：每次只取当前页 50 条（select + count + range），筛选下推到 PostgREST。
 'use client';
 
@@ -12,6 +13,98 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { canAccessAdmin, levelOf } from '@/lib/permissions';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import { formatMessage, type Locale } from '@/lib/i18n';
+
+// 英文文案：键为中文原文，缺失时回退中文；举报原因/详情、昵称、日期、ID、URL 不翻译。
+const EN: Record<string, string> = {
+  // 加载 / 权限 / 错误
+  '验证权限中...': 'Verifying permissions…',
+  '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能处理举报。':
+    '🚫 Insufficient permissions: only Staff (Lv.40) and above can handle reports.',
+  '无法验证权限：{msg}': 'Unable to verify permissions: {msg}',
+  '操作失败，请稍后重试': 'The operation failed. Please try again later.',
+  '加载失败：{msg}': 'Failed to load: {msg}',
+  '重试': 'Retry',
+  '加载中...': 'Loading…',
+  '没有符合当前筛选条件的举报。': 'No reports match the current filters.',
+  '暂无举报记录。': 'No reports yet.',
+
+  // 页面头部
+  '🚩 举报处理': '🚩 Report Handling',
+  '处理玩家举报与申诉；状态变更后系统会自动通知举报人。':
+    'Handle player reports and appeals; the reporter is notified automatically when the status changes.',
+  '← 返回控制台': '← Back to dashboard',
+
+  // 超时提示
+  '超过 24 小时未处理的举报会自动升级提醒':
+    'Reports left unhandled for more than 24 hours trigger an automatic escalation notice',
+  '超时未处理（>24h）': 'Overdue (>24h)',
+
+  // 筛选
+  '状态': 'Status',
+  '类型': 'Type',
+  '全部状态': 'All statuses',
+  '待处理': 'Open',
+  '处理中': 'Reviewing',
+  '已处理': 'Resolved',
+  '未通过': 'Rejected',
+  '全部类型': 'All types',
+  '帖子': 'Post',
+  '回复': 'Reply',
+  '用户': 'User',
+  '车队': 'VTC',
+  '活动': 'Event',
+  '其他': 'Other',
+  '刷新中...': 'Refreshing…',
+  '刷新': 'Refresh',
+  '共 {count} 条 · 第 {page} / {total} 页（每页 {size} 条）':
+    '{count} total · Page {page} of {total} ({size} per page)',
+  '共 {count} 条 · 第 {page} / {total} 页': '{count} total · Page {page} of {total}',
+  '（每页 {size} 条）': '({size} per page)',
+
+  // 列表
+  '原因：{reason}': 'Reason: {reason}',
+  '未填写原因': 'No reason provided',
+  '{name}（{id}）': '{name} ({id})',
+  '对象：{type}{id}': 'Target: {type}{id}',
+  '（未提供 ID）': ' (no ID provided)',
+  '查看目标 ↗': 'View target ↗',
+  '链接：{url}': 'Link: {url}',
+  '举报人：{name}': 'Reporter: {name}',
+  '处理人：{name}': 'Handled by: {name}',
+  '处理时间：{time}': 'Handled at: {time}',
+  '处理备注：{note}': 'Handling note: {note}',
+  '未知用户': 'Unknown user',
+  '未命名用户': 'Unnamed user',
+
+  // 审核动作
+  '将举报 #{id} 标记为「{status}」': 'Mark report #{id} as “{status}”',
+  '请填写处理备注（必填），会展示给举报人。':
+    'Enter a handling note (required). It will be shown to the reporter.',
+  '请填写处理备注。': 'Please enter a handling note.',
+  '提交中...': 'Submitting…',
+  '确认提交': 'Confirm',
+  '取消': 'Cancel',
+  '处理中...': 'Processing…',
+  '开始处理': 'Start reviewing',
+  '标记已处理': 'Mark resolved',
+  '驳回': 'Reject',
+  '没有找到该举报，或当前账号无权处理。':
+    'Report not found, or your account is not allowed to handle it.',
+  '更新失败：{msg}': 'Update failed: {msg}',
+  '举报 #{id} 已更新为「{status}」。': 'Report #{id} updated to “{status}”.',
+
+  // 分页
+  '举报列表分页': 'Report list pagination',
+  '上一页': 'Previous',
+  '下一页': 'Next',
+};
+
+/** effect 内使用的稳定翻译器（useTr 每次渲染都会重建，不能放进依赖数组）。 */
+function translate(locale: Locale, zh: string, vars?: Record<string, string | number>): string {
+  return formatMessage(locale === 'en' ? EN[zh] ?? zh : zh, vars);
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +112,8 @@ const supabase = createClient(
 );
 
 const PAGE_SIZE = 50;
+/** 超过 24 小时仍未处理的 open 举报视为超时（数据库侧会同时触发升级通知）。 */
+const OVERDUE_MS = 24 * 60 * 60 * 1000;
 
 const TARGET_TYPES = [
   { value: 'topic', label: '帖子' },
@@ -162,6 +257,13 @@ function errorMessage(error: unknown): string {
   return '操作失败，请稍后重试';
 }
 
+/** 仅 open 且创建超过 24 小时未处理的举报标记为超时。 */
+function isOverdue(report: ReportRow, now: number): boolean {
+  if (report.status !== 'open' || now <= 0) return false;
+  const createdAt = new Date(report.created_at).getTime();
+  return Number.isFinite(createdAt) && now - createdAt > OVERDUE_MS;
+}
+
 function toReportRow(raw: unknown): ReportRow | null {
   if (!isRecord(raw)) return null;
 
@@ -178,7 +280,7 @@ function toReportRow(raw: unknown): ReportRow | null {
     target_type: targetType && isTargetType(targetType) ? targetType : 'other',
     target_id: asText(raw.target_id),
     target_url: asText(raw.target_url),
-    reason: asText(raw.reason) ?? '未填写原因',
+    reason: asText(raw.reason) ?? '',
     detail: typeof raw.detail === 'string' && raw.detail.trim() ? raw.detail : null,
     status: isReportStatus(raw.status) ? raw.status : 'open',
     handled_by: asText(raw.handled_by),
@@ -215,6 +317,8 @@ const SELECT_COLUMNS =
   'id,reporter_id,target_type,target_id,target_url,reason,detail,status,handled_by,handled_at,handle_note,created_at';
 
 export default function AdminReportsPage() {
+  const tr = useTr(EN);
+  const locale = useLocale();
   const router = useRouter();
   const listTopRef = useRef<HTMLDivElement | null>(null);
   const scrollToTopPendingRef = useRef(false);
@@ -228,6 +332,8 @@ export default function AdminReportsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  // 列表加载完成时记录当前时间，用于判断 24 小时超时（不在渲染期间读取时钟）。
+  const [now, setNow] = useState(0);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -260,7 +366,7 @@ export default function AdminReportsPage() {
         if (cancelled) return;
 
         if (!canAccessAdmin(levelOf(profile?.role_level))) {
-          alert('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能处理举报。');
+          alert(translate(locale, '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能处理举报。'));
           router.push('/admin');
           return;
         }
@@ -269,7 +375,11 @@ export default function AdminReportsPage() {
         setChecking(false);
       } catch (error) {
         if (cancelled) return;
-        alert(`无法验证权限：${errorMessage(error)}`);
+        alert(
+          translate(locale, '无法验证权限：{msg}', {
+            msg: translate(locale, errorMessage(error)),
+          })
+        );
         router.push('/admin');
       }
     };
@@ -279,7 +389,7 @@ export default function AdminReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, locale]);
 
   // 2. 列表：服务端分页，只取当前页（status/type 条件同时作用于 count 与 range）；再二次查询本页举报人/处理人资料
   useEffect(() => {
@@ -336,6 +446,7 @@ export default function AdminReportsPage() {
         }
 
         setReports(rows);
+        setNow(Date.now());
 
         const profileIds = Array.from(
           new Set([
@@ -376,7 +487,7 @@ export default function AdminReportsPage() {
         finishLoading();
       } catch (error) {
         if (cancelled) return;
-        setLoadError(errorMessage(error));
+        setLoadError(translate(locale, errorMessage(error)));
         setLoading(false);
       }
     };
@@ -386,7 +497,7 @@ export default function AdminReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, userId, statusFilter, typeFilter, page, reloadToken]);
+  }, [checking, userId, statusFilter, typeFilter, page, reloadToken, locale]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -408,9 +519,9 @@ export default function AdminReportsPage() {
   const profileName = (id: string | null): string => {
     if (!id) return '——';
     const profile = profiles[id];
-    if (!profile) return '未知用户';
-    const name = profile.display_name?.trim() || '未命名用户';
-    return profile.custom_id ? `${name}（${profile.custom_id}）` : name;
+    if (!profile) return tr('未知用户');
+    const name = profile.display_name?.trim() || tr('未命名用户');
+    return profile.custom_id ? tr('{name}（{id}）', { name, id: profile.custom_id }) : name;
   };
 
   const startAction = (reportId: string, next: PendingActionStatus) => {
@@ -427,7 +538,7 @@ export default function AdminReportsPage() {
     if ((next === 'resolved' || next === 'rejected') && !trimmedNote) {
       setAction((previous) =>
         previous && previous.reportId === report.id
-          ? { ...previous, error: '请填写处理备注。' }
+          ? { ...previous, error: tr('请填写处理备注。') }
           : previous
       );
       return;
@@ -455,8 +566,8 @@ export default function AdminReportsPage() {
       if (error) {
         const text =
           error.code === 'PGRST116'
-            ? '没有找到该举报，或当前账号无权处理。'
-            : `更新失败：${error.message}`;
+            ? tr('没有找到该举报，或当前账号无权处理。')
+            : tr('更新失败：{msg}', { msg: error.message });
         setNotice({ kind: 'error', text });
         return;
       }
@@ -482,10 +593,13 @@ export default function AdminReportsPage() {
 
       setNotice({
         kind: 'success',
-        text: `举报 #${report.id} 已更新为「${STATUS_META[next].label}」。`,
+        text: tr('举报 #{id} 已更新为「{status}」。', {
+          id: report.id,
+          status: tr(STATUS_META[next].label),
+        }),
       });
     } catch (error) {
-      setNotice({ kind: 'error', text: `更新失败：${errorMessage(error)}` });
+      setNotice({ kind: 'error', text: tr('更新失败：{msg}', { msg: tr(errorMessage(error)) }) });
     } finally {
       setBusyId(null);
     }
@@ -499,7 +613,7 @@ export default function AdminReportsPage() {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#18191c] text-white">
-        验证权限中...
+        {tr('验证权限中...')}
       </div>
     );
   }
@@ -509,20 +623,24 @@ export default function AdminReportsPage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-gray-700 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white md:text-3xl">🚩 举报处理</h1>
+            <h1 className="text-2xl font-bold text-white md:text-3xl">{tr('🚩 举报处理')}</h1>
             <p className="mt-1 text-sm text-gray-500">
-              处理玩家举报与申诉；状态变更后系统会自动通知举报人。
+              {tr('处理玩家举报与申诉；状态变更后系统会自动通知举报人。')}
             </p>
           </div>
           <Link href="/admin" className="text-sm text-gray-400 transition hover:text-white">
-            ← 返回控制台
+            {tr('← 返回控制台')}
           </Link>
         </div>
+
+        <p className="mb-4 rounded border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
+          {tr('超过 24 小时未处理的举报会自动升级提醒')}
+        </p>
 
         <div className="mb-5 flex flex-col gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 md:flex-row md:items-end">
           <div className="w-full md:w-48">
             <label htmlFor="report-status-filter" className={labelClass}>
-              状态
+              {tr('状态')}
             </label>
             <select
               id="report-status-filter"
@@ -541,7 +659,7 @@ export default function AdminReportsPage() {
             >
               {STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {tr(option.label)}
                 </option>
               ))}
             </select>
@@ -549,7 +667,7 @@ export default function AdminReportsPage() {
 
           <div className="w-full md:w-48">
             <label htmlFor="report-type-filter" className={labelClass}>
-              类型
+              {tr('类型')}
             </label>
             <select
               id="report-type-filter"
@@ -567,7 +685,7 @@ export default function AdminReportsPage() {
             >
               {TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {tr(option.label)}
                 </option>
               ))}
             </select>
@@ -580,10 +698,15 @@ export default function AdminReportsPage() {
               disabled={loading}
               className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
             >
-              {loading ? '刷新中...' : '刷新'}
+              {loading ? tr('刷新中...') : tr('刷新')}
             </button>
             <span className="text-xs text-gray-500">
-              共 {totalCount} 条 · 第 {currentPage} / {totalPages} 页（每页 {PAGE_SIZE} 条）
+              {tr('共 {count} 条 · 第 {page} / {total} 页（每页 {size} 条）', {
+                count: totalCount,
+                page: currentPage,
+                total: totalPages,
+                size: PAGE_SIZE,
+              })}
             </span>
           </div>
         </div>
@@ -593,14 +716,16 @@ export default function AdminReportsPage() {
             role="alert"
             className="mb-4 flex flex-col gap-2 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300 sm:flex-row sm:items-center sm:justify-between"
           >
-            <span className="break-all">加载失败：{loadError}</span>
+            <span className="break-all">
+              {tr('加载失败：{msg}', { msg: loadError })}
+            </span>
             <button
               type="button"
               onClick={reloadCurrentPage}
               disabled={loading}
               className="shrink-0 rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
             >
-              重试
+              {tr('重试')}
             </button>
           </div>
         )}
@@ -624,7 +749,7 @@ export default function AdminReportsPage() {
               aria-live="polite"
               className="space-y-4"
             >
-              <p className="text-center text-sm text-gray-500">加载中...</p>
+              <p className="text-center text-sm text-gray-500">{tr('加载中...')}</p>
               {Array.from({ length: 4 }).map((_, index) => (
                 <div
                   key={index}
@@ -636,7 +761,7 @@ export default function AdminReportsPage() {
 
           {!loading && !loadError && reports.length === 0 ? (
             <p className="rounded border border-gray-700 bg-[#2c2d31] px-4 py-12 text-center text-sm text-gray-500">
-              {hasFilters ? '没有符合当前筛选条件的举报。' : '暂无举报记录。'}
+              {hasFilters ? tr('没有符合当前筛选条件的举报。') : tr('暂无举报记录。')}
             </p>
           ) : null}
 
@@ -651,6 +776,7 @@ export default function AdminReportsPage() {
                   const busy = busyId === report.id;
                   const activeAction =
                     action !== null && action.reportId === report.id ? action : null;
+                  const overdue = isOverdue(report, now);
 
                   return (
                     <li
@@ -661,16 +787,23 @@ export default function AdminReportsPage() {
                         <span
                           className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
                         >
-                          {meta.label}
+                          {tr(meta.label)}
                         </span>
+                        {overdue ? (
+                          <span className="inline-flex items-center rounded border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-300">
+                            {tr('超时未处理（>24h）')}
+                          </span>
+                        ) : null}
                         <span className="rounded border border-gray-600 bg-[#232428] px-2 py-0.5 text-xs text-gray-300">
-                          {targetTypeLabel(report.target_type)}
+                          {tr(targetTypeLabel(report.target_type))}
                         </span>
                         <span className="text-xs text-gray-500">#{report.id}</span>
                         <span className="text-xs text-gray-500">{formatTime(report.created_at)}</span>
                       </div>
 
-                      <p className="mt-3 text-sm font-bold text-white">原因：{report.reason}</p>
+                      <p className="mt-3 text-sm font-bold text-white">
+                        {tr('原因：{reason}', { reason: report.reason || tr('未填写原因') })}
+                      </p>
                       {report.detail && (
                         <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-300">
                           {report.detail}
@@ -679,34 +812,46 @@ export default function AdminReportsPage() {
 
                       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
                         <span>
-                          对象：{targetTypeLabel(report.target_type)}
-                          {report.target_id ? ` #${report.target_id}` : '（未提供 ID）'}
+                          {tr('对象：{type}{id}', {
+                            type: tr(targetTypeLabel(report.target_type)),
+                            id: report.target_id
+                              ? ` #${report.target_id}`
+                              : tr('（未提供 ID）'),
+                          })}
                         </span>
                         {report.target_url && isInternalPath(report.target_url) ? (
                           <Link
                             href={report.target_url}
                             className="text-blue-400 transition hover:text-blue-300"
                           >
-                            查看目标 ↗
+                            {tr('查看目标 ↗')}
                           </Link>
                         ) : report.target_url ? (
-                          <span className="break-all">链接：{report.target_url}</span>
+                          <span className="break-all">
+                            {tr('链接：{url}', { url: report.target_url })}
+                          </span>
                         ) : null}
-                        <span>举报人：{profileName(report.reporter_id)}</span>
+                        <span>
+                          {tr('举报人：{name}', { name: profileName(report.reporter_id) })}
+                        </span>
                       </div>
 
                       <div className="mt-3 border-t border-gray-700/60 pt-3 text-xs text-gray-400">
                         <div className="flex flex-wrap gap-x-4 gap-y-1">
                           <span>
-                            处理人：{report.handled_by ? profileName(report.handled_by) : '——'}
+                            {tr('处理人：{name}', {
+                              name: report.handled_by ? profileName(report.handled_by) : '——',
+                            })}
                           </span>
                           <span>
-                            处理时间：{report.handled_at ? formatTime(report.handled_at) : '——'}
+                            {tr('处理时间：{time}', {
+                              time: report.handled_at ? formatTime(report.handled_at) : '——',
+                            })}
                           </span>
                         </div>
                         {report.handle_note && (
                           <p className="mt-2 whitespace-pre-wrap break-words text-gray-300">
-                            处理备注：{report.handle_note}
+                            {tr('处理备注：{note}', { note: report.handle_note })}
                           </p>
                         )}
                       </div>
@@ -716,7 +861,10 @@ export default function AdminReportsPage() {
                           {activeAction ? (
                             <div className="rounded border border-orange-500/40 bg-[#232428] p-3">
                               <p className="mb-2 text-sm text-white">
-                                将举报 #{report.id} 标记为「{STATUS_META[activeAction.next].label}」
+                                {tr('将举报 #{id} 标记为「{status}」', {
+                                  id: report.id,
+                                  status: tr(STATUS_META[activeAction.next].label),
+                                })}
                               </p>
                               <textarea
                                 value={activeAction.note}
@@ -730,7 +878,7 @@ export default function AdminReportsPage() {
                                 }}
                                 rows={3}
                                 maxLength={1000}
-                                placeholder="请填写处理备注（必填），会展示给举报人。"
+                                placeholder={tr('请填写处理备注（必填），会展示给举报人。')}
                                 className={`${inputClass} resize-y`}
                               />
                               {activeAction.error && (
@@ -743,7 +891,7 @@ export default function AdminReportsPage() {
                                   disabled={busy || activeAction.note.trim() === ''}
                                   className="rounded bg-orange-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {busy ? '提交中...' : '确认提交'}
+                                  {busy ? tr('提交中...') : tr('确认提交')}
                                 </button>
                                 <button
                                   type="button"
@@ -751,7 +899,7 @@ export default function AdminReportsPage() {
                                   disabled={busy}
                                   className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:text-white disabled:opacity-50"
                                 >
-                                  取消
+                                  {tr('取消')}
                                 </button>
                               </div>
                             </div>
@@ -764,7 +912,7 @@ export default function AdminReportsPage() {
                                   disabled={busyId !== null}
                                   className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {busy ? '处理中...' : '开始处理'}
+                                  {busy ? tr('处理中...') : tr('开始处理')}
                                 </button>
                               )}
                               <button
@@ -773,7 +921,7 @@ export default function AdminReportsPage() {
                                 disabled={busyId !== null}
                                 className="rounded bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                标记已处理
+                                {tr('标记已处理')}
                               </button>
                               <button
                                 type="button"
@@ -781,7 +929,7 @@ export default function AdminReportsPage() {
                                 disabled={busyId !== null}
                                 className="rounded border border-gray-600 bg-[#232428] px-4 py-2 text-sm text-gray-300 transition hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                驳回
+                                {tr('驳回')}
                               </button>
                             </div>
                           )}
@@ -794,17 +942,23 @@ export default function AdminReportsPage() {
 
               <div className="mt-5 flex flex-col items-center justify-between gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] px-4 py-3 shadow-lg sm:flex-row">
                 <p className="text-xs text-gray-500">
-                  共 {totalCount} 条 · 第 {currentPage} / {totalPages} 页
-                  <span className="ml-2 text-gray-600">（每页 {PAGE_SIZE} 条）</span>
+                  {tr('共 {count} 条 · 第 {page} / {total} 页', {
+                    count: totalCount,
+                    page: currentPage,
+                    total: totalPages,
+                  })}
+                  <span className="ml-2 text-gray-600">
+                    {tr('（每页 {size} 条）', { size: PAGE_SIZE })}
+                  </span>
                 </p>
-                <nav aria-label="举报列表分页" className="flex flex-wrap items-center gap-1">
+                <nav aria-label={tr('举报列表分页')} className="flex flex-wrap items-center gap-1">
                   <button
                     type="button"
                     onClick={() => goToPage(currentPage - 1)}
                     disabled={loading || currentPage <= 1}
                     className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    上一页
+                    {tr('上一页')}
                   </button>
 
                   {pageItems.map((item, index) =>
@@ -836,7 +990,7 @@ export default function AdminReportsPage() {
                     disabled={loading || currentPage >= totalPages}
                     className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    下一页
+                    {tr('下一页')}
                   </button>
                 </nav>
               </div>

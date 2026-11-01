@@ -6,12 +6,14 @@
 //   · 新建记录由数据库触发器给目标用户写站内通知（type='moderation'），前端不重复发送。
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { canAccessAdmin, levelOf, roleLabel } from '@/lib/permissions';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import { formatMessage, tr as trFor, type Locale } from '@/lib/i18n';
+import { canAccessAdmin, levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -107,6 +109,137 @@ const inputClass =
   'w-full rounded border border-gray-600 bg-[#18191c] p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
 const labelClass = 'mb-1 block text-xs text-gray-400';
 
+/** 静态 UI 文案：中文原文 -> 英文；英文缺失时 useTr 回退中文。 */
+const EN: Record<string, string> = {
+  // 动作 / 时长 / 状态
+  '警告': 'Warning',
+  '禁言': 'Mute',
+  '封禁': 'Ban',
+  '仅记录，不限制发布': 'recorded only, posting is not restricted',
+  '到期前禁止发帖、回帖与报名': 'blocks posts, replies and sign-ups until it expires',
+  '1 天': '1 day',
+  '7 天': '7 days',
+  '30 天': '30 days',
+  '永久': 'Permanent',
+  '生效中': 'Active',
+  '已过期': 'Expired',
+  '已撤销': 'Revoked',
+  '全部动作': 'All actions',
+  '全部状态': 'All statuses',
+  '操作失败，请稍后重试': 'Operation failed, please try again later',
+  '未填写原因': 'No reason provided',
+  // 权限
+  '验证权限中...': 'Checking permissions...',
+  '无法验证权限：{message}': 'Unable to verify permissions: {message}',
+  '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理处罚。':
+    '🚫 Insufficient permissions: only staff (Lv.40) and above can manage moderation actions.',
+  // 查找用户
+  '⚖️ 处罚管理 / Moderation': '⚖️ Moderation',
+  '警告不限制发布；禁言/封禁会在到期前阻止发帖与报名':
+    'Warnings do not restrict posting; mutes and bans block posting and sign-ups until they expire',
+  '← 返回控制台': '← Back to console',
+  '查找用户': 'Find user',
+  '昵称 / 专属 ID / Steam ID': 'Display name / custom ID / Steam ID',
+  '搜索用户': 'Search users',
+  '搜索中...': 'Searching...',
+  '搜索': 'Search',
+  '搜索失败：{message}': 'Search failed: {message}',
+  '{name} 的头像': 'Avatar of {name}',
+  '用户': 'User',
+  '玩': 'U',
+  '专属 ID：': 'Custom ID: ',
+  '未分配': 'Not assigned',
+  ' · Steam 已验证': ' · Steam verified',
+  ' · Steam 未验证': ' · Steam unverified',
+  '已选中': 'Selected',
+  '未找到匹配用户（最多显示 10 条）。': 'No matching users found (up to 10 results).',
+  // 新建处罚
+  '新建处罚': 'New moderation action',
+  '请先在上方搜索并选择一个用户。': 'Search and select a user above first.',
+  '角色：': 'Role: ',
+  'Steam：': 'Steam: ',
+  '已验证': 'Verified',
+  '未验证': 'Unverified',
+  '（{id}）': ' ({id})',
+  '（未绑定）': ' (not linked)',
+  '查看资料 ↗': 'View profile ↗',
+  '处罚动作': 'Action',
+  '时长': 'Duration',
+  '（{description}）': ' ({description})',
+  '永久处罚的到期时间为空；警告也会记录到期时间，但不限制发布。':
+    'Permanent actions have no expiry time; warnings also record an expiry but do not restrict posting.',
+  '原因（必填，最多 {count} 字）': 'Reason (required, up to {count} characters)',
+  '例如：多次恶意碰撞': 'e.g. repeated deliberate collisions',
+  '备注（可选，仅后台可见）': 'Note (optional, visible to staff only)',
+  '补充证据链接、处理经过等': 'Evidence links, how it was handled, etc.',
+  '创建失败：{message}': 'Failed to create: {message}',
+  '提交中...': 'Submitting...',
+  '创建{action}': 'Create {action}',
+  '提交后系统会自动给该用户发送站内通知。':
+    'The user automatically receives an in-site notification after submission.',
+  // 当前处罚 / 历史
+  '当前处罚': 'Current actions',
+  '{name} · {count} 条生效中': '{name} · {count} active',
+  '刷新中...': 'Refreshing...',
+  '刷新': 'Refresh',
+  '选择用户后显示其处罚记录。': 'Select a user to see their moderation records.',
+  '加载失败：{message}': 'Failed to load: {message}',
+  '加载中...': 'Loading...',
+  '该用户当前没有生效中的处罚。': 'This user has no active moderation actions.',
+  '创建：': 'Created: ',
+  '到期：': 'Expires: ',
+  '原因：': 'Reason: ',
+  '备注：': 'Note: ',
+  '处理人：': 'Handled by: ',
+  '撤销中...': 'Revoking...',
+  '撤销': 'Revoke',
+  '历史记录（已结束，最多最近 {count} 条）':
+    'History (finished, latest {count} records at most)',
+  '暂无历史记录。': 'No history yet.',
+  '撤销人：': 'Revoked by: ',
+  '撤销时间：': 'Revoked at: ',
+  // 最近处罚
+  '最近处罚记录': 'Recent moderation records',
+  '全站 {count} 条 · 第 {page} / {total} 页 · 每页 {size} 条':
+    '{count} records site-wide · page {page} / {total} · {size} per page',
+  '按处罚动作筛选': 'Filter by action',
+  '按处罚状态筛选': 'Filter by status',
+  '清除筛选': 'Clear filters',
+  '没有符合当前筛选条件的处罚记录。': 'No moderation records match the current filters.',
+  '暂无处罚记录。': 'No moderation records yet.',
+  '目标：': 'Target: ',
+  '共 {count} 条 · 第 {page} / {total} 页': '{count} records · page {page} / {total}',
+  '上一页': 'Previous',
+  '下一页': 'Next',
+  // 结果提示
+  '已对 {name} 创建{action}。': 'Created a {action} for {name}.',
+  '撤销失败：{message}': 'Failed to revoke: {message}',
+  '已撤销 #{id} 的{action}。': 'Revoked the {action} #{id}.',
+  '{name}（{id}）': '{name} ({id})',
+  '未命名用户': 'Unnamed user',
+  '未知用户': 'Unknown user',
+  '该用户': 'this user',
+  '请输入昵称、专属 ID 或 Steam ID。': 'Enter a display name, custom ID or Steam ID.',
+  '请填写处罚原因。': 'Please fill in the reason for the action.',
+  '原因不能超过 {count} 字。': 'The reason must be at most {count} characters.',
+  '重试': 'Retry',
+};
+
+/** 翻译函数签名：模块级工具函数按需注入。 */
+type Translate = (zh: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * effect / 事件回调里构造文案：tr 每次渲染都会重建，不适合放进依赖数组，
+ * 这里按当前 locale 直接取词条。
+ */
+function translateFor(
+  locale: Locale,
+  zh: string,
+  vars?: Record<string, string | number>
+): string {
+  return formatMessage(trFor(locale, EN, zh), vars);
+}
+
 interface ModerationRow {
   id: number;
   user_id: string;
@@ -177,12 +310,12 @@ function isDuration(value: string): value is Duration {
   return DURATIONS.some((duration) => duration === value);
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, t: Translate): string {
   if (error && typeof error === 'object' && 'message' in error) {
     const value = (error as { message?: unknown }).message;
     if (typeof value === 'string' && value.trim()) return value;
   }
-  return '操作失败，请稍后重试';
+  return t('操作失败，请稍后重试');
 }
 
 /** 生成页码：首尾页 + 当前页前后各 PAGE_WINDOW 页，中间用省略号。 */
@@ -212,7 +345,7 @@ function formatTime(value: string | null): string {
   return date.toLocaleString('zh-CN');
 }
 
-function toModerationRow(raw: unknown): ModerationRow | null {
+function toModerationRow(raw: unknown, t: Translate): ModerationRow | null {
   if (!isRecord(raw)) return null;
 
   const id = asId(raw.id);
@@ -225,7 +358,7 @@ function toModerationRow(raw: unknown): ModerationRow | null {
     id,
     user_id: userId,
     action,
-    reason: asText(raw.reason) ?? '未填写原因',
+    reason: asText(raw.reason) ?? t('未填写原因'),
     note: typeof raw.note === 'string' && raw.note.trim() ? raw.note : null,
     expires_at: asText(raw.expires_at),
     created_by: asText(raw.created_by),
@@ -235,9 +368,9 @@ function toModerationRow(raw: unknown): ModerationRow | null {
   };
 }
 
-function toModerationRows(data: unknown): ModerationRow[] {
+function toModerationRows(data: unknown, t: Translate): ModerationRow[] {
   if (!Array.isArray(data)) return [];
-  return data.map(toModerationRow).filter((row): row is ModerationRow => row !== null);
+  return data.map((raw) => toModerationRow(raw, t)).filter((row): row is ModerationRow => row !== null);
 }
 
 function toTargetUser(raw: unknown): TargetUser | null {
@@ -337,6 +470,13 @@ async function fetchProfiles(ids: string[]): Promise<Record<string, ProfileInfo>
 
 export default function AdminModerationPage() {
   const router = useRouter();
+  const locale = useLocale();
+  const tr = useTr(EN);
+  /** 稳定的翻译函数（只随 locale 变化），供 effect 与事件回调使用。 */
+  const t = useCallback(
+    (zh: string, vars?: Record<string, string | number>) => translateFor(locale, zh, vars),
+    [locale]
+  );
 
   const [checking, setChecking] = useState(true);
   const [staffId, setStaffId] = useState<string | null>(null);
@@ -397,13 +537,13 @@ export default function AdminModerationPage() {
         if (cancelled) return;
 
         if (profileError) {
-          alert(`无法验证权限：${profileError.message}`);
+          alert(t('无法验证权限：{message}', { message: profileError.message }));
           router.push('/admin');
           return;
         }
 
         if (!canAccessAdmin(levelOf(profile?.role_level))) {
-          alert('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理处罚。');
+          alert(t('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理处罚。'));
           router.push('/admin');
           return;
         }
@@ -412,7 +552,7 @@ export default function AdminModerationPage() {
         setChecking(false);
       } catch (error) {
         if (cancelled) return;
-        alert(`无法验证权限：${errorMessage(error)}`);
+        alert(t('无法验证权限：{message}', { message: errorMessage(error, t) }));
         router.push('/admin');
       }
     };
@@ -422,7 +562,7 @@ export default function AdminModerationPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, t]);
 
   // 每分钟刷新一次“当前时间”，让生效/过期状态自动更新（不写入数据库）。
   useEffect(() => {
@@ -478,7 +618,7 @@ export default function AdminModerationPage() {
           return;
         }
 
-        const rows = toModerationRows(data);
+        const rows = toModerationRows(data, t);
         const nextTotal = typeof count === 'number' ? count : from + rows.length;
         setRecent(rows);
         setRecentTotal(nextTotal);
@@ -501,7 +641,7 @@ export default function AdminModerationPage() {
         setProfiles((previous) => ({ ...previous, ...map }));
       } catch (error) {
         if (cancelled) return;
-        setRecentError(errorMessage(error));
+        setRecentError(errorMessage(error, t));
         setRecent([]);
         setRecentTotal(0);
       } finally {
@@ -514,7 +654,7 @@ export default function AdminModerationPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, staffId, dataToken, recentPage, recentAction, recentStatus]);
+  }, [checking, staffId, dataToken, recentPage, recentAction, recentStatus, t]);
 
   // 3. 选中用户的处罚记录（当前处罚 + 历史记录）
   useEffect(() => {
@@ -541,7 +681,7 @@ export default function AdminModerationPage() {
           return;
         }
 
-        const rows = toModerationRows(data);
+        const rows = toModerationRows(data, t);
         setRecords(rows);
         setNow(Date.now());
 
@@ -554,7 +694,7 @@ export default function AdminModerationPage() {
         setProfiles((previous) => ({ ...previous, ...map }));
       } catch (error) {
         if (cancelled) return;
-        setRecordsError(errorMessage(error));
+        setRecordsError(errorMessage(error, t));
         setRecords([]);
       } finally {
         if (!cancelled) setRecordsLoading(false);
@@ -566,7 +706,7 @@ export default function AdminModerationPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, staffId, selected, dataToken]);
+  }, [checking, staffId, selected, dataToken, t]);
 
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -579,7 +719,7 @@ export default function AdminModerationPage() {
     if (!term) {
       setResults([]);
       setSearchDone(false);
-      setSearchError('请输入昵称、专属 ID 或 Steam ID。');
+      setSearchError(tr('请输入昵称、专属 ID 或 Steam ID。'));
       return;
     }
 
@@ -603,7 +743,7 @@ export default function AdminModerationPage() {
       setResults(toTargetUsers(data));
       setSearchDone(true);
     } catch (error) {
-      setSearchError(errorMessage(error));
+      setSearchError(errorMessage(error, tr));
       setResults([]);
     } finally {
       setSearching(false);
@@ -628,11 +768,11 @@ export default function AdminModerationPage() {
     const trimmedNote = note.trim();
 
     if (!trimmedReason) {
-      setFormError('请填写处罚原因。');
+      setFormError(tr('请填写处罚原因。'));
       return;
     }
     if (trimmedReason.length > MAX_REASON_LENGTH) {
-      setFormError(`原因不能超过 ${MAX_REASON_LENGTH} 字。`);
+      setFormError(tr('原因不能超过 {count} 字。', { count: MAX_REASON_LENGTH }));
       return;
     }
 
@@ -665,11 +805,14 @@ export default function AdminModerationPage() {
       setNote('');
       setNotice({
         kind: 'success',
-        text: `已对 ${selected.display_name?.trim() || '该用户'} 创建${ACTION_META[action].label}。`,
+        text: tr('已对 {name} 创建{action}。', {
+          name: selected.display_name?.trim() || tr('该用户'),
+          action: tr(ACTION_META[action].label),
+        }),
       });
       setDataToken((value) => value + 1);
     } catch (error) {
-      setFormError(errorMessage(error));
+      setFormError(errorMessage(error, tr));
     } finally {
       setSubmitting(false);
     }
@@ -692,17 +835,23 @@ export default function AdminModerationPage() {
         .is('revoked_at', null);
 
       if (error) {
-        setNotice({ kind: 'error', text: `撤销失败：${error.message}` });
+        setNotice({ kind: 'error', text: tr('撤销失败：{message}', { message: error.message }) });
         return;
       }
 
       setNotice({
         kind: 'success',
-        text: `已撤销 #${row.id} 的${ACTION_META[row.action].label}。`,
+        text: tr('已撤销 #{id} 的{action}。', {
+          id: row.id,
+          action: tr(ACTION_META[row.action].label),
+        }),
       });
       setDataToken((value) => value + 1);
     } catch (error) {
-      setNotice({ kind: 'error', text: `撤销失败：${errorMessage(error)}` });
+      setNotice({
+        kind: 'error',
+        text: tr('撤销失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setRevokingId(null);
     }
@@ -711,14 +860,14 @@ export default function AdminModerationPage() {
   const profileName = (id: string | null): string => {
     if (!id) return '——';
     const profile = profiles[id];
-    if (!profile) return '未知用户';
-    const name = profile.display_name?.trim() || '未命名用户';
-    return profile.custom_id ? `${name}（${profile.custom_id}）` : name;
+    if (!profile) return tr('未知用户');
+    const name = profile.display_name?.trim() || tr('未命名用户');
+    return profile.custom_id ? tr('{name}（{id}）', { name, id: profile.custom_id }) : name;
   };
 
   const activeRecords = records.filter((row) => isEffective(row, now));
   const historyRecords = records.filter((row) => !isEffective(row, now));
-  const selectedDisplayName = selected?.display_name?.trim() || '未命名用户';
+  const selectedDisplayName = selected?.display_name?.trim() || tr('未命名用户');
 
   const recentTotalPages = Math.max(1, Math.ceil(recentTotal / PAGE_SIZE));
   const currentRecentPage = Math.min(recentPage, recentTotalPages);
@@ -745,7 +894,7 @@ export default function AdminModerationPage() {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#18191c] text-white">
-        验证权限中...
+        {tr('验证权限中...')}
       </div>
     );
   }
@@ -755,13 +904,15 @@ export default function AdminModerationPage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-gray-700 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white md:text-3xl">⚖️ 处罚管理 / Moderation</h1>
+            <h1 className="text-2xl font-bold text-white md:text-3xl">
+              {tr('⚖️ 处罚管理 / Moderation')}
+            </h1>
             <p className="mt-1 text-sm text-gray-500">
-              警告不限制发布；禁言/封禁会在到期前阻止发帖与报名
+              {tr('警告不限制发布；禁言/封禁会在到期前阻止发帖与报名')}
             </p>
           </div>
           <Link href="/admin" className="text-sm text-gray-400 transition hover:text-white">
-            ← 返回控制台
+            {tr('← 返回控制台')}
           </Link>
         </div>
 
@@ -779,16 +930,16 @@ export default function AdminModerationPage() {
 
         {/* 查找用户 */}
         <section className="mb-6 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
-          <h2 className="mb-3 text-lg font-bold text-white">查找用户</h2>
+          <h2 className="mb-3 text-lg font-bold text-white">{tr('查找用户')}</h2>
           <form onSubmit={handleSearch} className="flex flex-col gap-2 md:flex-row">
             <input
               type="text"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="昵称 / 专属 ID / Steam ID"
+              placeholder={tr('昵称 / 专属 ID / Steam ID')}
               maxLength={64}
               disabled={searching}
-              aria-label="搜索用户"
+              aria-label={tr('搜索用户')}
               className={inputClass}
             />
             <button
@@ -796,11 +947,15 @@ export default function AdminModerationPage() {
               disabled={searching}
               className="shrink-0 rounded bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {searching ? '搜索中...' : '搜索'}
+              {searching ? tr('搜索中...') : tr('搜索')}
             </button>
           </form>
 
-          {searchError && <p className="mt-2 text-sm text-red-400">搜索失败：{searchError}</p>}
+          {searchError && (
+            <p className="mt-2 text-sm text-red-400">
+              {tr('搜索失败：{message}', { message: searchError })}
+            </p>
+          )}
 
           {results.length > 0 && (
             <ul className="mt-3 divide-y divide-gray-700 rounded border border-gray-700 bg-[#18191c]">
@@ -819,23 +974,26 @@ export default function AdminModerationPage() {
                         {user.avatar_url ? (
                           <img
                             src={user.avatar_url}
-                            alt={`${user.display_name ?? '用户'} 的头像`}
+                            alt={tr('{name} 的头像', { name: user.display_name ?? tr('用户') })}
                             className="h-full w-full object-cover"
                           />
                         ) : (
-                          (user.display_name?.trim() || '玩').charAt(0).toUpperCase()
+                          (user.display_name?.trim() || tr('玩')).charAt(0).toUpperCase()
                         )}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-bold text-white">
-                          {user.display_name?.trim() || '未命名用户'}
+                          {user.display_name?.trim() || tr('未命名用户')}
                         </span>
                         <span className="block truncate text-xs text-gray-500">
-                          专属 ID：{user.custom_id || '未分配'} · Lv.{levelOf(user.role_level)}
-                          {user.steam_verified ? ' · Steam 已验证' : ' · Steam 未验证'}
+                          {tr('专属 ID：')}
+                          {user.custom_id || tr('未分配')} · Lv.{levelOf(user.role_level)}
+                          {user.steam_verified ? tr(' · Steam 已验证') : tr(' · Steam 未验证')}
                         </span>
                       </span>
-                      {isSelected && <span className="text-xs text-blue-300">已选中</span>}
+                      {isSelected && (
+                        <span className="text-xs text-blue-300">{tr('已选中')}</span>
+                      )}
                     </button>
                   </li>
                 );
@@ -845,18 +1003,18 @@ export default function AdminModerationPage() {
 
           {searchDone && results.length === 0 && !searchError && (
             <p className="mt-3 rounded border border-dashed border-gray-700 px-3 py-6 text-center text-sm text-gray-500">
-              未找到匹配用户（最多显示 10 条）。
+              {tr('未找到匹配用户（最多显示 10 条）。')}
             </p>
           )}
         </section>
 
         {/* 选中用户 + 新建处罚 */}
         <section className="mb-6 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
-          <h2 className="mb-3 text-lg font-bold text-white">新建处罚</h2>
+          <h2 className="mb-3 text-lg font-bold text-white">{tr('新建处罚')}</h2>
 
           {!selected ? (
             <p className="rounded border border-dashed border-gray-700 px-3 py-8 text-center text-sm text-gray-500">
-              请先在上方搜索并选择一个用户。
+              {tr('请先在上方搜索并选择一个用户。')}
             </p>
           ) : (
             <>
@@ -865,7 +1023,7 @@ export default function AdminModerationPage() {
                   {selected.avatar_url ? (
                     <img
                       src={selected.avatar_url}
-                      alt={`${selectedDisplayName} 的头像`}
+                      alt={tr('{name} 的头像', { name: selectedDisplayName })}
                       className="h-full w-full object-cover"
                     />
                   ) : (
@@ -875,20 +1033,27 @@ export default function AdminModerationPage() {
                 <div className="min-w-0">
                   <p className="truncate text-base font-bold text-white">{selectedDisplayName}</p>
                   <p className="mt-0.5 text-xs text-gray-500">
-                    专属 ID：{selected.custom_id || '未分配'} · 角色：
-                    {roleLabel(selected.role, selected.role_level)} · Lv.
+                    {tr('专属 ID：')}
+                    {selected.custom_id || tr('未分配')} · {tr('角色：')}
+                    {locale === 'en'
+                      ? roleLabelEn(selected.role, levelOf(selected.role_level))
+                      : roleLabel(selected.role, selected.role_level)}{' '}
+                    · Lv.
                     {levelOf(selected.role_level)}
                   </p>
                   <p className="mt-0.5 text-xs text-gray-500">
-                    Steam：{selected.steam_verified ? '已验证' : '未验证'}
-                    {selected.steam_id ? `（${selected.steam_id}）` : '（未绑定）'}
+                    {tr('Steam：')}
+                    {selected.steam_verified ? tr('已验证') : tr('未验证')}
+                    {selected.steam_id
+                      ? tr('（{id}）', { id: selected.steam_id })
+                      : tr('（未绑定）')}
                   </p>
                 </div>
                 <Link
                   href={`/profile/${selected.id}`}
                   className="ml-auto text-xs text-blue-400 transition hover:text-blue-300"
                 >
-                  查看资料 ↗
+                  {tr('查看资料 ↗')}
                 </Link>
               </div>
 
@@ -896,7 +1061,7 @@ export default function AdminModerationPage() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label htmlFor="moderation-action" className={labelClass}>
-                      处罚动作
+                      {tr('处罚动作')}
                     </label>
                     <select
                       id="moderation-action"
@@ -912,7 +1077,10 @@ export default function AdminModerationPage() {
                     >
                       {ACTIONS.map((value) => (
                         <option key={value} value={value}>
-                          {ACTION_META[value].label}（{ACTION_META[value].description}）
+                          {tr(ACTION_META[value].label)}
+                          {tr('（{description}）', {
+                            description: tr(ACTION_META[value].description),
+                          })}
                         </option>
                       ))}
                     </select>
@@ -920,7 +1088,7 @@ export default function AdminModerationPage() {
 
                   <div>
                     <label htmlFor="moderation-duration" className={labelClass}>
-                      时长
+                      {tr('时长')}
                     </label>
                     <select
                       id="moderation-duration"
@@ -934,19 +1102,19 @@ export default function AdminModerationPage() {
                     >
                       {DURATION_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {tr(option.label)}
                         </option>
                       ))}
                     </select>
                     <p className="mt-1 text-[11px] text-gray-500">
-                      永久处罚的到期时间为空；警告也会记录到期时间，但不限制发布。
+                      {tr('永久处罚的到期时间为空；警告也会记录到期时间，但不限制发布。')}
                     </p>
                   </div>
                 </div>
 
                 <div>
                   <label htmlFor="moderation-reason" className={labelClass}>
-                    原因（必填，最多 {MAX_REASON_LENGTH} 字）
+                    {tr('原因（必填，最多 {count} 字）', { count: MAX_REASON_LENGTH })}
                   </label>
                   <input
                     id="moderation-reason"
@@ -955,7 +1123,7 @@ export default function AdminModerationPage() {
                     onChange={(event) => setReason(event.target.value)}
                     maxLength={MAX_REASON_LENGTH}
                     disabled={submitting}
-                    placeholder="例如：多次恶意碰撞"
+                    placeholder={tr('例如：多次恶意碰撞')}
                     className={inputClass}
                   />
                   <p className="mt-1 text-right text-[11px] text-gray-500">
@@ -965,7 +1133,7 @@ export default function AdminModerationPage() {
 
                 <div>
                   <label htmlFor="moderation-note" className={labelClass}>
-                    备注（可选，仅后台可见）
+                    {tr('备注（可选，仅后台可见）')}
                   </label>
                   <textarea
                     id="moderation-note"
@@ -974,12 +1142,16 @@ export default function AdminModerationPage() {
                     maxLength={MAX_NOTE_LENGTH}
                     rows={3}
                     disabled={submitting}
-                    placeholder="补充证据链接、处理经过等"
+                    placeholder={tr('补充证据链接、处理经过等')}
                     className={`${inputClass} resize-y`}
                   />
                 </div>
 
-                {formError && <p className="text-sm text-red-400">创建失败：{formError}</p>}
+                {formError && (
+                  <p className="text-sm text-red-400">
+                    {tr('创建失败：{message}', { message: formError })}
+                  </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-3">
                   <button
@@ -987,10 +1159,12 @@ export default function AdminModerationPage() {
                     disabled={submitting || !reason.trim()}
                     className="rounded bg-red-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {submitting ? '提交中...' : `创建${ACTION_META[action].label}`}
+                    {submitting
+                      ? tr('提交中...')
+                      : tr('创建{action}', { action: tr(ACTION_META[action].label) })}
                   </button>
                   <span className="text-xs text-gray-500">
-                    提交后系统会自动给该用户发送站内通知。
+                    {tr('提交后系统会自动给该用户发送站内通知。')}
                   </span>
                 </div>
               </form>
@@ -1002,10 +1176,13 @@ export default function AdminModerationPage() {
         <section className="mb-6 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-white">
-              当前处罚
+              {tr('当前处罚')}
               {selected && (
                 <span className="ml-2 text-sm font-normal text-gray-500">
-                  {selectedDisplayName} · {activeRecords.length} 条生效中
+                  {tr('{name} · {count} 条生效中', {
+                    name: selectedDisplayName,
+                    count: activeRecords.length,
+                  })}
                 </span>
               )}
             </h2>
@@ -1015,21 +1192,21 @@ export default function AdminModerationPage() {
               disabled={recordsLoading}
               className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
             >
-              {recordsLoading ? '刷新中...' : '刷新'}
+              {recordsLoading ? tr('刷新中...') : tr('刷新')}
             </button>
           </div>
 
           {!selected ? (
-            <p className="text-sm text-gray-500">选择用户后显示其处罚记录。</p>
+            <p className="text-sm text-gray-500">{tr('选择用户后显示其处罚记录。')}</p>
           ) : recordsError ? (
             <p className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-              加载失败：{recordsError}
+              {tr('加载失败：{message}', { message: recordsError })}
             </p>
           ) : recordsLoading ? (
-            <p className="py-6 text-center text-sm text-gray-500">加载中...</p>
+            <p className="py-6 text-center text-sm text-gray-500">{tr('加载中...')}</p>
           ) : activeRecords.length === 0 ? (
             <p className="rounded border border-dashed border-gray-700 px-3 py-6 text-center text-sm text-gray-500">
-              该用户当前没有生效中的处罚。
+              {tr('该用户当前没有生效中的处罚。')}
             </p>
           ) : (
             <ul className="space-y-2">
@@ -1045,22 +1222,31 @@ export default function AdminModerationPage() {
                         <span
                           className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.badgeClass}`}
                         >
-                          {meta.label}
+                          {tr(meta.label)}
                         </span>
                         <span className="text-xs text-gray-500">#{row.id}</span>
                         <span className="text-xs text-gray-500">
-                          创建：{formatTime(row.created_at)}
+                          {tr('创建：')}
+                          {formatTime(row.created_at)}
                         </span>
                         <span className="text-xs text-gray-500">
-                          到期：{row.expires_at ? formatTime(row.expires_at) : '永久'}
+                          {tr('到期：')}
+                          {row.expires_at ? formatTime(row.expires_at) : tr('永久')}
                         </span>
                       </div>
-                      <p className="mt-1 break-words text-sm text-white">原因：{row.reason}</p>
+                      <p className="mt-1 break-words text-sm text-white">
+                        {tr('原因：')}
+                        {row.reason}
+                      </p>
                       {row.note && (
-                        <p className="mt-1 break-words text-xs text-gray-400">备注：{row.note}</p>
+                        <p className="mt-1 break-words text-xs text-gray-400">
+                          {tr('备注：')}
+                          {row.note}
+                        </p>
                       )}
                       <p className="mt-1 text-xs text-gray-500">
-                        处理人：{row.created_by ? profileName(row.created_by) : '——'}
+                        {tr('处理人：')}
+                        {row.created_by ? profileName(row.created_by) : '——'}
                       </p>
                     </div>
                     <button
@@ -1069,7 +1255,7 @@ export default function AdminModerationPage() {
                       disabled={revokingId !== null}
                       className="shrink-0 rounded border border-red-500/50 px-4 py-2 text-sm text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {revokingId === row.id ? '撤销中...' : '撤销'}
+                      {revokingId === row.id ? tr('撤销中...') : tr('撤销')}
                     </button>
                   </li>
                 );
@@ -1080,10 +1266,10 @@ export default function AdminModerationPage() {
           {selected && !recordsLoading && !recordsError && (
             <div className="mt-5 border-t border-gray-700 pt-4">
               <h3 className="mb-2 text-sm font-bold text-gray-400">
-                历史记录（已结束，最多最近 {MAX_USER_RECORDS} 条）
+                {tr('历史记录（已结束，最多最近 {count} 条）', { count: MAX_USER_RECORDS })}
               </h3>
               {historyRecords.length === 0 ? (
-                <p className="text-sm text-gray-500">暂无历史记录。</p>
+                <p className="text-sm text-gray-500">{tr('暂无历史记录。')}</p>
               ) : (
                 <ul className="space-y-2">
                   {historyRecords.map((row) => {
@@ -1098,27 +1284,40 @@ export default function AdminModerationPage() {
                           <span
                             className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.badgeClass}`}
                           >
-                            {meta.label}
+                            {tr(meta.label)}
                           </span>
                           <span
                             className={`inline-flex items-center rounded border px-2 py-0.5 text-xs ${status.className}`}
                           >
-                            {status.label}
+                            {tr(status.label)}
                           </span>
                           <span className="text-xs text-gray-500">#{row.id}</span>
                           <span className="text-xs text-gray-500">{formatTime(row.created_at)}</span>
                         </div>
-                        <p className="mt-1 break-words text-white">原因：{row.reason}</p>
+                        <p className="mt-1 break-words text-white">
+                          {tr('原因：')}
+                          {row.reason}
+                        </p>
                         {row.note && (
-                          <p className="mt-1 break-words text-xs text-gray-400">备注：{row.note}</p>
+                          <p className="mt-1 break-words text-xs text-gray-400">
+                            {tr('备注：')}
+                            {row.note}
+                          </p>
                         )}
                         <p className="mt-1 text-xs text-gray-500">
-                          到期：{row.expires_at ? formatTime(row.expires_at) : '永久'}
-                          {' · '}处理人：{row.created_by ? profileName(row.created_by) : '——'}
+                          {tr('到期：')}
+                          {row.expires_at ? formatTime(row.expires_at) : tr('永久')}
+                          {' · '}
+                          {tr('处理人：')}
+                          {row.created_by ? profileName(row.created_by) : '——'}
                           {row.revoked_at && (
                             <>
-                              {' · '}撤销人：{row.revoked_by ? profileName(row.revoked_by) : '——'}
-                              {' · '}撤销时间：{formatTime(row.revoked_at)}
+                              {' · '}
+                              {tr('撤销人：')}
+                              {row.revoked_by ? profileName(row.revoked_by) : '——'}
+                              {' · '}
+                              {tr('撤销时间：')}
+                              {formatTime(row.revoked_at)}
                             </>
                           )}
                         </p>
@@ -1138,10 +1337,14 @@ export default function AdminModerationPage() {
         >
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold text-white">最近处罚记录</h2>
+              <h2 className="text-lg font-bold text-white">{tr('最近处罚记录')}</h2>
               <p className="mt-1 text-xs text-gray-500">
-                全站 {recentTotal} 条 · 第 {currentRecentPage} / {recentTotalPages} 页 · 每页{' '}
-                {PAGE_SIZE} 条
+                {tr('全站 {count} 条 · 第 {page} / {total} 页 · 每页 {size} 条', {
+                  count: recentTotal,
+                  page: currentRecentPage,
+                  total: recentTotalPages,
+                  size: PAGE_SIZE,
+                })}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1155,12 +1358,12 @@ export default function AdminModerationPage() {
                     setRecentPage(1);
                   }
                 }}
-                aria-label="按处罚动作筛选"
+                aria-label={tr('按处罚动作筛选')}
                 className="rounded border border-gray-600 bg-[#18191c] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
               >
                 {RECENT_ACTION_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {tr(option.label)}
                   </option>
                 ))}
               </select>
@@ -1174,12 +1377,12 @@ export default function AdminModerationPage() {
                     setRecentPage(1);
                   }
                 }}
-                aria-label="按处罚状态筛选"
+                aria-label={tr('按处罚状态筛选')}
                 className="rounded border border-gray-600 bg-[#18191c] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
               >
                 {RECENT_STATUS_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {tr(option.label)}
                   </option>
                 ))}
               </select>
@@ -1189,7 +1392,7 @@ export default function AdminModerationPage() {
                   onClick={resetRecentFilters}
                   className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white"
                 >
-                  清除筛选
+                  {tr('清除筛选')}
                 </button>
               )}
             </div>
@@ -1197,21 +1400,25 @@ export default function AdminModerationPage() {
 
           {recentError ? (
             <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2">
-              <p className="text-sm text-red-300">加载失败：{recentError}</p>
+              <p className="text-sm text-red-300">
+                {tr('加载失败：{message}', { message: recentError })}
+              </p>
               <button
                 type="button"
                 onClick={() => setDataToken((value) => value + 1)}
                 className="mt-2 rounded bg-red-700 px-3 py-1 text-xs font-bold text-white transition hover:bg-red-600"
               >
-                重试
+                {tr('重试')}
               </button>
             </div>
           ) : recentLoading ? (
-            <p className="py-6 text-center text-sm text-gray-500">加载中...</p>
+            <p className="py-6 text-center text-sm text-gray-500">{tr('加载中...')}</p>
           ) : recent.length === 0 ? (
             <div className="rounded border border-dashed border-gray-700 px-3 py-8 text-center">
               <p className="text-sm text-gray-500">
-                {hasRecentFilters ? '没有符合当前筛选条件的处罚记录。' : '暂无处罚记录。'}
+                {hasRecentFilters
+                  ? tr('没有符合当前筛选条件的处罚记录。')
+                  : tr('暂无处罚记录。')}
               </p>
               {hasRecentFilters && (
                 <button
@@ -1219,7 +1426,7 @@ export default function AdminModerationPage() {
                   onClick={resetRecentFilters}
                   className="mt-3 text-xs font-bold text-blue-400 transition hover:text-blue-300"
                 >
-                  清除筛选
+                  {tr('清除筛选')}
                 </button>
               )}
             </div>
@@ -1237,18 +1444,18 @@ export default function AdminModerationPage() {
                       <span
                         className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.badgeClass}`}
                       >
-                        {meta.label}
+                        {tr(meta.label)}
                       </span>
                       <span
                         className={`inline-flex items-center rounded border px-2 py-0.5 text-xs ${status.className}`}
                       >
-                        {status.label}
+                        {tr(status.label)}
                       </span>
                       <span className="text-xs text-gray-500">{formatTime(row.created_at)}</span>
                       <span className="text-xs text-gray-500">#{row.id}</span>
                     </div>
                     <p className="mt-1 break-words text-white">
-                      目标：
+                      {tr('目标：')}
                       <Link
                         href={`/profile/${row.user_id}`}
                         className="text-blue-400 transition hover:text-blue-300"
@@ -1256,13 +1463,21 @@ export default function AdminModerationPage() {
                         {profileName(row.user_id)}
                       </Link>
                     </p>
-                    <p className="mt-1 break-words">原因：{row.reason}</p>
+                    <p className="mt-1 break-words">
+                      {tr('原因：')}
+                      {row.reason}
+                    </p>
                     <p className="mt-1 text-xs text-gray-500">
-                      到期：{row.expires_at ? formatTime(row.expires_at) : '永久'}
-                      {' · '}处理人：{row.created_by ? profileName(row.created_by) : '——'}
+                      {tr('到期：')}
+                      {row.expires_at ? formatTime(row.expires_at) : tr('永久')}
+                      {' · '}
+                      {tr('处理人：')}
+                      {row.created_by ? profileName(row.created_by) : '——'}
                       {row.revoked_at && (
                         <>
-                          {' · '}撤销人：{row.revoked_by ? profileName(row.revoked_by) : '——'}
+                          {' · '}
+                          {tr('撤销人：')}
+                          {row.revoked_by ? profileName(row.revoked_by) : '——'}
                         </>
                       )}
                     </p>
@@ -1275,7 +1490,11 @@ export default function AdminModerationPage() {
           {!recentError && recentTotal > 0 && (
             <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-gray-700 pt-3 sm:flex-row">
               <p className="text-xs text-gray-500">
-                共 {recentTotal} 条 · 第 {currentRecentPage} / {recentTotalPages} 页
+                {tr('共 {count} 条 · 第 {page} / {total} 页', {
+                  count: recentTotal,
+                  page: currentRecentPage,
+                  total: recentTotalPages,
+                })}
               </p>
               <div className="flex flex-wrap items-center gap-1">
                 <button
@@ -1284,7 +1503,7 @@ export default function AdminModerationPage() {
                   disabled={currentRecentPage <= 1}
                   className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  上一页
+                  {tr('上一页')}
                 </button>
                 {recentPageItems.map((item, index) =>
                   typeof item === 'number' ? (
@@ -1313,7 +1532,7 @@ export default function AdminModerationPage() {
                   disabled={currentRecentPage >= recentTotalPages}
                   className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  下一页
+                  {tr('下一页')}
                 </button>
               </div>
             </div>

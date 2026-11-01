@@ -6,6 +6,110 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import RichTextEditor from '@/components/RichTextEditor';
 import { canAccessAdmin, levelOf } from '@/lib/permissions';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import { formatMessage, type Locale } from '@/lib/i18n';
+
+// 英文文案：键为中文原文，缺失时回退中文；活动标题/简介/地点等数据库内容不翻译。
+const EN: Record<string, string> = {
+  // 加载 / 权限 / 错误
+  '验证权限中...': 'Verifying permissions…',
+  '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理活动。':
+    '🚫 Insufficient permissions: only Staff (Lv.40) and above can manage events.',
+  '无法验证权限：{msg}': 'Unable to verify permissions: {msg}',
+  '操作失败，请稍后重试': 'The operation failed. Please try again later.',
+  '正在获取活动列表…': 'Loading events…',
+  '加载失败': 'Failed to load',
+  '重新加载': 'Reload',
+  '暂无活动': 'No events yet',
+  '点击上方「新建活动」创建第一场活动。':
+    'Click “New event” above to create the first event.',
+
+  // 页面头部
+  '🗓️ 活动管理': '🗓️ Event Management',
+  '发布活动、管理报名 · 当前身份 Lv.{level}':
+    'Publish events and manage registrations · Current level Lv.{level}',
+  '查看活动页 →': 'View events page →',
+  '← 返回控制台': '← Back to dashboard',
+
+  // 表单
+  '新建活动': 'New event',
+  '编辑活动 #{id}': 'Edit event #{id}',
+  '关闭': 'Close',
+  '活动标题': 'Event title',
+  '活动描述': 'Event description',
+  '支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。':
+    'Supports **bold**, *italic*, `code`, [links](https://...), ![images](https://...), > quotes, - lists, and ## headings; regular line breaks are preserved.',
+  '开始时间': 'Start time',
+  '结束时间（可选）': 'End time (optional)',
+  '地点': 'Location',
+  '例如：杜伊斯堡 / 加来': 'e.g. Duisburg / Calais',
+  '服务器': 'Server',
+  '例如：EU Simulation 1': 'e.g. EU Simulation 1',
+  '容量（可选，留空表示不限）': 'Capacity (optional, leave blank for unlimited)',
+  '例如：40': 'e.g. 40',
+  '封面图片 URL': 'Cover image URL',
+  '状态': 'Status',
+  '草稿（不在活动页展示）': 'Draft (hidden from the events page)',
+  '已发布（所有访客可见）': 'Published (visible to all visitors)',
+  '保存中...': 'Saving…',
+  '创建活动': 'Create event',
+  '保存修改': 'Save changes',
+  '取消': 'Cancel',
+  '+ 新建活动': '+ New event',
+
+  // 列表
+  '全部活动': 'All events',
+  '共 {count} 个': '{count} total',
+  '已发布': 'Published',
+  '已取消': 'Cancelled',
+  '草稿': 'Draft',
+  '未知': 'Unknown',
+  '未命名活动': 'Untitled event',
+  '未命名玩家': 'Unnamed player',
+  '地点待定': 'Location TBD',
+  '未指定服务器': 'Server TBD',
+  '报名': 'Registered',
+  '{count} 人': '{count}',
+  '收起名单': 'Hide registrations',
+  '报名名单': 'Registrations',
+  '编辑': 'Edit',
+  '处理中…': 'Processing…',
+  '取消发布': 'Unpublish',
+  '发布': 'Publish',
+  '删除': 'Delete',
+  '已报名': 'Registered',
+  '人': 'people',
+  '（已加载 {count} 条）': ' ({count} loaded)',
+  '加载中…': 'Loading…',
+  '刷新名单': 'Refresh list',
+  '正在加载报名名单…': 'Loading registrations…',
+  '暂无报名': 'No registrations yet',
+  'Steam 已验证': 'Steam verified',
+  'ID: {id}': 'ID: {id}',
+  '无': 'None',
+  '无备注': 'No note',
+
+  // 校验与操作反馈
+  '请填写活动标题。': 'Please enter an event title.',
+  '请填写有效的开始时间。': 'Please enter a valid start time.',
+  '结束时间格式无效。': 'The end time is invalid.',
+  '结束时间不能早于开始时间。': 'The end time cannot be earlier than the start time.',
+  '容量必须是大于 0 的整数，或留空表示不限。':
+    'Capacity must be a positive integer, or leave it blank for unlimited.',
+  '🎉 活动已创建。': '🎉 Event created.',
+  '活动已更新。': 'Event updated.',
+  '已发布「{title}」。': 'Published “{title}”.',
+  '已取消发布「{title}」（状态改为草稿）。':
+    'Unpublished “{title}” (status changed to draft).',
+  '确定删除活动「{title}」吗？删除后无法恢复，相关报名记录可能一并删除。':
+    'Delete “{title}”? This cannot be undone, and related registration records may be deleted as well.',
+  '已删除「{title}」。': 'Deleted “{title}”.',
+};
+
+/** effect 内使用的稳定翻译器（useTr 每次渲染都会重建，不能放进依赖数组）。 */
+function translate(locale: Locale, zh: string, vars?: Record<string, string | number>): string {
+  return formatMessage(locale === 'en' ? EN[zh] ?? zh : zh, vars);
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,6 +173,8 @@ interface Notice {
   text: string;
 }
 
+type Translate = (zh: string, vars?: Record<string, string | number>) => string;
+
 function emptyEventForm(): EventFormState {
   return {
     title: '',
@@ -112,6 +218,7 @@ function pickProfile(
 
 function toRegistrationEntries(
   rows: unknown,
+  tr: Translate,
   fallbackProfiles?: Map<string, RegistrationProfile>
 ): RegistrationEntry[] {
   if (!Array.isArray(rows)) return [];
@@ -132,7 +239,7 @@ function toRegistrationEntries(
     entries.push({
       id,
       userId,
-      displayName: profile?.display_name?.trim() || '未命名玩家',
+      displayName: profile?.display_name?.trim() || tr('未命名玩家'),
       customId: profile?.custom_id?.trim() || null,
       steamVerified: profile?.steam_verified === true,
       note,
@@ -167,8 +274,8 @@ function toDateTimeLocal(value: string | null): string {
   )}:${pad(date.getMinutes())}`;
 }
 
-function titleOf(event: EventRow): string {
-  return event.title?.trim() || '未命名活动';
+function titleOf(event: EventRow, tr: Translate): string {
+  return event.title?.trim() || tr('未命名活动');
 }
 
 function errorMessage(error: unknown): string {
@@ -197,6 +304,8 @@ const inputClass =
 const labelClass = 'mb-1 block text-sm text-gray-400';
 
 export default function AdminEventsPage() {
+  const tr = useTr(EN);
+  const locale = useLocale();
   const router = useRouter();
 
   const [checking, setChecking] = useState(true);
@@ -243,7 +352,7 @@ export default function AdminEventsPage() {
 
         const myLevel = levelOf(profile?.role_level);
         if (!canAccessAdmin(myLevel)) {
-          alert('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理活动。');
+          alert(translate(locale, '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理活动。'));
           router.push('/admin');
           return;
         }
@@ -253,7 +362,11 @@ export default function AdminEventsPage() {
         setChecking(false);
       } catch (error) {
         if (cancelled) return;
-        alert(`无法验证权限：${errorMessage(error)}`);
+        alert(
+          translate(locale, '无法验证权限：{msg}', {
+            msg: translate(locale, errorMessage(error)),
+          })
+        );
         router.push('/admin');
       }
     };
@@ -263,7 +376,7 @@ export default function AdminEventsPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, locale]);
 
   useEffect(() => {
     if (checking) return;
@@ -282,7 +395,7 @@ export default function AdminEventsPage() {
         if (cancelled) return;
 
         if (error) {
-          setLoadError(errorMessage(error));
+          setLoadError(translate(locale, errorMessage(error)));
           setEvents([]);
           setCounts({});
           return;
@@ -303,7 +416,7 @@ export default function AdminEventsPage() {
         }
       } catch (error) {
         if (cancelled) return;
-        setLoadError(errorMessage(error));
+        setLoadError(translate(locale, errorMessage(error)));
         setEvents([]);
         setCounts({});
       } finally {
@@ -316,7 +429,7 @@ export default function AdminEventsPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, reloadToken]);
+  }, [checking, reloadToken, locale]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -355,13 +468,13 @@ export default function AdminEventsPage() {
 
     const title = form.title.trim();
     if (!title) {
-      setNotice({ kind: 'error', text: '请填写活动标题。' });
+      setNotice({ kind: 'error', text: tr('请填写活动标题。') });
       return;
     }
 
     const startDate = new Date(form.startAt);
     if (!form.startAt || Number.isNaN(startDate.getTime())) {
-      setNotice({ kind: 'error', text: '请填写有效的开始时间。' });
+      setNotice({ kind: 'error', text: tr('请填写有效的开始时间。') });
       return;
     }
 
@@ -369,11 +482,11 @@ export default function AdminEventsPage() {
     if (form.endAt) {
       endDate = new Date(form.endAt);
       if (Number.isNaN(endDate.getTime())) {
-        setNotice({ kind: 'error', text: '结束时间格式无效。' });
+        setNotice({ kind: 'error', text: tr('结束时间格式无效。') });
         return;
       }
       if (endDate.getTime() < startDate.getTime()) {
-        setNotice({ kind: 'error', text: '结束时间不能早于开始时间。' });
+        setNotice({ kind: 'error', text: tr('结束时间不能早于开始时间。') });
         return;
       }
     }
@@ -382,7 +495,7 @@ export default function AdminEventsPage() {
     if (form.capacity.trim()) {
       const parsed = Number(form.capacity);
       if (!Number.isInteger(parsed) || parsed <= 0) {
-        setNotice({ kind: 'error', text: '容量必须是大于 0 的整数，或留空表示不限。' });
+        setNotice({ kind: 'error', text: tr('容量必须是大于 0 的整数，或留空表示不限。') });
         return;
       }
       capacity = parsed;
@@ -409,17 +522,17 @@ export default function AdminEventsPage() {
           .from('events')
           .insert({ ...payload, created_by: userId });
         if (error) {
-          setNotice({ kind: 'error', text: errorMessage(error) });
+          setNotice({ kind: 'error', text: tr(errorMessage(error)) });
           return;
         }
-        setNotice({ kind: 'success', text: '🎉 活动已创建。' });
+        setNotice({ kind: 'success', text: tr('🎉 活动已创建。') });
       } else {
         const { error } = await supabase.from('events').update(payload).eq('id', editingId);
         if (error) {
-          setNotice({ kind: 'error', text: errorMessage(error) });
+          setNotice({ kind: 'error', text: tr(errorMessage(error)) });
           return;
         }
-        setNotice({ kind: 'success', text: '活动已更新。' });
+        setNotice({ kind: 'success', text: tr('活动已更新。') });
       }
 
       setForm(emptyEventForm());
@@ -427,7 +540,7 @@ export default function AdminEventsPage() {
       setFormOpen(false);
       setReloadToken((value) => value + 1);
     } catch (error) {
-      setNotice({ kind: 'error', text: errorMessage(error) });
+      setNotice({ kind: 'error', text: tr(errorMessage(error)) });
     } finally {
       setSubmitting(false);
     }
@@ -444,7 +557,7 @@ export default function AdminEventsPage() {
         .update({ status: nextStatus })
         .eq('id', event.id);
       if (error) {
-        setNotice({ kind: 'error', text: errorMessage(error) });
+        setNotice({ kind: 'error', text: tr(errorMessage(error)) });
         return;
       }
 
@@ -455,11 +568,11 @@ export default function AdminEventsPage() {
         kind: 'success',
         text:
           nextStatus === 'published'
-            ? `已发布「${titleOf(event)}」。`
-            : `已取消发布「${titleOf(event)}」（状态改为草稿）。`,
+            ? tr('已发布「{title}」。', { title: titleOf(event, tr) })
+            : tr('已取消发布「{title}」（状态改为草稿）。', { title: titleOf(event, tr) }),
       });
     } catch (error) {
-      setNotice({ kind: 'error', text: errorMessage(error) });
+      setNotice({ kind: 'error', text: tr(errorMessage(error)) });
     } finally {
       setBusyId(null);
     }
@@ -467,8 +580,12 @@ export default function AdminEventsPage() {
 
   const handleDelete = async (event: EventRow) => {
     if (busyId !== null) return;
-    const title = titleOf(event);
-    if (!window.confirm(`确定删除活动「${title}」吗？删除后无法恢复，相关报名记录可能一并删除。`)) {
+    const title = titleOf(event, tr);
+    if (
+      !window.confirm(
+        tr('确定删除活动「{title}」吗？删除后无法恢复，相关报名记录可能一并删除。', { title })
+      )
+    ) {
       return;
     }
 
@@ -478,14 +595,14 @@ export default function AdminEventsPage() {
     try {
       const { error } = await supabase.from('events').delete().eq('id', event.id);
       if (error) {
-        setNotice({ kind: 'error', text: errorMessage(error) });
+        setNotice({ kind: 'error', text: tr(errorMessage(error)) });
         return;
       }
 
       setEvents((previous) => previous.filter((item) => item.id !== event.id));
-      setNotice({ kind: 'success', text: `已删除「${title}」。` });
+      setNotice({ kind: 'success', text: tr('已删除「{title}」。', { title }) });
     } catch (error) {
-      setNotice({ kind: 'error', text: errorMessage(error) });
+      setNotice({ kind: 'error', text: tr(errorMessage(error)) });
     } finally {
       setBusyId(null);
     }
@@ -514,7 +631,7 @@ export default function AdminEventsPage() {
       let entries: RegistrationEntry[] | null = null;
 
       if (!error) {
-        entries = toRegistrationEntries(data);
+        entries = toRegistrationEntries(data, tr);
       } else {
         // embed 关系解析失败时回退：先取报名记录，再按 user_id 批量查 profiles
         const fallback = await supabase
@@ -558,7 +675,7 @@ export default function AdminEventsPage() {
           }
         }
 
-        entries = toRegistrationEntries(fallbackRows, profileMap);
+        entries = toRegistrationEntries(fallbackRows, tr, profileMap);
       }
 
       const { data: countData, error: countError } = await supabase
@@ -573,7 +690,7 @@ export default function AdminEventsPage() {
 
       setRegistrations((previous) => ({ ...previous, [eventId]: entries ?? [] }));
     } catch (error) {
-      setRegistrationsError((previous) => ({ ...previous, [eventId]: errorMessage(error) }));
+      setRegistrationsError((previous) => ({ ...previous, [eventId]: tr(errorMessage(error)) }));
     } finally {
       setRegistrationsLoading((previous) => {
         const next = { ...previous };
@@ -596,7 +713,7 @@ export default function AdminEventsPage() {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#18191c] text-white">
-        验证权限中...
+        {tr('验证权限中...')}
       </div>
     );
   }
@@ -606,17 +723,17 @@ export default function AdminEventsPage() {
       <div className="mx-auto w-full max-w-5xl">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-3 border-b border-gray-700 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-blue-400 md:text-3xl">🗓️ 活动管理</h1>
+            <h1 className="text-2xl font-bold text-blue-400 md:text-3xl">{tr('🗓️ 活动管理')}</h1>
             <p className="mt-1 text-sm text-gray-500">
-              发布活动、管理报名 · 当前身份 Lv.{roleLevel}
+              {tr('发布活动、管理报名 · 当前身份 Lv.{level}', { level: roleLevel })}
             </p>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/events" className="text-blue-400 transition hover:text-white">
-              查看活动页 →
+              {tr('查看活动页 →')}
             </Link>
             <Link href="/admin" className="text-gray-400 transition hover:text-white">
-              ← 返回控制台
+              {tr('← 返回控制台')}
             </Link>
           </div>
         </div>
@@ -638,7 +755,9 @@ export default function AdminEventsPage() {
           <section className="mb-8 rounded-xl border border-gray-700 bg-[#2c2d31] p-6 shadow-2xl">
             <div className="mb-5 flex items-center justify-between border-b border-gray-700 pb-3">
               <h2 className="text-lg font-bold text-white">
-                {editingId === null ? '新建活动' : `编辑活动 #${editingId}`}
+                {editingId === null
+                  ? tr('新建活动')
+                  : tr('编辑活动 #{id}', { id: editingId })}
               </h2>
               <button
                 type="button"
@@ -646,14 +765,14 @@ export default function AdminEventsPage() {
                 disabled={submitting}
                 className="text-sm text-gray-400 transition hover:text-white disabled:opacity-60"
               >
-                关闭
+                {tr('关闭')}
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="event-title" className={labelClass}>
-                  活动标题 <span className="text-red-400">*</span>
+                  {tr('活动标题')} <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="event-title"
@@ -667,20 +786,22 @@ export default function AdminEventsPage() {
 
               <div>
                 <RichTextEditor
-                  label="活动描述"
+                  label={tr('活动描述')}
                   value={form.description}
                   onChange={(value) =>
                     setForm((previous) => ({ ...previous, description: value }))
                   }
                   rows={4}
-                  placeholder="支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。"
+                  placeholder={tr(
+                    '支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。'
+                  )}
                 />
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label htmlFor="event-start" className={labelClass}>
-                    开始时间 <span className="text-red-400">*</span>
+                    {tr('开始时间')} <span className="text-red-400">*</span>
                   </label>
                   <input
                     id="event-start"
@@ -695,7 +816,7 @@ export default function AdminEventsPage() {
                 </div>
                 <div>
                   <label htmlFor="event-end" className={labelClass}>
-                    结束时间（可选）
+                    {tr('结束时间（可选）')}
                   </label>
                   <input
                     id="event-end"
@@ -712,7 +833,7 @@ export default function AdminEventsPage() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label htmlFor="event-location" className={labelClass}>
-                    地点
+                    {tr('地点')}
                   </label>
                   <input
                     id="event-location"
@@ -722,12 +843,12 @@ export default function AdminEventsPage() {
                       setForm((previous) => ({ ...previous, location: e.target.value }))
                     }
                     className={inputClass}
-                    placeholder="例如：杜伊斯堡 / 加来"
+                    placeholder={tr('例如：杜伊斯堡 / 加来')}
                   />
                 </div>
                 <div>
                   <label htmlFor="event-server" className={labelClass}>
-                    服务器
+                    {tr('服务器')}
                   </label>
                   <input
                     id="event-server"
@@ -737,7 +858,7 @@ export default function AdminEventsPage() {
                       setForm((previous) => ({ ...previous, serverId: e.target.value }))
                     }
                     className={inputClass}
-                    placeholder="例如：EU Simulation 1"
+                    placeholder={tr('例如：EU Simulation 1')}
                   />
                 </div>
               </div>
@@ -745,7 +866,7 @@ export default function AdminEventsPage() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label htmlFor="event-capacity" className={labelClass}>
-                    容量（可选，留空表示不限）
+                    {tr('容量（可选，留空表示不限）')}
                   </label>
                   <input
                     id="event-capacity"
@@ -757,12 +878,12 @@ export default function AdminEventsPage() {
                       setForm((previous) => ({ ...previous, capacity: e.target.value }))
                     }
                     className={inputClass}
-                    placeholder="例如：40"
+                    placeholder={tr('例如：40')}
                   />
                 </div>
                 <div>
                   <label htmlFor="event-image" className={labelClass}>
-                    封面图片 URL
+                    {tr('封面图片 URL')}
                   </label>
                   <input
                     id="event-image"
@@ -779,7 +900,7 @@ export default function AdminEventsPage() {
 
               <div className="md:w-1/2 md:pr-2">
                 <label htmlFor="event-status" className={labelClass}>
-                  状态
+                  {tr('状态')}
                 </label>
                 <select
                   id="event-status"
@@ -792,8 +913,8 @@ export default function AdminEventsPage() {
                   }
                   className={inputClass}
                 >
-                  <option value="draft">草稿（不在活动页展示）</option>
-                  <option value="published">已发布（所有访客可见）</option>
+                  <option value="draft">{tr('草稿（不在活动页展示）')}</option>
+                  <option value="published">{tr('已发布（所有访客可见）')}</option>
                 </select>
               </div>
 
@@ -804,10 +925,10 @@ export default function AdminEventsPage() {
                   className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting
-                    ? '保存中...'
+                    ? tr('保存中...')
                     : editingId === null
-                      ? '创建活动'
-                      : '保存修改'}
+                      ? tr('创建活动')
+                      : tr('保存修改')}
                 </button>
                 <button
                   type="button"
@@ -815,7 +936,7 @@ export default function AdminEventsPage() {
                   disabled={submitting}
                   className="rounded-lg border border-gray-600 px-5 py-2.5 text-sm text-gray-300 transition hover:border-gray-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  取消
+                  {tr('取消')}
                 </button>
               </div>
             </form>
@@ -827,41 +948,43 @@ export default function AdminEventsPage() {
               onClick={openCreate}
               className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
-              + 新建活动
+              {tr('+ 新建活动')}
             </button>
           </div>
         )}
 
         <section>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-white">全部活动</h2>
+            <h2 className="text-lg font-bold text-white">{tr('全部活动')}</h2>
             {!loading && !loadError ? (
-              <span className="text-xs text-gray-500">共 {events.length} 个</span>
+              <span className="text-xs text-gray-500">
+                {tr('共 {count} 个', { count: events.length })}
+              </span>
             ) : null}
           </div>
 
           {loading ? (
             <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-10 text-center">
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500" />
-              <p className="mt-4 text-sm text-gray-400">正在获取活动列表…</p>
+              <p className="mt-4 text-sm text-gray-400">{tr('正在获取活动列表…')}</p>
             </div>
           ) : loadError ? (
             <div className="rounded-xl border border-red-900/60 bg-[#2c2d31] p-8 text-center">
-              <p className="text-lg font-bold text-white">加载失败</p>
+              <p className="text-lg font-bold text-white">{tr('加载失败')}</p>
               <p className="mt-2 text-sm text-red-300">{loadError}</p>
               <button
                 type="button"
                 onClick={() => setReloadToken((value) => value + 1)}
                 className="mt-5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500"
               >
-                重新加载
+                {tr('重新加载')}
               </button>
             </div>
           ) : events.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/60 p-10 text-center">
-              <p className="text-base font-bold text-white">暂无活动</p>
+              <p className="text-base font-bold text-white">{tr('暂无活动')}</p>
               <p className="mt-2 text-sm text-gray-500">
-                点击上方「新建活动」创建第一场活动。
+                {tr('点击上方「新建活动」创建第一场活动。')}
               </p>
             </div>
           ) : (
@@ -877,7 +1000,7 @@ export default function AdminEventsPage() {
                 const countText =
                   event.capacity !== null
                     ? `${registered} / ${event.capacity}`
-                    : `${registered} 人`;
+                    : tr('{count} 人', { count: registered });
 
                 return (
                   <div
@@ -890,13 +1013,13 @@ export default function AdminEventsPage() {
                           <span
                             className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-bold ${badge.className}`}
                           >
-                            {badge.label}
+                            {tr(badge.label)}
                           </span>
                           <Link
                             href={`/events/${event.id}`}
                             className="truncate text-base font-bold text-white transition hover:text-blue-400"
                           >
-                            {titleOf(event)}
+                            {titleOf(event, tr)}
                           </Link>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
@@ -904,10 +1027,10 @@ export default function AdminEventsPage() {
                             🕒 {formatDateTime(event.start_at)}
                             {event.end_at ? ` → ${formatDateTime(event.end_at)}` : ''}
                           </span>
-                          <span>📍 {event.location?.trim() || '地点待定'}</span>
-                          <span>🖥️ {event.server_id?.trim() || '未指定服务器'}</span>
+                          <span>📍 {event.location?.trim() || tr('地点待定')}</span>
+                          <span>🖥️ {event.server_id?.trim() || tr('未指定服务器')}</span>
                           <span>
-                            👥 报名{' '}
+                            👥 {tr('报名')}{' '}
                             <span className="font-mono font-bold text-blue-300">{countText}</span>
                           </span>
                         </div>
@@ -920,7 +1043,7 @@ export default function AdminEventsPage() {
                           aria-expanded={isOpen}
                           className="rounded-lg border border-blue-500/50 bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-300 transition hover:border-blue-400 hover:text-white"
                         >
-                          {isOpen ? '收起名单' : '报名名单'}
+                          {isOpen ? tr('收起名单') : tr('报名名单')}
                         </button>
                         <button
                           type="button"
@@ -928,7 +1051,7 @@ export default function AdminEventsPage() {
                           disabled={busyId !== null || submitting}
                           className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-bold text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          编辑
+                          {tr('编辑')}
                         </button>
                         {event.status === 'published' ? (
                           <button
@@ -937,7 +1060,7 @@ export default function AdminEventsPage() {
                             disabled={busyId !== null || submitting}
                             className="rounded-lg border border-orange-500/50 bg-orange-500/10 px-3 py-1.5 text-xs font-bold text-orange-300 transition hover:border-orange-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {isBusy ? '处理中…' : '取消发布'}
+                            {isBusy ? tr('处理中…') : tr('取消发布')}
                           </button>
                         ) : (
                           <button
@@ -946,7 +1069,7 @@ export default function AdminEventsPage() {
                             disabled={busyId !== null || submitting}
                             className="rounded-lg border border-green-500/50 bg-green-500/10 px-3 py-1.5 text-xs font-bold text-green-300 transition hover:border-green-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {isBusy ? '处理中…' : '发布'}
+                            {isBusy ? tr('处理中…') : tr('发布')}
                           </button>
                         )}
                         <button
@@ -955,7 +1078,7 @@ export default function AdminEventsPage() {
                           disabled={busyId !== null || submitting}
                           className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 transition hover:border-red-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {isBusy ? '处理中…' : '删除'}
+                          {isBusy ? tr('处理中…') : tr('删除')}
                         </button>
                       </div>
                     </div>
@@ -963,17 +1086,17 @@ export default function AdminEventsPage() {
                     {isOpen ? (
                       <div className="mt-4 rounded-lg border border-gray-700 bg-[#232428] p-3 md:p-4">
                         <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-gray-700 pb-2">
-                          <span className="text-sm font-bold text-white">报名名单</span>
+                          <span className="text-sm font-bold text-white">{tr('报名名单')}</span>
                           <span className="text-xs text-gray-500">
-                            已报名{' '}
+                            {tr('已报名')}{' '}
                             <span className="font-mono font-bold text-blue-300">{registered}</span>{' '}
-                            人
+                            {tr('人')}
                             {registrationEntries && registrationEntries.length !== registered
-                              ? `（已加载 ${registrationEntries.length} 条）`
+                              ? tr('（已加载 {count} 条）', { count: registrationEntries.length })
                               : ''}
                           </span>
                           {isLoadingRegistrations ? (
-                            <span className="text-xs text-gray-400">加载中…</span>
+                            <span className="text-xs text-gray-400">{tr('加载中…')}</span>
                           ) : null}
                           <button
                             type="button"
@@ -981,7 +1104,7 @@ export default function AdminEventsPage() {
                             disabled={isLoadingRegistrations}
                             className="ml-auto rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            刷新名单
+                            {tr('刷新名单')}
                           </button>
                         </div>
 
@@ -991,10 +1114,10 @@ export default function AdminEventsPage() {
                           </p>
                         ) : isLoadingRegistrations && !registrationEntries ? (
                           <p className="py-4 text-center text-xs text-gray-500">
-                            正在加载报名名单…
+                            {tr('正在加载报名名单…')}
                           </p>
                         ) : !registrationEntries || registrationEntries.length === 0 ? (
-                          <p className="py-4 text-center text-xs text-gray-500">暂无报名</p>
+                          <p className="py-4 text-center text-xs text-gray-500">{tr('暂无报名')}</p>
                         ) : (
                           <ul className="text-sm">
                             {registrationEntries.map((entry) => (
@@ -1008,15 +1131,15 @@ export default function AdminEventsPage() {
                                   </span>
                                   {entry.steamVerified ? (
                                     <span className="rounded border border-green-500/40 bg-green-500/15 px-1.5 py-0.5 text-[11px] font-bold text-green-300">
-                                      Steam 已验证
+                                      {tr('Steam 已验证')}
                                     </span>
                                   ) : null}
                                   <span className="font-mono text-xs text-blue-400">
-                                    ID: {entry.customId || '无'}
+                                    {tr('ID: {id}', { id: entry.customId || tr('无') })}
                                   </span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
-                                  <span>📝 {entry.note || '无备注'}</span>
+                                  <span>📝 {entry.note || tr('无备注')}</span>
                                   <span>🕒 {formatDateTime(entry.createdAt)}</span>
                                 </div>
                               </li>

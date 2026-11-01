@@ -27,11 +27,47 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.46v',
+    date: '2026-11-02',
+    title: '后台英文化、编辑历史、举报升级与公告统一',
+    title_en: 'English admin, edit history, report escalation and unified announcements',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '后台管理页支持中英双语：仪表盘、用户、新闻、规则、活动、举报、审计、处罚、招募页面的静态 UI 均可切换英文',
+      },
+      {
+        kind: 'feature',
+        text: '论坛帖子/回复新增编辑历史：自动记录改动前后内容、编辑者与时间，公开可查看',
+      },
+      {
+        kind: 'feature',
+        text: '举报超时自动升级：24h 未处理通知 Lv.70+，48h 通知 Lv.90+，72h 后每 24h 继续提醒；后台列表标记「超时未处理」',
+      },
+      {
+        kind: 'feature',
+        text: '官方公告统一：论坛「官方公告与新闻」版块改为只读展示后台发布的 announcements，点击进入 /news/{id}，不再与论坛帖子两套内容',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `content_edits` 表与触发器、举报升级字段；pg_cron 改为 `rct-site-hourly`（招募 + 举报升级）',
+      },
+    ],
+    items_en: [
+      'Admin pages now support Chinese/English: dashboard, users, news, rules, events, reports, audit, moderation and recruitment UIs can switch to English',
+      'Forum topics and replies now keep an edit history: before/after content, editor and timestamp are recorded and publicly viewable',
+      'Reports auto-escalate when overdue: 24h notify Lv.70+, 48h notify Lv.90+, then remind every 24h after 72h; the admin list marks overdue reports',
+      'Official announcements are unified: the forum board now shows announcements from the admin news page as read-only cards linking to /news/{id}',
+      'Added the `content_edits` table and triggers, report escalation fields, and switched pg_cron to `rct-site-hourly` (recruitment + report escalation)',
+    ],
+  },
+  {
     version: '0.0.45v',
     date: '2026-11-02',
     title: '社区规则与更新日志双语',
     title_en: 'Bilingual community rules and changelog',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

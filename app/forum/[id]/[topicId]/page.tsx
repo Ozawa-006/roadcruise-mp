@@ -52,6 +52,29 @@ interface ReplyFeedback {
   message: string;
 }
 
+/** content_edits 行（触发器自动写入，含编辑前后快照）。 */
+interface ContentEditRow {
+  id: string | number;
+  content_type: 'topic' | 'reply';
+  content_id: string | number;
+  editor_id: string | null;
+  old_title: string | null;
+  old_content: string | null;
+  new_title: string | null;
+  new_content: string | null;
+  created_at: string;
+}
+
+/** 附带编辑者昵称的历史条目（昵称由二次查询 profiles 得到）。 */
+interface EditHistoryEntry extends ContentEditRow {
+  editor_name: string | null;
+}
+
+interface EditorProfileRow {
+  id: string;
+  display_name: string | null;
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -87,6 +110,83 @@ const REPLY_SELECT = `
   *,
   profiles:author_id (display_name, avatar_url, role)
 `;
+
+/** 编辑历史查询字段：只取展示所需列。 */
+const CONTENT_EDIT_SELECT =
+  'id, content_type, content_id, editor_id, old_title, old_content, new_title, new_content, created_at';
+
+/**
+ * 查询指定内容（帖子或回复）的编辑历史，再二次查询 profiles 补编辑者昵称。
+ * 按 created_at desc 返回；查询失败时返回空数组（历史是增强信息，不阻断页面）。
+ */
+async function fetchEditHistory(
+  contentType: 'topic' | 'reply',
+  contentIds: string[]
+): Promise<EditHistoryEntry[]> {
+  if (contentIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('content_edits')
+    .select(CONTENT_EDIT_SELECT)
+    .eq('content_type', contentType)
+    .in('content_id', contentIds)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
+
+  if (error) return [];
+
+  const rows = (data ?? []) as ContentEditRow[];
+  if (rows.length === 0) return [];
+
+  // 二次查询编辑者昵称：只查当前历史里出现的 editor_id，避免全表拉取。
+  const editorIds = Array.from(
+    new Set(rows.map((row) => row.editor_id).filter((value): value is string => !!value))
+  );
+  const nameById = new Map<string, string>();
+
+  if (editorIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', editorIds);
+
+    for (const profile of (profiles ?? []) as EditorProfileRow[]) {
+      if (profile.display_name) nameById.set(profile.id, profile.display_name);
+    }
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    editor_name: row.editor_id ? nameById.get(row.editor_id) ?? null : null,
+  }));
+}
+
+/** 把回复历史按 content_id 分组，渲染时按回复 id 直接取用。 */
+function groupReplyEdits(entries: EditHistoryEntry[]): Record<string, EditHistoryEntry[]> {
+  const grouped: Record<string, EditHistoryEntry[]> = {};
+  for (const entry of entries) {
+    const key = String(entry.content_id);
+    const list = grouped[key];
+    if (list) list.push(entry);
+    else grouped[key] = [entry];
+  }
+  return grouped;
+}
+
+/** 单行摘要：折叠状态下展示正文开头，避免历史面板过长。 */
+function editPreview(text: string | null, maxLength = 80): string {
+  if (!text) return '';
+  const singleLine = text.replace(/\s+/g, ' ').trim();
+  if (singleLine.length <= maxLength) return singleLine;
+  return `${singleLine.slice(0, maxLength)}…`;
+}
+
+/** 历史时间：跟随页面语言，中文 zh-CN / 英文 en-US。 */
+function formatEditTime(createdAt: string, locale: Locale): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return createdAt;
+  return date.toLocaleString(locale === 'en' ? 'en-US' : 'zh-CN');
+}
 
 /**
  * 英文文案表（中文原文为 key）：只覆盖静态 UI 与系统提示。
@@ -139,6 +239,21 @@ const EN: Record<string, string> = {
   '还没有回复，来发表你的看法吧。': 'No replies yet. Share your thoughts.',
   '编辑回复内容...': 'Edit the reply content...',
 
+  // ---- 编辑历史 ----
+  '编辑历史': 'Edit history',
+  '已编辑 {n} 次': 'Edited {n} times',
+  '已编辑 {n} 次 · 查看历史': 'Edited {n} times · View history',
+  '已编辑 {n} 次 · 收起历史': 'Edited {n} times · Hide history',
+  '查看历史': 'View history',
+  '收起历史': 'Hide history',
+  '编辑者：': 'Editor: ',
+  '时间：': 'Time: ',
+  '原标题：': 'Previous title: ',
+  '新标题：': 'Current title: ',
+  '旧正文': 'Previous',
+  '新正文': 'Current',
+  '未知': 'Unknown',
+
   // ---- 回复输入区 ----
   '发表回复': 'Post reply',
   '正在回复 @{name}：': 'Replying to @{name}:',
@@ -181,6 +296,83 @@ const EN: Record<string, string> = {
   // ---- 引用模板（随回复正文一起保存） ----
   '> 引用 @{name} 的发言：': '> Quoting @{name}:',
 };
+
+/** 单条历史的正文折叠块：摘要常显，展开后按富文本渲染全文。 */
+function EditHistoryContent({ label, text }: { label: string; text: string }) {
+  return (
+    <details className="rounded border border-gray-700/60 bg-[#18191c] px-3 py-2">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-bold text-gray-400 [&::-webkit-details-marker]:hidden">
+        <span className="shrink-0">{label}</span>
+        <span className="min-w-0 flex-1 truncate font-normal text-gray-500">
+          {editPreview(text) || '—'}
+        </span>
+      </summary>
+      {text.trim() ? (
+        <RichText text={text} className="mt-2 text-xs leading-relaxed text-gray-400" />
+      ) : (
+        <p className="mt-2 text-xs text-gray-500">—</p>
+      )}
+    </details>
+  );
+}
+
+/** 编辑历史列表：帖子与回复共用，compact 用于回复内嵌面板。 */
+function EditHistoryList({
+  edits,
+  compact = false,
+}: {
+  edits: EditHistoryEntry[];
+  compact?: boolean;
+}) {
+  const tr = useTr(EN);
+  const locale = useLocale();
+
+  return (
+    <ul className={compact ? 'space-y-2' : 'space-y-3'}>
+      {edits.map((edit) => {
+        const titleChanged = edit.old_title !== edit.new_title;
+        const oldContent = edit.old_content ?? '';
+        const newContent = edit.new_content ?? '';
+        const contentChanged = oldContent !== newContent;
+
+        return (
+          <li key={edit.id} className="rounded border border-gray-700/70 bg-[#232428] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-500">
+              <span>
+                {tr('编辑者：')}
+                <span className="font-bold text-gray-300">{edit.editor_name || tr('未知')}</span>
+              </span>
+              <span>
+                {tr('时间：')}
+                <time dateTime={edit.created_at}>{formatEditTime(edit.created_at, locale)}</time>
+              </span>
+            </div>
+
+            {titleChanged && (
+              <div className="mt-2 space-y-1 text-xs">
+                <p className="break-words text-gray-400">
+                  <span className="mr-1 font-bold text-gray-500">{tr('原标题：')}</span>
+                  {edit.old_title || '—'}
+                </p>
+                <p className="break-words text-gray-200">
+                  <span className="mr-1 font-bold text-gray-500">{tr('新标题：')}</span>
+                  {edit.new_title || '—'}
+                </p>
+              </div>
+            )}
+
+            {contentChanged && (
+              <div className={compact ? 'mt-2 space-y-2' : 'mt-3 space-y-2'}>
+                <EditHistoryContent label={tr('旧正文')} text={oldContent} />
+                <EditHistoryContent label={tr('新正文')} text={newContent} />
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 export default function TopicDetailPage() {
   const tr = useTr(EN);
@@ -231,6 +423,12 @@ export default function TopicDetailPage() {
   const [deletingReplyId, setDeletingReplyId] = useState<string | null>(null);
   const [replyDeleteError, setReplyDeleteError] = useState('');
   const [replyDeleteNotice, setReplyDeleteNotice] = useState('');
+
+  // 编辑历史：帖子历史全量；回复历史只保留当前页回复的条目（按 content_id 分组）
+  const [topicEdits, setTopicEdits] = useState<EditHistoryEntry[]>([]);
+  const [showTopicHistory, setShowTopicHistory] = useState(false);
+  const [replyEdits, setReplyEdits] = useState<Record<string, EditHistoryEntry[]>>({});
+  const [expandedReplyHistoryId, setExpandedReplyHistoryId] = useState<string | null>(null);
 
   // 举报入口：url 使用当前真实路径，未登录也可以跳转（/reports 自行提示登录）
   const currentPath = pathname || `/forum/${String(id)}/${String(topicId)}`;
@@ -337,6 +535,41 @@ export default function TopicDetailPage() {
       cancelled = true;
     };
   }, [topicId]);
+
+  // 帖子编辑历史：随主题变化重新查询（触发器在保存后自动写入新记录）。
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTopicEdits = async () => {
+      const entries = await fetchEditHistory('topic', [String(topicId)]);
+      if (!cancelled) setTopicEdits(entries);
+    };
+    void loadTopicEdits();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [topicId]);
+
+  // 回复编辑历史：只查当前页回复 ids，分页切换 / 回复更新后自动刷新。
+  useEffect(() => {
+    let cancelled = false;
+    const replyIds = replies.map((reply) => String(reply.id));
+
+    const loadReplyEdits = async () => {
+      if (replyIds.length === 0) {
+        if (!cancelled) setReplyEdits({});
+        return;
+      }
+      const entries = await fetchEditHistory('reply', replyIds);
+      if (!cancelled) setReplyEdits(groupReplyEdits(entries));
+    };
+    void loadReplyEdits();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [replies]);
 
   const handleReply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -469,6 +702,10 @@ export default function TopicDetailPage() {
       );
       setEditingTopic(false);
       setTopicNotice('✅ 帖子已更新。');
+      // 保存成功后触发器已写入一条历史，立即刷新计数；失败不影响保存结果。
+      void fetchEditHistory('topic', [String(topicId)])
+        .then((entries) => setTopicEdits(entries))
+        .catch(() => undefined);
     } catch (error: unknown) {
       setTopicSaveError(
         error instanceof Error
@@ -646,6 +883,18 @@ export default function TopicDetailPage() {
               <span>{tr('发表于：')}{new Date(topic.created_at).toLocaleString()}</span>
               <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                 <span>#1</span>
+                {topicEdits.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTopicHistory((prev) => !prev)}
+                    aria-expanded={showTopicHistory}
+                    className="text-xs font-bold text-amber-400 transition hover:text-amber-300"
+                  >
+                    {showTopicHistory
+                      ? tr('已编辑 {n} 次 · 收起历史', { n: topicEdits.length })
+                      : tr('已编辑 {n} 次 · 查看历史', { n: topicEdits.length })}
+                  </button>
+                )}
                 {canEditTopic && !editingTopic && (
                   <button
                     type="button"
@@ -677,6 +926,16 @@ export default function TopicDetailPage() {
               <p role="status" className="mb-4 text-sm font-bold text-green-400">
                 {tr(topicNotice)}
               </p>
+            )}
+
+            {showTopicHistory && topicEdits.length > 0 && (
+              <section
+                aria-label={tr('编辑历史')}
+                className="mb-6 border-b border-gray-700 pb-4"
+              >
+                <h3 className="mb-3 text-sm font-bold text-gray-300">{tr('编辑历史')}</h3>
+                <EditHistoryList edits={topicEdits} />
+              </section>
             )}
 
             {editingTopic ? (
@@ -808,6 +1067,8 @@ export default function TopicDetailPage() {
               !!user &&
               (user.id === reply.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
             const replyBusy = savingReplyId !== null;
+            const replyHistory = replyEdits[replyId] ?? [];
+            const replyHistoryOpen = expandedReplyHistoryId === replyId;
 
             return (
               <div key={reply.id} className="bg-[#2c2d31] border border-gray-700 rounded-lg shadow-lg overflow-hidden flex flex-col md:flex-row">
@@ -897,6 +1158,31 @@ export default function TopicDetailPage() {
                         text={localizedText(locale, reply.content_en, reply.content)}
                         className="text-gray-300 text-sm leading-relaxed mb-4"
                       />
+
+                      {replyHistory.length > 0 && (
+                        <div className="mb-3">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedReplyHistoryId((prev) =>
+                                prev === replyId ? null : replyId
+                              )
+                            }
+                            aria-expanded={replyHistoryOpen}
+                            className="text-[11px] font-bold text-amber-400 transition hover:text-amber-300"
+                          >
+                            {tr('已编辑 {n} 次', { n: replyHistory.length })}
+                            <span aria-hidden="true" className="ml-1">
+                              {replyHistoryOpen ? '▲' : '▼'}
+                            </span>
+                          </button>
+                          {replyHistoryOpen && (
+                            <div className="mt-2 rounded border border-gray-700/60 bg-[#232428]/60 p-2">
+                              <EditHistoryList edits={replyHistory} compact />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
 

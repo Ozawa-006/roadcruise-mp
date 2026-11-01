@@ -34,7 +34,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import { canAccessAdmin, levelOf } from '@/lib/permissions';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import { formatMessage, tr as trFor, type Locale } from '@/lib/i18n';
+import { canAccessAdmin, levelOf, roleLabelEn } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -276,6 +278,287 @@ const inputClass =
   'w-full rounded border border-gray-600 bg-[#18191c] p-2.5 text-sm text-white placeholder:text-gray-600 focus:border-blue-500 focus:outline-none disabled:opacity-60';
 const labelClass = 'mb-1 block text-xs text-gray-400';
 
+/** 静态 UI 文案：中文原文 -> 英文；英文缺失时 useTr 回退中文。 */
+const EN: Record<string, string> = {
+  // 申请状态 / 实习状态 / 统计卡片
+  '待审核': 'Pending',
+  '审核中': 'Reviewing',
+  '已通过': 'Accepted',
+  '未通过': 'Rejected',
+  '已撤回': 'Withdrawn',
+  '全部状态': 'All statuses',
+  '实习中': 'In training',
+  '实习已到期': 'Training expired',
+  '已转正': 'Promoted',
+  '总申请': 'Total applications',
+  // 题库类型
+  '单行文本': 'Single-line text',
+  '多行文本': 'Multi-line text',
+  '选择题': 'Choice',
+  // 通用
+  '操作失败，请稍后重试': 'Operation failed, please try again later',
+  '未命名职位': 'Untitled position',
+  '未命名用户': 'Unnamed user',
+  '未知用户': 'Unknown user',
+  '未知职位': 'Unknown position',
+  '未知角色': 'Unknown role',
+  '未配置角色': 'No role configured',
+  '未分配': 'Not assigned',
+  '重试': 'Retry',
+  '取消': 'Cancel',
+  '保存中...': 'Saving...',
+  '保存职位': 'Save position',
+  '加载中...': 'Loading...',
+  '刷新中...': 'Refreshing...',
+  '刷新': 'Refresh',
+  '搜索中...': 'Searching...',
+  '提交中...': 'Submitting...',
+  '导出中...': 'Exporting...',
+  '同步中...': 'Syncing...',
+  '转正中...': 'Promoting...',
+  '编辑中...': 'Editing...',
+  '删除': 'Delete',
+  '必填': 'Required',
+  '类型': 'Type',
+  '题目': 'Question',
+  '部门': 'Department',
+  '职位说明': 'Position description',
+  '实习岗位': 'Trainee position',
+  '实习角色': 'Trainee role',
+  '申请开关': 'Applications',
+  '开启': 'open',
+  '关闭': 'closed',
+  '是': 'Yes',
+  '否': 'No',
+  '、': ', ',
+  // 权限与页头
+  '验证权限中...': 'Checking permissions...',
+  '无法验证权限：{message}': 'Unable to verify permissions: {message}',
+  '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理招募。':
+    '🚫 Insufficient permissions: only staff (Lv.40) and above can manage recruitment.',
+  '📢 招募管理': '📢 Recruitment',
+  '管理招募文案、总开关、各职位独立开关与专属问题，并按状态/职位筛选审核申请；状态变更后系统会自动通知申请人。':
+    'Manage recruitment copy, the global switch, per-position switches and questions, then review applications filtered by status/position; applicants are notified automatically when the status changes.',
+  '查看招募页 →': 'View recruitment page →',
+  '← 返回控制台': '← Back to console',
+  // 总开关
+  '🔌 总开关': '🔌 Global switch',
+  '关闭后所有职位都不可申请（即使单个职位仍处于开启状态）；已提交的申请仍可继续审核。':
+    'When off, no position accepts applications (even if a single position is still open); submitted applications can still be reviewed.',
+  '当前：': 'Current: ',
+  '已开启': 'On',
+  '已关闭': 'Off',
+  '招募总开关': 'Recruitment global switch',
+  '最后更新：{time} · 更新人：{user}': 'Last updated: {time} · by {user}',
+  '加载失败：': 'Failed to load: ',
+  '保存失败：{message}': 'Failed to save: {message}',
+  '保存失败：没有找到招募设置行（id=1），或当前账号无权修改。':
+    'Failed to save: the recruitment settings row (id=1) was not found, or this account cannot modify it.',
+  '未找到招募设置（id=1），请检查数据库初始化。':
+    'Recruitment settings (id=1) not found; check the database seed.',
+  '✅ 已开启招募总开关，公开页现在可以提交申请（还需对应职位已开启）。':
+    '✅ Recruitment is now open. The public page accepts applications (each position must also be open).',
+  '⏸️ 已关闭招募总开关，所有职位都不可申请。':
+    '⏸️ Recruitment is now closed. No position accepts applications.',
+  // 招募文案
+  '📝 招募文案': '📝 Recruitment copy',
+  '公开页会展示这里的标题、招募介绍与任职要求；保存后立即生效，可随时修改。':
+    'The public page shows this title, intro and requirements; changes apply immediately and can be edited any time.',
+  '标题 *': 'Title *',
+  '例如：加入 RCT MP 团队': 'e.g. Join the RCT MP team',
+  '招募介绍': 'Intro',
+  '介绍服务器、团队氛围与招募背景；支持换行。':
+    'Describe the server, the team atmosphere and why you are recruiting; line breaks are supported.',
+  '任职要求': 'Requirements',
+  '列出申请人需要满足的条件；支持换行。':
+    'List the requirements applicants must meet; line breaks are supported.',
+  '保存文案': 'Save copy',
+  '介绍与任职要求支持多行，换行会原样展示在公开页。':
+    'Intro and requirements support multiple lines; line breaks are shown as-is on the public page.',
+  '标题不能为空。': 'The title cannot be empty.',
+  '标题不能超过 {count} 个字符。': 'The title must be at most {count} characters.',
+  '招募介绍不能超过 {count} 个字符。': 'The intro must be at most {count} characters.',
+  '任职要求不能超过 {count} 个字符。': 'The requirements must be at most {count} characters.',
+  '✅ 招募文案已保存，公开页会展示最新的标题、介绍与任职要求。':
+    '✅ Recruitment copy saved. The public page now shows the latest title, intro and requirements.',
+  // 职位管理
+  '🧩 职位管理': '🧩 Position management',
+  '每个职位可独立开关、独立题库。关闭的职位在公开页不可申请；删除职位不会删除历史申请。':
+    'Each position has its own switch and question set. Closed positions cannot be applied for on the public page; deleting a position keeps its historical applications.',
+  '收起新增表单': 'Hide new-position form',
+  '➕ 新增职位': '➕ New position',
+  '职位加载失败：': 'Failed to load positions: ',
+  '新增职位': 'New position',
+  '职位名称 *': 'Position name *',
+  '例如：社区版主': 'e.g. Community Moderator',
+  '例如：社区线': 'e.g. Community team',
+  '向申请人说明这个职位负责什么。': 'Tell applicants what this position is responsible for.',
+  '排序号（越小越靠前）': 'Sort order (smaller comes first)',
+  '创建后立即开启申请': 'Open applications immediately after creation',
+  '问题可在创建后用「编辑」添加。': 'Questions can be added with "Edit" after creation.',
+  '职位加载中...': 'Loading positions...',
+  '还没有职位。点击「新增职位」创建第一个招募职位；没有职位时公开页没有可申请岗位。':
+    'No positions yet. Click "New position" to create the first one; without positions the public page offers nothing to apply for.',
+  '申请开放': 'Applications open',
+  '申请关闭': 'Applications closed',
+  '授予角色：{role}': 'Grants role: {role}',
+  '实习期 {days} 天': 'Training period: {days} days',
+  '排序 {order}': 'Order {order}',
+  '{count} 个问题': '{count} questions',
+  '{name}申请开关': 'Application switch for {name}',
+  '↑ 上移': '↑ Move up',
+  '↓ 下移': '↓ Move down',
+  '✏️ 编辑': '✏️ Edit',
+  '🗑️ 删除': '🗑️ Delete',
+  '职位名称不能为空。': 'The position name cannot be empty.',
+  '排序号必须是整数。': 'The sort order must be an integer.',
+  '新增失败：{message}': 'Failed to create: {message}',
+  '新增失败：当前账号无权新增职位。':
+    'Failed to create: this account cannot create positions.',
+  '已新增职位「{name}」{note}，可在“编辑”里配置专属问题。':
+    'Position "{name}" created{note}. Use "Edit" to configure its questions.',
+  '（申请已开启）': ' (applications open)',
+  '（申请默认关闭）': ' (applications closed by default)',
+  '「{name}」已{state}申请。': 'Applications for "{name}" are now {state}.',
+  '调整排序失败：{message}': 'Failed to reorder: {message}',
+  '已上移「{name}」。': 'Moved "{name}" up.',
+  '已下移「{name}」。': 'Moved "{name}" down.',
+  // 职位编辑器
+  '通过后授予角色': 'Role granted on acceptance',
+  '不授予角色': 'Do not grant a role',
+  '{role}（角色表中不存在）': '{role} (not in the roles table)',
+  '通过申请时授予；留空表示不自动授予角色。':
+    'Granted when an application is accepted; leave empty to grant no role automatically.',
+  ' 角色加载中...': ' Loading roles...',
+  '该职位为实习岗位': 'This is a trainee position',
+  '勾选后通过申请授予实习角色，转正时改为授予「通过后授予角色」。':
+    'When checked, accepting an application grants the trainee role; promotion grants the "Role granted on acceptance" instead.',
+  '实习期天数（{min}-{max} 天）': 'Training period ({min}-{max} days)',
+  '通过申请时从当天开始计算实习期，默认 {days} 天。':
+    'The training period starts on the acceptance date; {days} days by default.',
+  '不授予实习角色': 'Do not grant a trainee role',
+  '仅列出 roles 中 name 含 _trainee 或名称含「实习」的角色。':
+    'Lists only roles whose name contains _trainee or whose display name contains「实习」.',
+  '实习期天数必须是 {min}-{max} 之间的整数（默认 {days}）。':
+    'The training period must be an integer between {min} and {max} (default {days}).',
+  '保存失败：没有找到该职位，或当前账号无权修改。':
+    'Failed to save: the position was not found, or this account cannot modify it.',
+  '职位「{name}」已保存，共 {count} 个专属问题。':
+    'Position "{name}" saved with {count} questions.',
+  '确定删除职位「{name}」吗？\n\n该职位的问题配置会一并删除；历史申请记录会保留（职位关联置空），但之后只能看到原始字段名。':
+    'Delete the position "{name}"?\n\nIts question configuration is deleted as well. Historical applications are kept (with the position link cleared), but only raw field names will be shown afterwards.',
+  '删除失败：{message}': 'Failed to delete: {message}',
+  '删除失败：没有找到该职位，或当前账号无权删除。':
+    'Failed to delete: the position was not found, or this account cannot delete it.',
+  '已删除职位「{name}」，历史申请记录已保留。':
+    'Position "{name}" deleted; historical applications were kept.',
+  // 问题编辑器
+  '问题设置（{count}）': 'Questions ({count})',
+  '➕ 新增问题': '➕ Add question',
+  '问题 ID 自动生成且唯一；申请人提交后按此顺序展示。选择题每行一个选项。':
+    'Question IDs are generated automatically and stay unique; applicants see questions in this order. For choice questions, put one option per line.',
+  '该职位暂无专属问题，申请人只需填写联系方式与基础信息。':
+    'This position has no questions yet; applicants only fill in contact and basic information.',
+  '问题 {index} · ID {id} · {type}': 'Question {index} · ID {id} · {type}',
+  '上移问题': 'Move question up',
+  '下移问题': 'Move question down',
+  '例如：为什么想申请这个职位？': 'e.g. Why do you want this position?',
+  '选项（每行一个）': 'Options (one per line)',
+  '第 {index} 个问题缺少题目文案。': 'Question {index} is missing its text.',
+  '「{label}」是选择题，至少需要一个选项。':
+    '"{label}" is a choice question and needs at least one option.',
+  // 申请列表
+  '申请统计': 'Application stats',
+  '状态筛选': 'Status filter',
+  '职位筛选': 'Position filter',
+  '全部职位': 'All positions',
+  '（已关闭）': ' (closed)',
+  '按当前筛选导出，最多 {count} 条': 'Export the current filter, up to {count} rows',
+  '⬇️ 导出 CSV': '⬇️ Export CSV',
+  '共 {count} 条 · 第 {page} / {total} 页（每页 {size} 条）':
+    '{count} applications · page {page} / {total} ({size} per page)',
+  '申请加载失败：': 'Failed to load applications: ',
+  '没有符合当前筛选条件的申请。': 'No applications match the current filters.',
+  '暂无招募申请。': 'No recruitment applications yet.',
+  '职位已删除': 'Position deleted',
+  '申请人：': 'Applicant: ',
+  '（{id}）': ' ({id})',
+  'Steam 已验证': 'Steam verified',
+  '联系方式：': 'Contact: ',
+  '实习期：{start} 至 {end}': 'Training: {start} to {end}',
+  '已发到期提醒：{time}': 'Expiry reminder sent: {time}',
+  '问题回答': 'Answers',
+  '（该申请没有填写问答内容）': '(this application has no answers)',
+  '（原始字段）': '(raw field)',
+  '职位问题文案不可用（职位已删除或未加载），以上显示数据库原始字段。':
+    'Question texts are unavailable (the position was deleted or is not loaded); raw database fields are shown above.',
+  '收起': 'Collapse',
+  '展开全部（{count} 项）': 'Show all ({count} items)',
+  '处理人：': 'Handled by: ',
+  '更新时间：{time}': 'Updated: {time}',
+  '处理备注：{note}': 'Handling note: {note}',
+  '将申请 #{id} 标记为「{status}」': 'Mark application #{id} as "{status}"',
+  '处理备注（可选），留空则不写备注；会展示给申请人并随通知发送。':
+    'Handling note (optional). Leave empty to skip; it is shown to the applicant and sent with the notification.',
+  '确认通过': 'Confirm acceptance',
+  '确认拒绝': 'Confirm rejection',
+  '开始审核': 'Start review',
+  '通过': 'Accept',
+  '拒绝': 'Reject',
+  '同步职位': 'Sync position',
+  '转正': 'Promote',
+  '该职位为实习岗位，转正后授予职位配置的正式角色。':
+    'This is a trainee position; promotion grants the formal role configured for it.',
+  '更新失败：{message}': 'Failed to update: {message}',
+  '更新失败：没有找到该申请，或当前账号无权处理。':
+    'Failed to update: the application was not found, or this account cannot handle it.',
+  '申请 #{id} 已更新为「{status}」，系统会自动通知申请人。':
+    'Application #{id} is now "{status}"; the applicant is notified automatically.',
+  '通过失败：{message}': 'Failed to accept: {message}',
+  '已通过并同步职位：{role}': 'Accepted and synced role: {role}',
+  '转正失败：{message}': 'Failed to promote: {message}',
+  '已转正为 {role}': 'Promoted to {role}',
+  '已同步职位：{role}': 'Synced role: {role}',
+  '招募申请分页': 'Recruitment application pagination',
+  '仅该职位对应部门经理及以上可审核（社区线需社区经理及以上）':
+    'Only managers of the position department and above can review (the community track requires Community Manager or above)',
+  '上一页': 'Previous',
+  '下一页': 'Next',
+  '共 {count} 条 · 第 {page} / {total} 页': '{count} applications · page {page} / {total}',
+  '每页 {size} 条': '{size} per page',
+  '（每页 {size} 条）': ' ({size} per page)',
+  // CSV 导出
+  '申请ID': 'Application ID',
+  '职位': 'Position',
+  '申请人': 'Applicant',
+  '专属ID': 'Custom ID',
+  '联系方式': 'Contact',
+  '状态': 'Status',
+  '提交时间': 'Submitted at',
+  '处理时间': 'Handled at',
+  '处理备注': 'Handling note',
+  '导出失败：{message}': 'Export failed: {message}',
+  '导出失败：当前筛选条件下没有可导出的申请。':
+    'Export failed: no applications match the current filters.',
+  '✅ 已导出 {count} 条申请（CSV）{limit}。': '✅ Exported {count} applications (CSV){limit}.',
+  '，已达 {count} 条上限': ', reaching the {count}-row limit',
+};
+
+/** 翻译函数签名：模块级工具函数按需注入。 */
+type Translate = (zh: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * effect / 事件回调里构造文案：tr 每次渲染都会重建，不适合放进依赖数组，
+ * 这里按当前 locale 直接取词条。
+ */
+function translateFor(
+  locale: Locale,
+  zh: string,
+  vars?: Record<string, string | number>
+): string {
+  return formatMessage(trFor(locale, EN, zh), vars);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -321,12 +604,12 @@ function isRecruitmentStatus(value: unknown): value is RecruitmentStatus {
   );
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, t: Translate): string {
   if (error && typeof error === 'object' && 'message' in error) {
     const value = (error as { message?: unknown }).message;
     if (typeof value === 'string' && value.trim()) return value;
   }
-  return '操作失败，请稍后重试';
+  return t('操作失败，请稍后重试');
 }
 
 function formatTime(value: string | null): string {
@@ -482,13 +765,13 @@ function toRecruitmentCopy(raw: unknown): RecruitmentCopy | null {
   };
 }
 
-function toPositionRow(raw: unknown): PositionRow | null {
+function toPositionRow(raw: unknown, t: Translate): PositionRow | null {
   if (!isRecord(raw)) return null;
   const id = asNumber(raw.id);
   if (id === null) return null;
   return {
     id,
-    name: typeof raw.name === 'string' && raw.name.trim() !== '' ? raw.name.trim() : '未命名职位',
+    name: typeof raw.name === 'string' && raw.name.trim() !== '' ? raw.name.trim() : t('未命名职位'),
     department: typeof raw.department === 'string' ? raw.department : '',
     description: typeof raw.description === 'string' ? raw.description : '',
     questions: toQuestions(raw.questions),
@@ -508,9 +791,9 @@ function toPositionRow(raw: unknown): PositionRow | null {
   };
 }
 
-function toPositionRows(data: unknown): PositionRow[] {
+function toPositionRows(data: unknown, t: Translate): PositionRow[] {
   if (!Array.isArray(data)) return [];
-  return data.map(toPositionRow).filter((row): row is PositionRow => row !== null);
+  return data.map((raw) => toPositionRow(raw, t)).filter((row): row is PositionRow => row !== null);
 }
 
 function toRoleRows(data: unknown): RoleRow[] {
@@ -535,9 +818,10 @@ function toRoleRows(data: unknown): RoleRow[] {
   return rows;
 }
 
-/** 下拉选项文案：display_name [Lv.x]（level 缺失时只显示名称）。 */
-function formatRoleOption(role: RoleRow): string {
-  return role.level === null ? role.display_name : `${role.display_name} [Lv.${role.level}]`;
+/** 下拉选项文案：display_name [Lv.x]（level 缺失时只显示名称）；英文模式用 roleLabelEn。 */
+function formatRoleOption(role: RoleRow, locale: Locale): string {
+  const label = locale === 'en' ? roleLabelEn(role.name, role.level ?? 0) : role.display_name;
+  return role.level === null ? label : `${label} [Lv.${role.level}]`;
 }
 
 /** RPC 返回 jsonb { ok, role, role_level?, trainee? }，这里只取 role。 */
@@ -613,15 +897,16 @@ function toProfileMap(data: unknown): Record<string, ProfileInfo> {
 function buildCsvRow(
   application: ApplicationRow,
   profile: ProfileInfo | null,
-  positionName: string
+  positionName: string,
+  t: Translate
 ): string[] {
   return [
     application.id,
     positionName,
-    profile?.display_name?.trim() || '未命名用户',
+    profile?.display_name?.trim() || t('未命名用户'),
     profile?.custom_id ?? '',
     application.contact ?? '',
-    STATUS_META[application.status].label,
+    t(STATUS_META[application.status].label),
     formatCsvTime(application.created_at),
     formatCsvTime(application.updated_at),
     application.handle_note ?? '',
@@ -629,15 +914,15 @@ function buildCsvRow(
   ];
 }
 
-function formatAnswer(value: unknown): string {
+function formatAnswer(value: unknown, t: Translate): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (typeof value === 'boolean') return value ? t('是') : t('否');
   if (Array.isArray(value)) {
     return value
-      .map((item) => formatAnswer(item))
+      .map((item) => formatAnswer(item, t))
       .filter((text) => text !== '')
-      .join('、');
+      .join(t('、'));
   }
   if (isRecord(value)) return JSON.stringify(value) ?? '';
   return '';
@@ -652,13 +937,17 @@ function previewAnswer(value: string): string {
  * 职位仍存在时按 questions 的 id 映射 label；职位已删除（position_id 为 null）
  * 或 answers 里存在题库之外的历史 key 时，保留原始 key 展示。
  */
-function buildAnswerEntries(application: ApplicationRow, position: PositionRow | null): AnswerEntry[] {
+function buildAnswerEntries(
+  application: ApplicationRow,
+  position: PositionRow | null,
+  t: Translate
+): AnswerEntry[] {
   const entries: AnswerEntry[] = [];
   const used = new Set<string>();
 
   if (position) {
     for (const question of position.questions) {
-      const value = formatAnswer(application.answers[question.id]);
+      const value = formatAnswer(application.answers[question.id], t);
       if (!value) continue;
       used.add(question.id);
       entries.push({ key: question.id, label: question.label, value });
@@ -667,7 +956,7 @@ function buildAnswerEntries(application: ApplicationRow, position: PositionRow |
 
   for (const [key, raw] of Object.entries(application.answers)) {
     if (used.has(key)) continue;
-    const value = formatAnswer(raw);
+    const value = formatAnswer(raw, t);
     if (!value) continue;
     entries.push({ key, label: null, value });
   }
@@ -686,7 +975,10 @@ function toQuestionDrafts(questions: Question[]): QuestionDraft[] {
 }
 
 /** 把编辑器草稿规整成 questions jsonb：数组、id 唯一、label 非空、选择题至少有 1 个选项。 */
-function normalizeQuestionDrafts(drafts: QuestionDraft[]): {
+function normalizeQuestionDrafts(
+  drafts: QuestionDraft[],
+  t: Translate
+): {
   questions: Question[];
   error: string | null;
 } {
@@ -697,7 +989,7 @@ function normalizeQuestionDrafts(drafts: QuestionDraft[]): {
     const draft = drafts[index];
     const label = draft.label.trim();
     if (!label) {
-      return { questions: [], error: `第 ${index + 1} 个问题缺少题目文案。` };
+      return { questions: [], error: t('第 {index} 个问题缺少题目文案。', { index: index + 1 }) };
     }
 
     let id = draft.id.trim() !== '' ? draft.id.trim() : `q_${index}`;
@@ -705,7 +997,10 @@ function normalizeQuestionDrafts(drafts: QuestionDraft[]): {
 
     const options = draft.type === 'select' ? toStringArray(draft.optionsText.split('\n')) : [];
     if (draft.type === 'select' && options.length === 0) {
-      return { questions: [], error: `「${label}」是选择题，至少需要一个选项。` };
+      return {
+        questions: [],
+        error: t('「{label}」是选择题，至少需要一个选项。', { label }),
+      };
     }
 
     seen.add(id);
@@ -750,6 +1045,7 @@ function ErrorBox({
   onRetry: () => void;
   busy: boolean;
 }) {
+  const tr = useTr(EN);
   return (
     <div
       role="alert"
@@ -765,7 +1061,7 @@ function ErrorBox({
         disabled={busy}
         className="shrink-0 rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-red-600 disabled:opacity-50"
       >
-        重试
+        {tr('重试')}
       </button>
     </div>
   );
@@ -774,6 +1070,13 @@ function ErrorBox({
 export default function AdminRecruitmentPage() {
   const router = useRouter();
   const listTopRef = useRef<HTMLDivElement | null>(null);
+  const locale = useLocale();
+  const tr = useTr(EN);
+  /** 稳定的翻译函数（只随 locale 变化），供 effect 与事件回调使用。 */
+  const t = useCallback(
+    (zh: string, vars?: Record<string, string | number>) => translateFor(locale, zh, vars),
+    [locale]
+  );
 
   const [checking, setChecking] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -913,13 +1216,13 @@ export default function AdminRecruitmentPage() {
         if (cancelled) return;
 
         if (error) {
-          alert(`无法验证权限：${error.message}`);
+          alert(t('无法验证权限：{message}', { message: error.message }));
           router.push('/admin');
           return;
         }
 
         if (!canAccessAdmin(levelOf(profile?.role_level))) {
-          alert('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理招募。');
+          alert(t('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能管理招募。'));
           router.push('/admin');
           return;
         }
@@ -928,7 +1231,7 @@ export default function AdminRecruitmentPage() {
         setChecking(false);
       } catch (error) {
         if (cancelled) return;
-        alert(`无法验证权限：${errorMessage(error)}`);
+        alert(t('无法验证权限：{message}', { message: errorMessage(error, t) }));
         router.push('/admin');
       }
     };
@@ -938,7 +1241,7 @@ export default function AdminRecruitmentPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, t]);
 
   // 2. 总开关：读取单行 id=1（匿名可读）
   useEffect(() => {
@@ -966,7 +1269,7 @@ export default function AdminRecruitmentPage() {
 
         const parsed = toSettings(data);
         if (!parsed) {
-          setSettingsError('未找到招募设置（id=1），请检查数据库初始化。');
+          setSettingsError(t('未找到招募设置（id=1），请检查数据库初始化。'));
           return;
         }
 
@@ -982,7 +1285,7 @@ export default function AdminRecruitmentPage() {
 
         if (parsed.updated_by) void fetchProfiles([parsed.updated_by]);
       } catch (error) {
-        if (!cancelled) setSettingsError(errorMessage(error));
+        if (!cancelled) setSettingsError(errorMessage(error, t));
       } finally {
         if (!cancelled) setSettingsLoading(false);
       }
@@ -993,7 +1296,7 @@ export default function AdminRecruitmentPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, userId, settingsReloadToken, fetchProfiles]);
+  }, [checking, userId, settingsReloadToken, fetchProfiles, t]);
 
   // 3. 职位列表：按 sort_order asc（同序时按 id），供管理与 answers 文案映射使用。
   useEffect(() => {
@@ -1020,9 +1323,9 @@ export default function AdminRecruitmentPage() {
           return;
         }
 
-        setPositions(toPositionRows(data));
+        setPositions(toPositionRows(data, t));
       } catch (error) {
-        if (!cancelled) setPositionsError(errorMessage(error));
+        if (!cancelled) setPositionsError(errorMessage(error, t));
       } finally {
         if (!cancelled) setPositionsLoading(false);
       }
@@ -1033,7 +1336,7 @@ export default function AdminRecruitmentPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, userId, positionsReloadToken]);
+  }, [checking, userId, positionsReloadToken, t]);
 
   // 3.5 角色字典：roles 匿名可读，登录后一次性加载，供职位配置下拉与 display_name 映射。
   useEffect(() => {
@@ -1059,7 +1362,7 @@ export default function AdminRecruitmentPage() {
 
         setRoles(toRoleRows(data));
       } catch (error) {
-        if (!cancelled) console.error('加载角色列表失败:', errorMessage(error));
+        if (!cancelled) console.error('加载角色列表失败:', errorMessage(error, t));
       } finally {
         if (!cancelled) setRolesLoading(false);
       }
@@ -1070,7 +1373,7 @@ export default function AdminRecruitmentPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, userId]);
+  }, [checking, userId, t]);
 
   // 4. 申请列表：服务端分页，只取当前页（筛选条件同时作用于 count 与 range）；
   //    再按当前页的 user_id / handled_by 分块二次查询 profiles。
@@ -1128,7 +1431,7 @@ export default function AdminRecruitmentPage() {
         }
         await fetchProfiles(profileIds);
       } catch (error) {
-        if (!cancelled) setApplicationsError(errorMessage(error));
+        if (!cancelled) setApplicationsError(errorMessage(error, t));
       } finally {
         if (!cancelled) setApplicationsLoading(false);
       }
@@ -1139,7 +1442,16 @@ export default function AdminRecruitmentPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, userId, statusFilter, positionFilter, page, applicationsReloadToken, fetchProfiles]);
+  }, [
+    checking,
+    userId,
+    statusFilter,
+    positionFilter,
+    page,
+    applicationsReloadToken,
+    fetchProfiles,
+    t,
+  ]);
 
   // 4.1 申请统计：6 个并发 head count（总申请不加 status 条件）。
   //     与列表解耦：失败只把对应卡片置为 -，不阻塞列表；刷新/审核后随 applicationsReloadToken 重算。
@@ -1175,7 +1487,7 @@ export default function AdminRecruitmentPage() {
         setStats(next);
       } catch (error) {
         if (!cancelled) {
-          console.error('加载申请统计失败:', errorMessage(error));
+          console.error('加载申请统计失败:', errorMessage(error, t));
           setStats(emptyStats());
         }
       } finally {
@@ -1188,7 +1500,7 @@ export default function AdminRecruitmentPage() {
     return () => {
       cancelled = true;
     };
-  }, [checking, userId, applicationsReloadToken]);
+  }, [checking, userId, applicationsReloadToken, t]);
 
   const sortedPositions = useMemo(
     () => [...positions].sort((left, right) => left.sort_order - right.sort_order || left.id - right.id),
@@ -1216,10 +1528,12 @@ export default function AdminRecruitmentPage() {
     [roles]
   );
 
-  /** 角色展示文案：优先 roles.display_name，查不到时回退原始 name。 */
+  /** 角色展示文案：中文用 roles.display_name，英文用 roleLabelEn；查不到时回退原始 name。 */
   const roleLabel = (name: string | null): string => {
-    if (!name) return '未配置角色';
-    return roleByName.get(name)?.display_name ?? name;
+    if (!name) return tr('未配置角色');
+    const role = roleByName.get(name);
+    if (locale === 'en') return roleLabelEn(name, role?.level ?? 0);
+    return role?.display_name ?? name;
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -1243,8 +1557,8 @@ export default function AdminRecruitmentPage() {
   const displayName = (id: string | null): string => {
     if (!id) return '——';
     const profile = profiles[id];
-    if (!profile) return '未知用户';
-    return profile.display_name?.trim() || '未命名用户';
+    if (!profile) return tr('未知用户');
+    return profile.display_name?.trim() || tr('未命名用户');
   };
 
   // 4.2 导出 CSV：当前状态/职位筛选下最多 1000 条，按 created_at 倒序；
@@ -1267,34 +1581,47 @@ export default function AdminRecruitmentPage() {
 
       const { data, error } = await query;
       if (error) {
-        setExportNotice({ kind: 'error', text: `导出失败：${error.message}` });
+        setExportNotice({
+          kind: 'error',
+          text: tr('导出失败：{message}', { message: error.message }),
+        });
         return;
       }
 
       const rows = toApplicationRows(data);
       if (rows.length === 0) {
-        setExportNotice({ kind: 'error', text: '导出失败：当前筛选条件下没有可导出的申请。' });
+        setExportNotice({
+          kind: 'error',
+          text: tr('导出失败：当前筛选条件下没有可导出的申请。'),
+        });
         return;
       }
 
       const profileMap = await fetchProfileMap(rows.map((row) => row.user_id));
-      const csvRows: string[][] = [Array.from(CSV_COLUMNS)];
+      const csvRows: string[][] = [CSV_COLUMNS.map((column) => tr(column))];
       for (const row of rows) {
         const position =
           row.position_id !== null ? positionById.get(row.position_id) ?? null : null;
-        const positionName = position?.name ?? (row.position.trim() || '未知职位');
-        csvRows.push(buildCsvRow(row, profileMap[row.user_id] ?? null, positionName));
+        const positionName = position?.name ?? (row.position.trim() || tr('未知职位'));
+        csvRows.push(buildCsvRow(row, profileMap[row.user_id] ?? null, positionName, tr));
       }
 
       downloadCsv(buildCsv(csvRows), csvFileName(new Date()));
       setExportNotice({
         kind: 'success',
-        text: `✅ 已导出 ${rows.length} 条申请（CSV）${
-          rows.length >= CSV_EXPORT_LIMIT ? `，已达 ${CSV_EXPORT_LIMIT} 条上限` : ''
-        }。`,
+        text: tr('✅ 已导出 {count} 条申请（CSV）{limit}。', {
+          count: rows.length,
+          limit:
+            rows.length >= CSV_EXPORT_LIMIT
+              ? tr('，已达 {count} 条上限', { count: CSV_EXPORT_LIMIT })
+              : '',
+        }),
       });
     } catch (error) {
-      setExportNotice({ kind: 'error', text: `导出失败：${errorMessage(error)}` });
+      setExportNotice({
+        kind: 'error',
+        text: tr('导出失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setExportBusy(false);
     }
@@ -1321,7 +1648,10 @@ export default function AdminRecruitmentPage() {
 
       if (error) {
         setIsOpen(previous);
-        setSettingsNotice({ kind: 'error', text: `保存失败：${error.message}` });
+        setSettingsNotice({
+          kind: 'error',
+          text: tr('保存失败：{message}', { message: error.message }),
+        });
         return;
       }
 
@@ -1330,7 +1660,7 @@ export default function AdminRecruitmentPage() {
         setIsOpen(previous);
         setSettingsNotice({
           kind: 'error',
-          text: '保存失败：没有找到招募设置行（id=1），或当前账号无权修改。',
+          text: tr('保存失败：没有找到招募设置行（id=1），或当前账号无权修改。'),
         });
         return;
       }
@@ -1343,12 +1673,15 @@ export default function AdminRecruitmentPage() {
       setSettingsNotice({
         kind: 'success',
         text: next
-          ? '✅ 已开启招募总开关，公开页现在可以提交申请（还需对应职位已开启）。'
-          : '⏸️ 已关闭招募总开关，所有职位都不可申请。',
+          ? tr('✅ 已开启招募总开关，公开页现在可以提交申请（还需对应职位已开启）。')
+          : tr('⏸️ 已关闭招募总开关，所有职位都不可申请。'),
       });
     } catch (error) {
       setIsOpen(previous);
-      setSettingsNotice({ kind: 'error', text: `保存失败：${errorMessage(error)}` });
+      setSettingsNotice({
+        kind: 'error',
+        text: tr('保存失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setToggleBusy(false);
     }
@@ -1372,19 +1705,19 @@ export default function AdminRecruitmentPage() {
     setCopyError(null);
 
     if (!title) {
-      setCopyError('标题不能为空。');
+      setCopyError(tr('标题不能为空。'));
       return;
     }
     if (title.length > COPY_TITLE_MAX_LENGTH) {
-      setCopyError(`标题不能超过 ${COPY_TITLE_MAX_LENGTH} 个字符。`);
+      setCopyError(tr('标题不能超过 {count} 个字符。', { count: COPY_TITLE_MAX_LENGTH }));
       return;
     }
     if (intro.length > COPY_TEXT_MAX_LENGTH) {
-      setCopyError(`招募介绍不能超过 ${COPY_TEXT_MAX_LENGTH} 个字符。`);
+      setCopyError(tr('招募介绍不能超过 {count} 个字符。', { count: COPY_TEXT_MAX_LENGTH }));
       return;
     }
     if (requirements.length > COPY_TEXT_MAX_LENGTH) {
-      setCopyError(`任职要求不能超过 ${COPY_TEXT_MAX_LENGTH} 个字符。`);
+      setCopyError(tr('任职要求不能超过 {count} 个字符。', { count: COPY_TEXT_MAX_LENGTH }));
       return;
     }
 
@@ -1400,7 +1733,10 @@ export default function AdminRecruitmentPage() {
         .maybeSingle();
 
       if (error) {
-        setCopyNotice({ kind: 'error', text: `保存失败：${error.message}` });
+        setCopyNotice({
+          kind: 'error',
+          text: tr('保存失败：{message}', { message: error.message }),
+        });
         return;
       }
 
@@ -1408,7 +1744,7 @@ export default function AdminRecruitmentPage() {
       if (!data) {
         setCopyNotice({
           kind: 'error',
-          text: '保存失败：没有找到招募设置行（id=1），或当前账号无权修改。',
+          text: tr('保存失败：没有找到招募设置行（id=1），或当前账号无权修改。'),
         });
         return;
       }
@@ -1421,12 +1757,15 @@ export default function AdminRecruitmentPage() {
       setSettingsUpdatedBy(userId);
       setCopyNotice({
         kind: 'success',
-        text: '✅ 招募文案已保存，公开页会展示最新的标题、介绍与任职要求。',
+        text: tr('✅ 招募文案已保存，公开页会展示最新的标题、介绍与任职要求。'),
       });
       // 重新拉取 settings，让表单与“最后更新”都以服务端为准。
       setSettingsReloadToken((value) => value + 1);
     } catch (error) {
-      setCopyNotice({ kind: 'error', text: `保存失败：${errorMessage(error)}` });
+      setCopyNotice({
+        kind: 'error',
+        text: tr('保存失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setCopyBusy(false);
     }
@@ -1463,7 +1802,10 @@ export default function AdminRecruitmentPage() {
 
       if (error) {
         rollback();
-        setPositionsNotice({ kind: 'error', text: `保存失败：${error.message}` });
+        setPositionsNotice({
+          kind: 'error',
+          text: tr('保存失败：{message}', { message: error.message }),
+        });
         return;
       }
 
@@ -1471,18 +1813,24 @@ export default function AdminRecruitmentPage() {
         rollback();
         setPositionsNotice({
           kind: 'error',
-          text: '保存失败：没有找到该职位，或当前账号无权修改。',
+          text: tr('保存失败：没有找到该职位，或当前账号无权修改。'),
         });
         return;
       }
 
       setPositionsNotice({
         kind: 'success',
-        text: `「${position.name}」已${next ? '开启' : '关闭'}申请。`,
+        text: tr('「{name}」已{state}申请。', {
+          name: position.name,
+          state: next ? tr('开启') : tr('关闭'),
+        }),
       });
     } catch (error) {
       rollback();
-      setPositionsNotice({ kind: 'error', text: `保存失败：${errorMessage(error)}` });
+      setPositionsNotice({
+        kind: 'error',
+        text: tr('保存失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setPositionBusyId(null);
     }
@@ -1527,17 +1875,22 @@ export default function AdminRecruitmentPage() {
           .maybeSingle();
 
         if (error) {
-          setPositionsError(`调整排序失败：${error.message}`);
+          setPositionsError(tr('调整排序失败：{message}', { message: error.message }));
           return;
         }
       }
 
       setPositionsNotice({
         kind: 'success',
-        text: `已${direction === -1 ? '上移' : '下移'}「${position.name}」。`,
+        text:
+          direction === -1
+            ? tr('已上移「{name}」。', { name: position.name })
+            : tr('已下移「{name}」。', { name: position.name }),
       });
     } catch (error) {
-      setPositionsError(`调整排序失败：${errorMessage(error)}`);
+      setPositionsError(
+        tr('调整排序失败：{message}', { message: errorMessage(error, tr) })
+      );
     } finally {
       setPositionBusyId(null);
       reloadPositions();
@@ -1568,13 +1921,13 @@ export default function AdminRecruitmentPage() {
 
     const name = addForm.name.trim();
     if (!name) {
-      setAddError('职位名称不能为空。');
+      setAddError(tr('职位名称不能为空。'));
       return;
     }
 
     const sortOrder = Number.parseInt(addForm.sort_order.trim(), 10);
     if (Number.isNaN(sortOrder)) {
-      setAddError('排序号必须是整数。');
+      setAddError(tr('排序号必须是整数。'));
       return;
     }
 
@@ -1595,23 +1948,26 @@ export default function AdminRecruitmentPage() {
         .maybeSingle();
 
       if (error) {
-        setAddError(`新增失败：${error.message}`);
+        setAddError(tr('新增失败：{message}', { message: error.message }));
         return;
       }
 
       if (!data) {
-        setAddError('新增失败：当前账号无权新增职位。');
+        setAddError(tr('新增失败：当前账号无权新增职位。'));
         return;
       }
 
       setAddOpen(false);
       setPositionsNotice({
         kind: 'success',
-        text: `已新增职位「${name}」${addForm.is_open ? '（申请已开启）' : '（申请默认关闭）'}，可在“编辑”里配置专属问题。`,
+        text: tr('已新增职位「{name}」{note}，可在“编辑”里配置专属问题。', {
+          name,
+          note: addForm.is_open ? tr('（申请已开启）') : tr('（申请默认关闭）'),
+        }),
       });
       reloadPositions();
     } catch (error) {
-      setAddError(`新增失败：${errorMessage(error)}`);
+      setAddError(tr('新增失败：{message}', { message: errorMessage(error, tr) }));
     } finally {
       setAddBusy(false);
     }
@@ -1701,11 +2057,11 @@ export default function AdminRecruitmentPage() {
 
     const name = editing.name.trim();
     if (!name) {
-      setEditorError('职位名称不能为空。');
+      setEditorError(tr('职位名称不能为空。'));
       return;
     }
 
-    const normalized = normalizeQuestionDrafts(editing.questions);
+    const normalized = normalizeQuestionDrafts(editing.questions, tr);
     if (normalized.error) {
       setEditorError(normalized.error);
       return;
@@ -1715,7 +2071,11 @@ export default function AdminRecruitmentPage() {
     const traineeDays = parseTraineeDays(editing.trainee_days);
     if (editing.is_trainee && traineeDays === null) {
       setEditorError(
-        `实习期天数必须是 ${TRAINEE_DAYS_MIN}-${TRAINEE_DAYS_MAX} 之间的整数（默认 ${TRAINEE_DAYS_DEFAULT}）。`
+        tr('实习期天数必须是 {min}-{max} 之间的整数（默认 {days}）。', {
+          min: TRAINEE_DAYS_MIN,
+          max: TRAINEE_DAYS_MAX,
+          days: TRAINEE_DAYS_DEFAULT,
+        })
       );
       return;
     }
@@ -1744,23 +2104,26 @@ export default function AdminRecruitmentPage() {
         .maybeSingle();
 
       if (error) {
-        setEditorError(`保存失败：${error.message}`);
+        setEditorError(tr('保存失败：{message}', { message: error.message }));
         return;
       }
 
       if (!data) {
-        setEditorError('保存失败：没有找到该职位，或当前账号无权修改。');
+        setEditorError(tr('保存失败：没有找到该职位，或当前账号无权修改。'));
         return;
       }
 
       setEditing(null);
       setPositionsNotice({
         kind: 'success',
-        text: `职位「${name}」已保存，共 ${normalized.questions.length} 个专属问题。`,
+        text: tr('职位「{name}」已保存，共 {count} 个专属问题。', {
+          name,
+          count: normalized.questions.length,
+        }),
       });
       reloadPositions();
     } catch (error) {
-      setEditorError(`保存失败：${errorMessage(error)}`);
+      setEditorError(tr('保存失败：{message}', { message: errorMessage(error, tr) }));
     } finally {
       setEditorBusy(false);
     }
@@ -1771,7 +2134,10 @@ export default function AdminRecruitmentPage() {
     if (!userId || positionBusyId !== null) return;
 
     const confirmed = window.confirm(
-      `确定删除职位「${position.name}」吗？\n\n该职位的问题配置会一并删除；历史申请记录会保留（职位关联置空），但之后只能看到原始字段名。`
+      tr(
+        '确定删除职位「{name}」吗？\n\n该职位的问题配置会一并删除；历史申请记录会保留（职位关联置空），但之后只能看到原始字段名。',
+        { name: position.name }
+      )
     );
     if (!confirmed) return;
 
@@ -1788,14 +2154,17 @@ export default function AdminRecruitmentPage() {
         .maybeSingle();
 
       if (error) {
-        setPositionsNotice({ kind: 'error', text: `删除失败：${error.message}` });
+        setPositionsNotice({
+          kind: 'error',
+          text: tr('删除失败：{message}', { message: error.message }),
+        });
         return;
       }
 
       if (!data) {
         setPositionsNotice({
           kind: 'error',
-          text: '删除失败：没有找到该职位，或当前账号无权删除。',
+          text: tr('删除失败：没有找到该职位，或当前账号无权删除。'),
         });
         return;
       }
@@ -1809,12 +2178,15 @@ export default function AdminRecruitmentPage() {
 
       setPositionsNotice({
         kind: 'success',
-        text: `已删除职位「${position.name}」，历史申请记录已保留。`,
+        text: tr('已删除职位「{name}」，历史申请记录已保留。', { name: position.name }),
       });
       reloadPositions();
       reloadApplications();
     } catch (error) {
-      setPositionsNotice({ kind: 'error', text: `删除失败：${errorMessage(error)}` });
+      setPositionsNotice({
+        kind: 'error',
+        text: tr('删除失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setPositionBusyId(null);
     }
@@ -1852,14 +2224,17 @@ export default function AdminRecruitmentPage() {
         .maybeSingle();
 
       if (error) {
-        setListNotice({ kind: 'error', text: `更新失败：${error.message}` });
+        setListNotice({
+          kind: 'error',
+          text: tr('更新失败：{message}', { message: error.message }),
+        });
         return;
       }
 
       if (!data) {
         setListNotice({
           kind: 'error',
-          text: '更新失败：没有找到该申请，或当前账号无权处理。',
+          text: tr('更新失败：没有找到该申请，或当前账号无权处理。'),
         });
         return;
       }
@@ -1867,11 +2242,17 @@ export default function AdminRecruitmentPage() {
       setDecision(null);
       setListNotice({
         kind: 'success',
-        text: `申请 #${application.id} 已更新为「${STATUS_META[next].label}」，系统会自动通知申请人。`,
+        text: tr('申请 #{id} 已更新为「{status}」，系统会自动通知申请人。', {
+          id: application.id,
+          status: tr(STATUS_META[next].label),
+        }),
       });
       reloadApplications();
     } catch (error) {
-      setListNotice({ kind: 'error', text: `更新失败：${errorMessage(error)}` });
+      setListNotice({
+        kind: 'error',
+        text: tr('更新失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setBusyApplicationId(null);
     }
@@ -1892,7 +2273,10 @@ export default function AdminRecruitmentPage() {
       });
 
       if (error) {
-        setListNotice({ kind: 'error', text: `通过失败：${error.message}` });
+        setListNotice({
+          kind: 'error',
+          text: tr('通过失败：{message}', { message: error.message }),
+        });
         return;
       }
 
@@ -1900,11 +2284,14 @@ export default function AdminRecruitmentPage() {
       setDecision(null);
       setListNotice({
         kind: 'success',
-        text: `已通过并同步职位：${role ?? '未配置角色'}`,
+        text: tr('已通过并同步职位：{role}', { role: role ? roleLabel(role) : tr('未配置角色') }),
       });
       reloadApplications();
     } catch (error) {
-      setListNotice({ kind: 'error', text: `通过失败：${errorMessage(error)}` });
+      setListNotice({
+        kind: 'error',
+        text: tr('通过失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setBusyApplicationId(null);
     }
@@ -1923,15 +2310,24 @@ export default function AdminRecruitmentPage() {
       });
 
       if (error) {
-        setListNotice({ kind: 'error', text: `转正失败：${error.message}` });
+        setListNotice({
+          kind: 'error',
+          text: tr('转正失败：{message}', { message: error.message }),
+        });
         return;
       }
 
       const role = rpcRole(data);
-      setListNotice({ kind: 'success', text: `已转正为 ${role ?? '未知角色'}` });
+      setListNotice({
+        kind: 'success',
+        text: tr('已转正为 {role}', { role: role ? roleLabel(role) : tr('未知角色') }),
+      });
       reloadApplications();
     } catch (error) {
-      setListNotice({ kind: 'error', text: `转正失败：${errorMessage(error)}` });
+      setListNotice({
+        kind: 'error',
+        text: tr('转正失败：{message}', { message: errorMessage(error, tr) }),
+      });
     } finally {
       setBusyApplicationId(null);
     }
@@ -1966,13 +2362,16 @@ export default function AdminRecruitmentPage() {
       const role = rpcRole(data);
       setSyncNotices((current) => ({
         ...current,
-        [application.id]: { kind: 'success', text: `已同步职位：${role ?? '未知角色'}` },
+        [application.id]: {
+          kind: 'success',
+          text: tr('已同步职位：{role}', { role: role ? roleLabel(role) : tr('未知角色') }),
+        },
       }));
       reloadApplications();
     } catch (error) {
       setSyncNotices((current) => ({
         ...current,
-        [application.id]: { kind: 'error', text: errorMessage(error) },
+        [application.id]: { kind: 'error', text: errorMessage(error, tr) },
       }));
     } finally {
       setSyncingApplicationId(null);
@@ -1991,7 +2390,7 @@ export default function AdminRecruitmentPage() {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#18191c] text-white">
-        验证权限中...
+        {tr('验证权限中...')}
       </div>
     );
   }
@@ -2001,17 +2400,19 @@ export default function AdminRecruitmentPage() {
       <div className="mx-auto max-w-6xl">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3 border-b border-gray-700 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white md:text-3xl">📢 招募管理</h1>
+            <h1 className="text-2xl font-bold text-white md:text-3xl">{tr('📢 招募管理')}</h1>
             <p className="mt-1 text-sm text-gray-500">
-              管理招募文案、总开关、各职位独立开关与专属问题，并按状态/职位筛选审核申请；状态变更后系统会自动通知申请人。
+              {tr(
+                '管理招募文案、总开关、各职位独立开关与专属问题，并按状态/职位筛选审核申请；状态变更后系统会自动通知申请人。'
+              )}
             </p>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/recruitment" className="text-blue-400 transition hover:text-white">
-              查看招募页 →
+              {tr('查看招募页 →')}
             </Link>
             <Link href="/admin" className="text-gray-400 transition hover:text-white">
-              ← 返回控制台
+              {tr('← 返回控制台')}
             </Link>
           </div>
         </header>
@@ -2020,19 +2421,21 @@ export default function AdminRecruitmentPage() {
         <section className="mb-6 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold text-white">🔌 总开关</h2>
+              <h2 className="text-lg font-bold text-white">{tr('🔌 总开关')}</h2>
               <p className="mt-1 max-w-2xl text-xs text-gray-500">
-                关闭后所有职位都不可申请（即使单个职位仍处于开启状态）；已提交的申请仍可继续审核。
+                {tr(
+                  '关闭后所有职位都不可申请（即使单个职位仍处于开启状态）；已提交的申请仍可继续审核。'
+                )}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-400">
-                当前：
+                {tr('当前：')}
                 {settingsLoading ? (
-                  <span className="font-bold text-gray-300">加载中...</span>
+                  <span className="font-bold text-gray-300">{tr('加载中...')}</span>
                 ) : (
                   <span className={isOpen ? 'font-bold text-green-400' : 'font-bold text-gray-300'}>
-                    {isOpen ? '已开启' : '已关闭'}
+                    {isOpen ? tr('已开启') : tr('已关闭')}
                   </span>
                 )}
               </span>
@@ -2040,7 +2443,7 @@ export default function AdminRecruitmentPage() {
                 type="button"
                 role="switch"
                 aria-checked={isOpen}
-                aria-label="招募总开关"
+                aria-label={tr('招募总开关')}
                 onClick={() => void toggleRecruitment()}
                 disabled={toggleBusy || settingsLoading || !settingsReady}
                 className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -2053,13 +2456,15 @@ export default function AdminRecruitmentPage() {
                   }`}
                 />
               </button>
-              {toggleBusy && <span className="text-xs text-gray-400">保存中...</span>}
+              {toggleBusy && (
+                <span className="text-xs text-gray-400">{tr('保存中...')}</span>
+              )}
             </div>
           </div>
 
           {settingsError && (
             <ErrorBox
-              prefix="加载失败："
+              prefix={tr('加载失败：')}
               message={settingsError}
               onRetry={() => setSettingsReloadToken((value) => value + 1)}
               busy={settingsLoading}
@@ -2069,23 +2474,26 @@ export default function AdminRecruitmentPage() {
           <NoticeLine notice={settingsNotice} />
 
           <p className="mt-3 text-xs text-gray-500">
-            最后更新：{formatTime(settingsUpdatedAt)} · 更新人：{displayName(settingsUpdatedBy)}
+            {tr('最后更新：{time} · 更新人：{user}', {
+              time: formatTime(settingsUpdatedAt),
+              user: displayName(settingsUpdatedBy),
+            })}
           </p>
         </section>
 
         {/* ================= 招募文案 ================= */}
         <section className="mb-6 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
           <div className="border-b border-gray-700/70 pb-3">
-            <h2 className="text-lg font-bold text-white">📝 招募文案</h2>
+            <h2 className="text-lg font-bold text-white">{tr('📝 招募文案')}</h2>
             <p className="mt-1 max-w-3xl text-xs text-gray-500">
-              公开页会展示这里的标题、招募介绍与任职要求；保存后立即生效，可随时修改。
+              {tr('公开页会展示这里的标题、招募介绍与任职要求；保存后立即生效，可随时修改。')}
             </p>
           </div>
 
           <div className="mt-4 grid gap-3">
             <div>
               <label htmlFor="recruitment-copy-title" className={labelClass}>
-                标题 *
+                {tr('标题 *')}
               </label>
               <input
                 id="recruitment-copy-title"
@@ -2093,7 +2501,7 @@ export default function AdminRecruitmentPage() {
                 value={copyForm.title}
                 onChange={(event) => updateCopy({ title: event.target.value })}
                 maxLength={COPY_TITLE_MAX_LENGTH}
-                placeholder="例如：加入 RCT MP 团队"
+                placeholder={tr('例如：加入 RCT MP 团队')}
                 disabled={copyBusy || !settingsReady}
                 className={inputClass}
               />
@@ -2105,7 +2513,7 @@ export default function AdminRecruitmentPage() {
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label htmlFor="recruitment-copy-intro" className={labelClass}>
-                  招募介绍
+                  {tr('招募介绍')}
                 </label>
                 <textarea
                   id="recruitment-copy-intro"
@@ -2113,7 +2521,7 @@ export default function AdminRecruitmentPage() {
                   onChange={(event) => updateCopy({ intro: event.target.value })}
                   rows={6}
                   maxLength={COPY_TEXT_MAX_LENGTH}
-                  placeholder="介绍服务器、团队氛围与招募背景；支持换行。"
+                  placeholder={tr('介绍服务器、团队氛围与招募背景；支持换行。')}
                   disabled={copyBusy || !settingsReady}
                   className={`${inputClass} resize-y`}
                 />
@@ -2124,7 +2532,7 @@ export default function AdminRecruitmentPage() {
 
               <div>
                 <label htmlFor="recruitment-copy-requirements" className={labelClass}>
-                  任职要求
+                  {tr('任职要求')}
                 </label>
                 <textarea
                   id="recruitment-copy-requirements"
@@ -2132,7 +2540,7 @@ export default function AdminRecruitmentPage() {
                   onChange={(event) => updateCopy({ requirements: event.target.value })}
                   rows={6}
                   maxLength={COPY_TEXT_MAX_LENGTH}
-                  placeholder="列出申请人需要满足的条件；支持换行。"
+                  placeholder={tr('列出申请人需要满足的条件；支持换行。')}
                   disabled={copyBusy || !settingsReady}
                   className={`${inputClass} resize-y`}
                 />
@@ -2156,10 +2564,10 @@ export default function AdminRecruitmentPage() {
               disabled={copyBusy || settingsLoading || !settingsReady}
               className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {copyBusy ? '保存中...' : '保存文案'}
+              {copyBusy ? tr('保存中...') : tr('保存文案')}
             </button>
             <span className="text-xs text-gray-500">
-              介绍与任职要求支持多行，换行会原样展示在公开页。
+              {tr('介绍与任职要求支持多行，换行会原样展示在公开页。')}
             </span>
           </div>
 
@@ -2170,9 +2578,11 @@ export default function AdminRecruitmentPage() {
         <section className="mb-6 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-700/70 pb-3">
             <div>
-              <h2 className="text-lg font-bold text-white">🧩 职位管理</h2>
+              <h2 className="text-lg font-bold text-white">{tr('🧩 职位管理')}</h2>
               <p className="mt-1 text-xs text-gray-500">
-                每个职位可独立开关、独立题库。关闭的职位在公开页不可申请；删除职位不会删除历史申请。
+                {tr(
+                  '每个职位可独立开关、独立题库。关闭的职位在公开页不可申请；删除职位不会删除历史申请。'
+                )}
               </p>
             </div>
             <button
@@ -2181,13 +2591,13 @@ export default function AdminRecruitmentPage() {
               disabled={positionsLoading || positionBusyId !== null}
               className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {addOpen ? '收起新增表单' : '➕ 新增职位'}
+              {addOpen ? tr('收起新增表单') : tr('➕ 新增职位')}
             </button>
           </div>
 
           {positionsError && (
             <ErrorBox
-              prefix="职位加载失败："
+              prefix={tr('职位加载失败：')}
               message={positionsError}
               onRetry={reloadPositions}
               busy={positionsLoading}
@@ -2198,11 +2608,11 @@ export default function AdminRecruitmentPage() {
 
           {addOpen && (
             <div className="mt-4 rounded border border-blue-500/40 bg-[#232428] p-4">
-              <h3 className="text-sm font-bold text-white">新增职位</h3>
+              <h3 className="text-sm font-bold text-white">{tr('新增职位')}</h3>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div>
                   <label htmlFor="new-position-name" className={labelClass}>
-                    职位名称 *
+                    {tr('职位名称 *')}
                   </label>
                   <input
                     id="new-position-name"
@@ -2212,14 +2622,14 @@ export default function AdminRecruitmentPage() {
                       setAddForm((current) => ({ ...current, name: event.target.value }))
                     }
                     maxLength={80}
-                    placeholder="例如：社区版主"
+                    placeholder={tr('例如：社区版主')}
                     disabled={addBusy}
                     className={inputClass}
                   />
                 </div>
                 <div>
                   <label htmlFor="new-position-department" className={labelClass}>
-                    部门
+                    {tr('部门')}
                   </label>
                   <input
                     id="new-position-department"
@@ -2229,14 +2639,14 @@ export default function AdminRecruitmentPage() {
                       setAddForm((current) => ({ ...current, department: event.target.value }))
                     }
                     maxLength={80}
-                    placeholder="例如：社区线"
+                    placeholder={tr('例如：社区线')}
                     disabled={addBusy}
                     className={inputClass}
                   />
                 </div>
                 <div className="md:col-span-2">
                   <label htmlFor="new-position-description" className={labelClass}>
-                    职位说明
+                    {tr('职位说明')}
                   </label>
                   <textarea
                     id="new-position-description"
@@ -2246,14 +2656,14 @@ export default function AdminRecruitmentPage() {
                     }
                     rows={3}
                     maxLength={1000}
-                    placeholder="向申请人说明这个职位负责什么。"
+                    placeholder={tr('向申请人说明这个职位负责什么。')}
                     disabled={addBusy}
                     className={`${inputClass} resize-y`}
                   />
                 </div>
                 <div>
                   <label htmlFor="new-position-sort" className={labelClass}>
-                    排序号（越小越靠前）
+                    {tr('排序号（越小越靠前）')}
                   </label>
                   <input
                     id="new-position-sort"
@@ -2278,7 +2688,7 @@ export default function AdminRecruitmentPage() {
                       disabled={addBusy}
                       className="h-4 w-4"
                     />
-                    创建后立即开启申请
+                    {tr('创建后立即开启申请')}
                   </label>
                 </div>
               </div>
@@ -2296,7 +2706,7 @@ export default function AdminRecruitmentPage() {
                   disabled={addBusy}
                   className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {addBusy ? '保存中...' : '保存职位'}
+                  {addBusy ? tr('保存中...') : tr('保存职位')}
                 </button>
                 <button
                   type="button"
@@ -2304,9 +2714,11 @@ export default function AdminRecruitmentPage() {
                   disabled={addBusy}
                   className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:text-white disabled:opacity-50"
                 >
-                  取消
+                  {tr('取消')}
                 </button>
-                <span className="text-xs text-gray-500">问题可在创建后用「编辑」添加。</span>
+                <span className="text-xs text-gray-500">
+                  {tr('问题可在创建后用「编辑」添加。')}
+                </span>
               </div>
             </div>
           )}
@@ -2314,13 +2726,15 @@ export default function AdminRecruitmentPage() {
           <div className="mt-4 space-y-3">
             {positionsLoading && sortedPositions.length === 0 ? (
               <p className="rounded border border-gray-700 bg-[#232428] px-4 py-8 text-center text-sm text-gray-500">
-                职位加载中...
+                {tr('职位加载中...')}
               </p>
             ) : null}
 
             {!positionsLoading && !positionsError && sortedPositions.length === 0 ? (
               <p className="rounded border border-gray-700 bg-[#232428] px-4 py-10 text-center text-sm text-gray-500">
-                还没有职位。点击「新增职位」创建第一个招募职位；没有职位时公开页没有可申请岗位。
+                {tr(
+                  '还没有职位。点击「新增职位」创建第一个招募职位；没有职位时公开页没有可申请岗位。'
+                )}
               </p>
             ) : null}
 
@@ -2352,24 +2766,26 @@ export default function AdminRecruitmentPage() {
                               : 'border-gray-600 bg-[#18191c] text-gray-400'
                           }`}
                         >
-                          {position.is_open ? '申请开放' : '申请关闭'}
+                          {position.is_open ? tr('申请开放') : tr('申请关闭')}
                         </span>
                         <span className="rounded border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-xs text-indigo-300">
-                          授予角色：{roleLabel(position.assign_role)}
+                          {tr('授予角色：{role}', { role: roleLabel(position.assign_role) })}
                         </span>
                         {position.is_trainee && (
                           <span className="rounded border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-xs text-purple-300">
-                            实习岗位
+                            {tr('实习岗位')}
                           </span>
                         )}
                         {position.is_trainee && (
                           <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">
-                            实习期 {position.trainee_days} 天
+                            {tr('实习期 {days} 天', { days: position.trainee_days })}
                           </span>
                         )}
-                        <span className="text-xs text-gray-500">排序 {position.sort_order}</span>
                         <span className="text-xs text-gray-500">
-                          {position.questions.length} 个问题
+                          {tr('排序 {order}', { order: position.sort_order })}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {tr('{count} 个问题', { count: position.questions.length })}
                         </span>
                       </div>
                       {position.description && (
@@ -2380,12 +2796,12 @@ export default function AdminRecruitmentPage() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">申请开关</span>
+                      <span className="text-xs text-gray-500">{tr('申请开关')}</span>
                       <button
                         type="button"
                         role="switch"
                         aria-checked={position.is_open}
-                        aria-label={`${position.name}申请开关`}
+                        aria-label={tr('{name}申请开关', { name: position.name })}
                         onClick={() => void togglePosition(position)}
                         disabled={cardLocked}
                         className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -2408,7 +2824,7 @@ export default function AdminRecruitmentPage() {
                       disabled={cardLocked || index === 0}
                       className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      ↑ 上移
+                      {tr('↑ 上移')}
                     </button>
                     <button
                       type="button"
@@ -2416,7 +2832,7 @@ export default function AdminRecruitmentPage() {
                       disabled={cardLocked || index === sortedPositions.length - 1}
                       className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      ↓ 下移
+                      {tr('↓ 下移')}
                     </button>
                     <button
                       type="button"
@@ -2424,7 +2840,7 @@ export default function AdminRecruitmentPage() {
                       disabled={cardLocked || isEditing}
                       className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-200 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {isEditing ? '编辑中...' : '✏️ 编辑'}
+                      {isEditing ? tr('编辑中...') : tr('✏️ 编辑')}
                     </button>
                     <button
                       type="button"
@@ -2432,9 +2848,9 @@ export default function AdminRecruitmentPage() {
                       disabled={cardLocked}
                       className="rounded border border-gray-600 px-3 py-1.5 text-xs text-red-300 transition hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      🗑️ 删除
+                      {tr('🗑️ 删除')}
                     </button>
-                    {busy && <span className="text-xs text-gray-400">保存中...</span>}
+                    {busy && <span className="text-xs text-gray-400">{tr('保存中...')}</span>}
                   </div>
 
                   {isEditing && editing && (
@@ -2442,7 +2858,7 @@ export default function AdminRecruitmentPage() {
                       <div className="grid gap-3 md:grid-cols-2">
                         <div>
                           <label htmlFor={`edit-name-${editing.id}`} className={labelClass}>
-                            职位名称 *
+                            {tr('职位名称 *')}
                           </label>
                           <input
                             id={`edit-name-${editing.id}`}
@@ -2456,7 +2872,7 @@ export default function AdminRecruitmentPage() {
                         </div>
                         <div>
                           <label htmlFor={`edit-department-${editing.id}`} className={labelClass}>
-                            部门
+                            {tr('部门')}
                           </label>
                           <input
                             id={`edit-department-${editing.id}`}
@@ -2470,7 +2886,7 @@ export default function AdminRecruitmentPage() {
                         </div>
                         <div className="md:col-span-2">
                           <label htmlFor={`edit-description-${editing.id}`} className={labelClass}>
-                            职位说明
+                            {tr('职位说明')}
                           </label>
                           <textarea
                             id={`edit-description-${editing.id}`}
@@ -2484,7 +2900,7 @@ export default function AdminRecruitmentPage() {
                         </div>
                         <div>
                           <label htmlFor={`edit-assign-role-${editing.id}`} className={labelClass}>
-                            通过后授予角色
+                            {tr('通过后授予角色')}
                           </label>
                           <select
                             id={`edit-assign-role-${editing.id}`}
@@ -2493,26 +2909,26 @@ export default function AdminRecruitmentPage() {
                             disabled={editorBusy}
                             className={inputClass}
                           >
-                            <option value="">不授予角色</option>
+                            <option value="">{tr('不授予角色')}</option>
                             {editing.assign_role !== '' &&
                               !roleByName.has(editing.assign_role) && (
                                 <option value={editing.assign_role}>
-                                  {editing.assign_role}（角色表中不存在）
+                                  {tr('{role}（角色表中不存在）', { role: editing.assign_role })}
                                 </option>
                               )}
                             {roles.map((role) => (
                               <option key={role.name} value={role.name}>
-                                {formatRoleOption(role)}
+                                {formatRoleOption(role, locale)}
                               </option>
                             ))}
                           </select>
                           <p className="mt-1 text-xs text-gray-500">
-                            通过申请时授予；留空表示不自动授予角色。
-                            {rolesLoading ? ' 角色加载中...' : ''}
+                            {tr('通过申请时授予；留空表示不自动授予角色。')}
+                            {rolesLoading ? tr(' 角色加载中...') : ''}
                           </p>
                         </div>
                         <div>
-                          <span className={labelClass}>实习岗位</span>
+                          <span className={labelClass}>{tr('实习岗位')}</span>
                           <label className="flex items-center gap-2 pb-2.5 text-sm text-gray-300">
                             <input
                               id={`edit-is-trainee-${editing.id}`}
@@ -2524,10 +2940,10 @@ export default function AdminRecruitmentPage() {
                               disabled={editorBusy}
                               className="h-4 w-4"
                             />
-                            该职位为实习岗位
+                            {tr('该职位为实习岗位')}
                           </label>
                           <p className="mt-1 text-xs text-gray-500">
-                            勾选后通过申请授予实习角色，转正时改为授予「通过后授予角色」。
+                            {tr('勾选后通过申请授予实习角色，转正时改为授予「通过后授予角色」。')}
                           </p>
                           {editing.is_trainee && (
                             <div className="mt-3">
@@ -2535,7 +2951,10 @@ export default function AdminRecruitmentPage() {
                                 htmlFor={`edit-trainee-days-${editing.id}`}
                                 className={labelClass}
                               >
-                                实习期天数（{TRAINEE_DAYS_MIN}-{TRAINEE_DAYS_MAX} 天）
+                                {tr('实习期天数（{min}-{max} 天）', {
+                                  min: TRAINEE_DAYS_MIN,
+                                  max: TRAINEE_DAYS_MAX,
+                                })}
                               </label>
                               <input
                                 id={`edit-trainee-days-${editing.id}`}
@@ -2552,7 +2971,9 @@ export default function AdminRecruitmentPage() {
                                 className={inputClass}
                               />
                               <p className="mt-1 text-xs text-gray-500">
-                                通过申请时从当天开始计算实习期，默认 {TRAINEE_DAYS_DEFAULT} 天。
+                                {tr('通过申请时从当天开始计算实习期，默认 {days} 天。', {
+                                  days: TRAINEE_DAYS_DEFAULT,
+                                })}
                               </p>
                             </div>
                           )}
@@ -2563,7 +2984,7 @@ export default function AdminRecruitmentPage() {
                               htmlFor={`edit-trainee-role-${editing.id}`}
                               className={labelClass}
                             >
-                              实习角色
+                              {tr('实习角色')}
                             </label>
                             <select
                               id={`edit-trainee-role-${editing.id}`}
@@ -2574,7 +2995,7 @@ export default function AdminRecruitmentPage() {
                               disabled={editorBusy}
                               className={inputClass}
                             >
-                              <option value="">不授予实习角色</option>
+                              <option value="">{tr('不授予实习角色')}</option>
                               {editing.trainee_role !== '' &&
                                 !traineeRoles.some(
                                   (role) => role.name === editing.trainee_role
@@ -2585,12 +3006,12 @@ export default function AdminRecruitmentPage() {
                                 )}
                               {traineeRoles.map((role) => (
                                 <option key={role.name} value={role.name}>
-                                  {formatRoleOption(role)}
+                                  {formatRoleOption(role, locale)}
                                 </option>
                               ))}
                             </select>
                             <p className="mt-1 text-xs text-gray-500">
-                              仅列出 roles 中 name 含 _trainee 或名称含「实习」的角色。
+                              {tr('仅列出 roles 中 name 含 _trainee 或名称含「实习」的角色。')}
                             </p>
                           </div>
                         )}
@@ -2599,7 +3020,7 @@ export default function AdminRecruitmentPage() {
                       <div className="mt-4">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <h4 className="text-sm font-bold text-white">
-                            问题设置（{editing.questions.length}）
+                            {tr('问题设置（{count}）', { count: editing.questions.length })}
                           </h4>
                           <button
                             type="button"
@@ -2607,16 +3028,18 @@ export default function AdminRecruitmentPage() {
                             disabled={editorBusy}
                             className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-200 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
                           >
-                            ➕ 新增问题
+                            {tr('➕ 新增问题')}
                           </button>
                         </div>
                         <p className="mt-1 text-xs text-gray-500">
-                          问题 ID 自动生成且唯一；申请人提交后按此顺序展示。选择题每行一个选项。
+                          {tr(
+                            '问题 ID 自动生成且唯一；申请人提交后按此顺序展示。选择题每行一个选项。'
+                          )}
                         </p>
 
                         {editing.questions.length === 0 ? (
                           <p className="mt-3 rounded border border-dashed border-gray-600 px-4 py-6 text-center text-xs text-gray-500">
-                            该职位暂无专属问题，申请人只需填写联系方式与基础信息。
+                            {tr('该职位暂无专属问题，申请人只需填写联系方式与基础信息。')}
                           </p>
                         ) : (
                           <div className="mt-3 space-y-3">
@@ -2627,13 +3050,16 @@ export default function AdminRecruitmentPage() {
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <span className="text-xs text-gray-500">
-                                    问题 {questionIndex + 1} · ID {question.id} ·{' '}
-                                    {QUESTION_TYPE_LABELS[question.type]}
+                                    {tr('问题 {index} · ID {id} · {type}', {
+                                      index: questionIndex + 1,
+                                      id: question.id,
+                                      type: tr(QUESTION_TYPE_LABELS[question.type]),
+                                    })}
                                   </span>
                                   <div className="flex gap-1">
                                     <button
                                       type="button"
-                                      aria-label="上移问题"
+                                      aria-label={tr('上移问题')}
                                       onClick={() => moveQuestion(questionIndex, -1)}
                                       disabled={editorBusy || questionIndex === 0}
                                       className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 transition hover:text-white disabled:opacity-40"
@@ -2642,7 +3068,7 @@ export default function AdminRecruitmentPage() {
                                     </button>
                                     <button
                                       type="button"
-                                      aria-label="下移问题"
+                                      aria-label={tr('下移问题')}
                                       onClick={() => moveQuestion(questionIndex, 1)}
                                       disabled={
                                         editorBusy ||
@@ -2658,7 +3084,7 @@ export default function AdminRecruitmentPage() {
                                       disabled={editorBusy}
                                       className="rounded border border-gray-600 px-2 py-1 text-xs text-red-300 transition hover:border-red-500 hover:text-red-200 disabled:opacity-40"
                                     >
-                                      删除
+                                      {tr('删除')}
                                     </button>
                                   </div>
                                 </div>
@@ -2669,7 +3095,7 @@ export default function AdminRecruitmentPage() {
                                       htmlFor={`question-label-${question.id}`}
                                       className={labelClass}
                                     >
-                                      题目
+                                      {tr('题目')}
                                     </label>
                                     <input
                                       id={`question-label-${question.id}`}
@@ -2679,7 +3105,7 @@ export default function AdminRecruitmentPage() {
                                         updateQuestion(questionIndex, { label: event.target.value })
                                       }
                                       maxLength={200}
-                                      placeholder="例如：为什么想申请这个职位？"
+                                      placeholder={tr('例如：为什么想申请这个职位？')}
                                       disabled={editorBusy}
                                       className={inputClass}
                                     />
@@ -2691,7 +3117,7 @@ export default function AdminRecruitmentPage() {
                                         htmlFor={`question-type-${question.id}`}
                                         className={labelClass}
                                       >
-                                        类型
+                                        {tr('类型')}
                                       </label>
                                       <select
                                         id={`question-type-${question.id}`}
@@ -2711,7 +3137,7 @@ export default function AdminRecruitmentPage() {
                                       >
                                         {QUESTION_TYPE_OPTIONS.map((option) => (
                                           <option key={option.value} value={option.value}>
-                                            {option.label}
+                                            {tr(option.label)}
                                           </option>
                                         ))}
                                       </select>
@@ -2728,7 +3154,7 @@ export default function AdminRecruitmentPage() {
                                         disabled={editorBusy}
                                         className="h-4 w-4"
                                       />
-                                      必填
+                                      {tr('必填')}
                                     </label>
                                   </div>
 
@@ -2738,7 +3164,7 @@ export default function AdminRecruitmentPage() {
                                         htmlFor={`question-options-${question.id}`}
                                         className={labelClass}
                                       >
-                                        选项（每行一个）
+                                        {tr('选项（每行一个）')}
                                       </label>
                                       <textarea
                                         id={`question-options-${question.id}`}
@@ -2749,7 +3175,7 @@ export default function AdminRecruitmentPage() {
                                           })
                                         }
                                         rows={3}
-                                        placeholder={'是\n否'}
+                                        placeholder={`${tr('是')}\n${tr('否')}`}
                                         disabled={editorBusy}
                                         className={`${inputClass} resize-y`}
                                       />
@@ -2775,7 +3201,7 @@ export default function AdminRecruitmentPage() {
                           disabled={editorBusy}
                           className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {editorBusy ? '保存中...' : '保存职位'}
+                          {editorBusy ? tr('保存中...') : tr('保存职位')}
                         </button>
                         <button
                           type="button"
@@ -2783,7 +3209,7 @@ export default function AdminRecruitmentPage() {
                           disabled={editorBusy}
                           className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:text-white disabled:opacity-50"
                         >
-                          取消
+                          {tr('取消')}
                         </button>
                       </div>
                     </div>
@@ -2796,7 +3222,7 @@ export default function AdminRecruitmentPage() {
 
         {/* ================= 申请统计 ================= */}
         <section
-          aria-label="申请统计"
+          aria-label={tr('申请统计')}
           className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
         >
           {STAT_CARDS.map((card) => {
@@ -2806,7 +3232,7 @@ export default function AdminRecruitmentPage() {
                 key={card.key}
                 className="rounded-lg border border-gray-700 bg-[#2c2d31] p-3 shadow-lg"
               >
-                <p className="text-xs text-gray-500">{card.label}</p>
+                <p className="text-xs text-gray-500">{tr(card.label)}</p>
                 <p className={`mt-1 text-xl font-bold ${card.valueClassName}`}>
                   {statsLoading || value === null ? '-' : value}
                 </p>
@@ -2819,7 +3245,7 @@ export default function AdminRecruitmentPage() {
         <section className="mb-4 flex flex-col gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 md:flex-row md:items-end">
           <div className="w-full md:w-44">
             <label htmlFor="application-status-filter" className={labelClass}>
-              状态筛选
+              {tr('状态筛选')}
             </label>
             <select
               id="application-status-filter"
@@ -2839,7 +3265,7 @@ export default function AdminRecruitmentPage() {
             >
               {STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {tr(option.label)}
                 </option>
               ))}
             </select>
@@ -2847,7 +3273,7 @@ export default function AdminRecruitmentPage() {
 
           <div className="w-full md:w-56">
             <label htmlFor="application-position-filter" className={labelClass}>
-              职位筛选
+              {tr('职位筛选')}
             </label>
             <select
               id="application-position-filter"
@@ -2868,11 +3294,11 @@ export default function AdminRecruitmentPage() {
               disabled={applicationsLoading}
               className={inputClass}
             >
-              <option value="all">全部职位</option>
+              <option value="all">{tr('全部职位')}</option>
               {sortedPositions.map((position) => (
                 <option key={position.id} value={String(position.id)}>
                   {position.name}
-                  {position.is_open ? '' : '（已关闭）'}
+                  {position.is_open ? '' : tr('（已关闭）')}
                 </option>
               ))}
             </select>
@@ -2883,10 +3309,10 @@ export default function AdminRecruitmentPage() {
               type="button"
               onClick={() => void exportApplications()}
               disabled={exportBusy}
-              title={`按当前筛选导出，最多 ${CSV_EXPORT_LIMIT} 条`}
+              title={tr('按当前筛选导出，最多 {count} 条', { count: CSV_EXPORT_LIMIT })}
               className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {exportBusy ? '导出中...' : '⬇️ 导出 CSV'}
+              {exportBusy ? tr('导出中...') : tr('⬇️ 导出 CSV')}
             </button>
             <button
               type="button"
@@ -2894,10 +3320,15 @@ export default function AdminRecruitmentPage() {
               disabled={applicationsLoading}
               className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
             >
-              {applicationsLoading ? '刷新中...' : '刷新'}
+              {applicationsLoading ? tr('刷新中...') : tr('刷新')}
             </button>
             <span className="text-xs text-gray-500">
-              共 {totalCount} 条 · 第 {currentPage} / {totalPages} 页（每页 {PAGE_SIZE} 条）
+              {tr('共 {count} 条 · 第 {page} / {total} 页（每页 {size} 条）', {
+                count: totalCount,
+                page: currentPage,
+                total: totalPages,
+                size: PAGE_SIZE,
+              })}
             </span>
           </div>
         </section>
@@ -2906,7 +3337,7 @@ export default function AdminRecruitmentPage() {
 
         {applicationsError && (
           <ErrorBox
-            prefix="申请加载失败："
+            prefix={tr('申请加载失败：')}
             message={applicationsError}
             onRetry={reloadApplications}
             busy={applicationsLoading}
@@ -2918,7 +3349,7 @@ export default function AdminRecruitmentPage() {
         <div ref={listTopRef} className="scroll-mt-6">
           {applicationsLoading && applications.length === 0 ? (
             <div aria-busy="true" aria-live="polite" className="space-y-4">
-              <p className="text-center text-sm text-gray-500">加载中...</p>
+              <p className="text-center text-sm text-gray-500">{tr('加载中...')}</p>
               {Array.from({ length: 4 }).map((_, index) => (
                 <div
                   key={index}
@@ -2930,7 +3361,7 @@ export default function AdminRecruitmentPage() {
 
           {!applicationsLoading && !applicationsError && applications.length === 0 ? (
             <p className="rounded border border-gray-700 bg-[#2c2d31] px-4 py-12 text-center text-sm text-gray-500">
-              {hasFilter ? '没有符合当前筛选条件的申请。' : '暂无招募申请。'}
+              {hasFilter ? tr('没有符合当前筛选条件的申请。') : tr('暂无招募申请。')}
             </p>
           ) : null}
 
@@ -2951,7 +3382,7 @@ export default function AdminRecruitmentPage() {
                       ? positionById.get(application.position_id) ?? null
                       : null;
                   const positionName =
-                    position?.name ?? (application.position.trim() || '未知职位');
+                    position?.name ?? (application.position.trim() || tr('未知职位'));
                   const positionDeleted = application.position_id === null;
                   // 实习信息只在「已通过 + 职位为实习岗位」时展示；已转正优先，不再提示到期。
                   const isTraineeApplication =
@@ -2966,7 +3397,7 @@ export default function AdminRecruitmentPage() {
                       ? decision
                       : null;
 
-                  const answerEntries = buildAnswerEntries(application, position);
+                  const answerEntries = buildAnswerEntries(application, position, tr);
                   const isExpanded = expandedAnswers[application.id] === true;
                   const collapsible =
                     answerEntries.length > ANSWER_PREVIEW_ITEMS ||
@@ -2984,14 +3415,14 @@ export default function AdminRecruitmentPage() {
                         <span
                           className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold ${meta.className}`}
                         >
-                          {meta.label}
+                          {tr(meta.label)}
                         </span>
                         <span className="rounded border border-gray-600 bg-[#232428] px-2 py-0.5 text-xs text-white">
                           {positionName}
                         </span>
                         {positionDeleted && (
                           <span className="rounded border border-gray-600 bg-[#18191c] px-2 py-0.5 text-[10px] text-gray-500">
-                            职位已删除
+                            {tr('职位已删除')}
                           </span>
                         )}
                         <span className="break-all text-xs text-gray-500">#{application.id}</span>
@@ -3001,7 +3432,7 @@ export default function AdminRecruitmentPage() {
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-400">
-                        <span>申请人：</span>
+                        <span>{tr('申请人：')}</span>
                         <Link
                           href={`/profile/${application.user_id}`}
                           className="text-blue-400 transition hover:text-blue-300"
@@ -3009,17 +3440,19 @@ export default function AdminRecruitmentPage() {
                           {displayName(application.user_id)}
                         </Link>
                         {applicant?.custom_id && (
-                          <span className="text-gray-500">（{applicant.custom_id}）</span>
+                          <span className="text-gray-500">
+                            {tr('（{id}）', { id: applicant.custom_id })}
+                          </span>
                         )}
                         {applicant?.steam_verified && (
                           <span className="rounded border border-green-500/40 bg-green-500/10 px-1.5 py-0.5 text-[10px] text-green-300">
-                            Steam 已验证
+                            {tr('Steam 已验证')}
                           </span>
                         )}
                       </div>
 
                       <p className="mt-1 break-all text-xs text-gray-400">
-                        联系方式：
+                        {tr('联系方式：')}
                         <span className="text-gray-300">{application.contact ?? '——'}</span>
                       </p>
 
@@ -3028,25 +3461,29 @@ export default function AdminRecruitmentPage() {
                           <span
                             className={`inline-flex items-center rounded border px-2 py-0.5 font-bold ${traineeMeta.className}`}
                           >
-                            {traineeMeta.label}
+                            {tr(traineeMeta.label)}
                           </span>
                           <span className="text-gray-400">
-                            实习期：{formatDate(application.trainee_started_at)} 至{' '}
-                            {formatDate(application.trainee_until)}
+                            {tr('实习期：{start} 至 {end}', {
+                              start: formatDate(application.trainee_started_at),
+                              end: formatDate(application.trainee_until),
+                            })}
                           </span>
                           {application.reminder_sent_at && (
                             <span className="text-gray-500">
-                              已发到期提醒：{formatTime(application.reminder_sent_at)}
+                              {tr('已发到期提醒：{time}', {
+                                time: formatTime(application.reminder_sent_at),
+                              })}
                             </span>
                           )}
                         </div>
                       )}
 
                       <div className="mt-3">
-                        <p className="text-xs text-gray-500">问题回答</p>
+                        <p className="text-xs text-gray-500">{tr('问题回答')}</p>
                         {answerEntries.length === 0 ? (
                           <p className="mt-1 text-sm italic text-gray-500">
-                            （该申请没有填写问答内容）
+                            {tr('（该申请没有填写问答内容）')}
                           </p>
                         ) : (
                           <>
@@ -3062,7 +3499,7 @@ export default function AdminRecruitmentPage() {
                                   {isExpanded ? entry.value : previewAnswer(entry.value)}
                                   {entry.label === null && (
                                     <span className="ml-1 text-[10px] text-gray-600">
-                                      （原始字段）
+                                      {tr('（原始字段）')}
                                     </span>
                                   )}
                                 </li>
@@ -3070,7 +3507,9 @@ export default function AdminRecruitmentPage() {
                             </ul>
                             {!position && answerEntries.length > 0 && (
                               <p className="mt-1 text-xs text-gray-600">
-                                职位问题文案不可用（职位已删除或未加载），以上显示数据库原始字段。
+                                {tr(
+                                  '职位问题文案不可用（职位已删除或未加载），以上显示数据库原始字段。'
+                                )}
                               </p>
                             )}
                             {collapsible && (
@@ -3084,7 +3523,11 @@ export default function AdminRecruitmentPage() {
                                 }
                                 className="mt-1 text-xs text-blue-400 transition hover:text-blue-300"
                               >
-                                {isExpanded ? '收起' : `展开全部（${answerEntries.length} 项）`}
+                                {isExpanded
+                                  ? tr('收起')
+                                  : tr('展开全部（{count} 项）', {
+                                      count: answerEntries.length,
+                                    })}
                               </button>
                             )}
                           </>
@@ -3094,14 +3537,16 @@ export default function AdminRecruitmentPage() {
                       <div className="mt-3 border-t border-gray-700/60 pt-3 text-xs text-gray-400">
                         <div className="flex flex-wrap gap-x-4 gap-y-1">
                           <span>
-                            处理人：
+                            {tr('处理人：')}
                             {application.handled_by ? displayName(application.handled_by) : '——'}
                           </span>
-                          <span>更新时间：{formatTime(application.updated_at)}</span>
+                          <span>
+                            {tr('更新时间：{time}', { time: formatTime(application.updated_at) })}
+                          </span>
                         </div>
                         {application.handle_note && (
                           <p className="mt-2 whitespace-pre-wrap break-words text-gray-300">
-                            处理备注：{application.handle_note}
+                            {tr('处理备注：{note}', { note: application.handle_note })}
                           </p>
                         )}
                       </div>
@@ -3112,8 +3557,10 @@ export default function AdminRecruitmentPage() {
                           {activeDecision ? (
                             <div className="rounded border border-blue-500/40 bg-[#232428] p-3">
                               <p className="mb-2 text-sm text-white">
-                                将申请 #{application.id} 标记为「
-                                {STATUS_META[activeDecision.next].label}」
+                                {tr('将申请 #{id} 标记为「{status}」', {
+                                  id: application.id,
+                                  status: tr(STATUS_META[activeDecision.next].label),
+                                })}
                               </p>
                               <textarea
                                 value={activeDecision.note}
@@ -3127,7 +3574,9 @@ export default function AdminRecruitmentPage() {
                                 }}
                                 rows={3}
                                 maxLength={1000}
-                                placeholder="处理备注（可选），留空则不写备注；会展示给申请人并随通知发送。"
+                                placeholder={tr(
+                                  '处理备注（可选），留空则不写备注；会展示给申请人并随通知发送。'
+                                )}
                                 className={`${inputClass} resize-y`}
                               />
                               <div className="mt-2 flex flex-wrap gap-2">
@@ -3142,10 +3591,10 @@ export default function AdminRecruitmentPage() {
                                   }`}
                                 >
                                   {busy
-                                    ? '提交中...'
+                                    ? tr('提交中...')
                                     : activeDecision.next === 'accepted'
-                                      ? '确认通过'
-                                      : '确认拒绝'}
+                                      ? tr('确认通过')
+                                      : tr('确认拒绝')}
                                 </button>
                                 <button
                                   type="button"
@@ -3153,7 +3602,7 @@ export default function AdminRecruitmentPage() {
                                   disabled={busy}
                                   className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:text-white disabled:opacity-50"
                                 >
-                                  取消
+                                  {tr('取消')}
                                 </button>
                               </div>
                             </div>
@@ -3166,7 +3615,7 @@ export default function AdminRecruitmentPage() {
                                   disabled={busyApplicationId !== null}
                                   className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {busy ? '提交中...' : '开始审核'}
+                                  {busy ? tr('提交中...') : tr('开始审核')}
                                 </button>
                               )}
                               <button
@@ -3182,7 +3631,7 @@ export default function AdminRecruitmentPage() {
                                 disabled={busyApplicationId !== null}
                                 className="rounded bg-green-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                通过
+                                {tr('通过')}
                               </button>
                               <button
                                 type="button"
@@ -3197,11 +3646,13 @@ export default function AdminRecruitmentPage() {
                                 disabled={busyApplicationId !== null}
                                 className="rounded border border-gray-600 bg-[#232428] px-4 py-2 text-sm text-gray-300 transition hover:border-red-500 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                拒绝
+                                {tr('拒绝')}
                               </button>
                             </div>
                           )}
-                          <p className="mt-2 text-xs text-gray-500">{REVIEW_PERMISSION_HINT}</p>
+                          <p className="mt-2 text-xs text-gray-500">
+                            {tr(REVIEW_PERMISSION_HINT)}
+                          </p>
                         </div>
                       ) : null}
 
@@ -3214,7 +3665,7 @@ export default function AdminRecruitmentPage() {
                               disabled={syncing || busyApplicationId !== null}
                               className="rounded border border-gray-600 bg-[#232428] px-4 py-2 text-sm font-bold text-gray-200 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {syncing ? '同步中...' : '同步职位'}
+                              {syncing ? tr('同步中...') : tr('同步职位')}
                             </button>
                             {position?.is_trainee === true && !application.promoted_at && (
                               <>
@@ -3224,15 +3675,17 @@ export default function AdminRecruitmentPage() {
                                   disabled={busyApplicationId !== null || syncing}
                                   className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {busy ? '转正中...' : '转正'}
+                                  {busy ? tr('转正中...') : tr('转正')}
                                 </button>
                                 <span className="text-xs text-gray-500">
-                                  该职位为实习岗位，转正后授予职位配置的正式角色。
+                                  {tr('该职位为实习岗位，转正后授予职位配置的正式角色。')}
                                 </span>
                               </>
                             )}
                           </div>
-                          <p className="mt-2 text-xs text-gray-500">{REVIEW_PERMISSION_HINT}</p>
+                          <p className="mt-2 text-xs text-gray-500">
+                            {tr(REVIEW_PERMISSION_HINT)}
+                          </p>
                           {syncNotice && (
                             <p
                               role={syncNotice.kind === 'error' ? 'alert' : 'status'}
@@ -3252,17 +3705,26 @@ export default function AdminRecruitmentPage() {
 
               <div className="mt-5 flex flex-col items-center justify-between gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] px-4 py-3 shadow-lg sm:flex-row">
                 <p className="text-xs text-gray-500">
-                  共 {totalCount} 条 · 第 {currentPage} / {totalPages} 页
-                  <span className="ml-2 text-gray-600">（每页 {PAGE_SIZE} 条）</span>
+                  {tr('共 {count} 条 · 第 {page} / {total} 页', {
+                    count: totalCount,
+                    page: currentPage,
+                    total: totalPages,
+                  })}
+                  <span className="ml-2 text-gray-600">
+                    {tr('（每页 {size} 条）', { size: PAGE_SIZE })}
+                  </span>
                 </p>
-                <nav aria-label="招募申请分页" className="flex flex-wrap items-center gap-1">
+                <nav
+                  aria-label={tr('招募申请分页')}
+                  className="flex flex-wrap items-center gap-1"
+                >
                   <button
                     type="button"
                     onClick={() => goToPage(currentPage - 1)}
                     disabled={applicationsLoading || currentPage <= 1}
                     className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    上一页
+                    {tr('上一页')}
                   </button>
 
                   {pageItems.map((item, index) =>
@@ -3294,7 +3756,7 @@ export default function AdminRecruitmentPage() {
                     disabled={applicationsLoading || currentPage >= totalPages}
                     className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    下一页
+                    {tr('下一页')}
                   </button>
                 </nav>
               </div>

@@ -35,6 +35,12 @@ const EN: Record<string, string> = {
   '加入讨论，分享你的卡车生活。': 'Join the discussion and share your trucking life.',
   '发布新帖': 'New Post',
 
+  // ---- 官方公告版块卡片（category_id = 1，只读展示 announcements） ----
+  '只读': 'Read-only',
+  '后台发布的官方公告，版块内只读':
+    'Official announcements published from the admin console (read-only)',
+  '{n} 条公告': '{n} announcements',
+
   // ---- 当前在线成员 ----
   '当前在线成员': 'Online Now',
 
@@ -196,6 +202,8 @@ export default function ForumHome() {
   const [recentUsers, setRecentUsers] = useState<ProfileRow[]>([]);
   const [teamChanges, setTeamChanges] = useState<TeamChangeRow[]>([]);
   const [roleNames, setRoleNames] = useState<Record<string, string>>({});
+  // 官方公告版块只展示 announcements，这里取总数用于版块卡片提示（可为空）。
+  const [announcementCount, setAnnouncementCount] = useState<number | null>(null);
   const [teamChangesLoading, setTeamChangesLoading] = useState(true);
   const [teamChangesFailed, setTeamChangesFailed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -208,6 +216,12 @@ export default function ForumHome() {
         .select('id, name, name_en, description, description_en, icon')
         .order('id');
       if (catData) setCategories(catData);
+
+      // 1.1 官方公告版块（category_id = 1）现在展示 announcements，取总数用于卡片提示。
+      const { count: announcementTotal } = await supabase
+        .from('announcements')
+        .select('*', { count: 'exact', head: true });
+      if (announcementTotal !== null) setAnnouncementCount(announcementTotal);
 
       // 2. 获取最新动态（全站最新5条帖子）
       const { data: latest } = await supabase
@@ -296,6 +310,9 @@ export default function ForumHome() {
 
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('加载论坛数据中...')}</div>;
 
+  // 官方公告版块（id=1）为后台公告只读展示，首页「发布新帖」改指向第一个普通版块。
+  const defaultPostCategoryId = categories.find((cat) => cat.id !== 1)?.id ?? null;
+
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
@@ -352,29 +369,50 @@ export default function ForumHome() {
                   <h1 className="text-2xl font-bold text-white mb-1">{tr('CRT MP 论坛')}</h1>
                   <p className="text-gray-500 text-xs">{tr('加入讨论，分享你的卡车生活。')}</p>
                 </div>
-                <Link href="/forum/1/new" className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded text-sm font-bold transition shadow-lg flex items-center gap-2">
-                  <span>+</span> {tr('发布新帖')}
-                </Link>
+                {defaultPostCategoryId !== null && (
+                  <Link href={`/forum/${defaultPostCategoryId}/new`} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded text-sm font-bold transition shadow-lg flex items-center gap-2">
+                    <span>+</span> {tr('发布新帖')}
+                  </Link>
+                )}
               </div>
 
               <div className="space-y-3">
-                {categories.map((cat) => (
-                  <Link 
-                    key={cat.id} 
-                    href={`/forum/${cat.id}`} 
-                    className="block bg-[#2c2d31] border border-gray-700 rounded-lg overflow-hidden hover:border-blue-500 transition group shadow-lg"
-                  >
-                    <div className="flex items-center p-5">
-                      <div className="w-12 h-12 bg-[#1e1f23] rounded-full flex items-center justify-center text-2xl mr-5 text-blue-500 group-hover:scale-110 transition shadow-inner">
-                        {cat.icon === 'megaphone' ? '📢' : cat.icon === 'help' ? '🆘' : '💬'}
+                {categories.map((cat) => {
+                  const isOfficialBoard = cat.id === 1;
+                  return (
+                    <Link
+                      key={cat.id}
+                      href={`/forum/${cat.id}`}
+                      className="block bg-[#2c2d31] border border-gray-700 rounded-lg overflow-hidden hover:border-blue-500 transition group shadow-lg"
+                    >
+                      <div className="flex items-center p-5">
+                        <div className="w-12 h-12 bg-[#1e1f23] rounded-full flex items-center justify-center text-2xl mr-5 text-blue-500 group-hover:scale-110 transition shadow-inner">
+                          {cat.icon === 'megaphone' ? '📢' : cat.icon === 'help' ? '🆘' : '💬'}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{localizedText(locale, cat.name_en, cat.name)}</h2>
+                            {isOfficialBoard && (
+                              <span className="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-300">
+                                {tr('只读')}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-gray-400 text-xs mt-1">{localizedText(locale, cat.description_en, cat.description)}</p>
+                          {isOfficialBoard && (
+                            <p className="text-[11px] text-blue-400/80 mt-1">
+                              {tr('后台发布的官方公告，版块内只读')}
+                              {announcementCount !== null ? ` · ${tr('{n} 条公告', { n: announcementCount })}` : ''}
+                            </p>
+                          )}
+                        </div>
+                        <span className="ml-4 shrink-0 text-gray-600 group-hover:text-blue-400 transition" aria-hidden="true">
+                          →
+                        </span>
                       </div>
-                      <div className="flex-1">
-                        <h2 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{localizedText(locale, cat.name_en, cat.name)}</h2>
-                        <p className="text-gray-400 text-xs mt-1">{localizedText(locale, cat.description_en, cat.description)}</p>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  );
+                })}
               </div>
             </div>
 

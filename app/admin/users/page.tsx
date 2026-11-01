@@ -5,13 +5,94 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useLocale, useTr } from '@/components/I18nProvider';
 import {
   ROLE_LABELS,
   ROLE_LEVEL,
   canManageUsers,
   levelOf,
   roleLabel,
+  roleLabelEn,
 } from '@/lib/permissions';
+
+/** 静态 UI 文案：中文原文 -> 英文。英文缺失时 useTr 自动回退中文。 */
+const EN: Record<string, string> = {
+  // ---------- 加载 / 权限 / 错误 ----------
+  '加载权限数据中...': 'Loading permission data...',
+  '无法验证权限：{msg}': 'Cannot verify permissions: {msg}',
+  '操作失败，请稍后重试': 'Action failed. Please try again later.',
+  '🚫 权限不足：只有经理 (Lv.70) 及以上级别才能访问人员管理。':
+    '🚫 Insufficient permissions: only managers (Lv.70) and above can access people management.',
+  '加载失败': 'Failed to load',
+  '重试': 'Retry',
+
+  // ---------- 页面头部 ----------
+  '👑 人员与职位管理': '👑 People & Role Management',
+  '当前登录身份：': 'Signed in as: ',
+  '返回控制台': 'Back to console',
+
+  // ---------- 列表工具栏 ----------
+  '👥 成员列表': '👥 Members',
+  '共 {total} 人 · 第 {currentPage} / {totalPages} 页':
+    '{total} members · Page {currentPage} / {totalPages}',
+  '昵称 / 专属 ID / Steam ID': 'Nickname / Custom ID / Steam ID',
+  '搜索成员': 'Search members',
+  '按职位筛选': 'Filter by role',
+  '全部职位': 'All roles',
+  '{name}（Lv.{level}）': '{name} (Lv.{level})',
+  '搜索': 'Search',
+  '加载中...': 'Loading...',
+  '刷新': 'Refresh',
+  '清除筛选': 'Clear filters',
+  '每页 {size} 条；数字关键词匹配专属 ID / Steam ID，文字匹配昵称。':
+    'Up to {size} per page; numeric keywords match Custom ID / Steam ID, text matches nicknames.',
+  '当前搜索：': 'Current search: ',
+
+  // ---------- 空状态 ----------
+  '没有符合当前筛选条件的成员': 'No members match the current filters',
+  '暂无成员数据': 'No member data yet',
+
+  // ---------- 表格 ----------
+  '成员名称': 'Member',
+  '原始 ID': 'Original ID',
+  '专属靓号': 'Custom ID',
+  '当前职位': 'Role',
+  '操作': 'Actions',
+  '未命名': 'Unnamed',
+  '未分配': 'Unassigned',
+  '留空撤回': 'Leave blank to clear',
+
+  // ---------- 编辑职位 ----------
+  '选择职位...': 'Select a role...',
+  '不能修改自己的职位/等级': 'You cannot change your own role or level',
+  '不能修改自己的职位/等级（可改靓号）':
+    'You cannot change your own role or level (the custom ID is still editable)',
+  '搜索职位...': 'Search roles...',
+  '搜索职位': 'Search roles',
+  '无匹配职位 (请检查 Supabase 数据库)': 'No matching roles (check the Supabase database)',
+  '保存': 'Save',
+  '取消': 'Cancel',
+  '编辑': 'Edit',
+  '不可操作': 'Not editable',
+
+  // ---------- 分页 ----------
+  '上一页': 'Previous',
+  '下一页': 'Next',
+
+  // ---------- 操作提示 / 确认框 ----------
+  '靓号必须是 4-8 位数字': 'The custom ID must be 4-8 digits.',
+  '❌ 不能修改自己的职位或等级（防止误操作导致失去管理权限）。如需变更请联系其他开发者。':
+    '❌ You cannot change your own role or level (this prevents accidentally losing admin access). Ask another developer to make the change.',
+  '❌ 职位列表未加载或该职位不存在，暂时无法修改职位，请刷新页面后重试。':
+    '❌ The role list is not loaded or this role does not exist, so the role cannot be changed. Refresh the page and try again.',
+  '❌ 权限不足：你不能修改同级或上级的职位！':
+    '❌ Insufficient permissions: you cannot change the role of someone at your level or above.',
+  '❌ 权限不足：你不能授予别人同级或更高的职位！':
+    '❌ Insufficient permissions: you cannot grant a role at your level or above.',
+  '⚠️ 你正在降级另一位开发者，确定继续吗？此操作可能影响社区最高管理权限。':
+    '⚠️ You are about to demote another developer. Continue? This may affect the highest admin access in the community.',
+  '保存失败: {msg}': 'Failed to save: {msg}',
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -148,6 +229,8 @@ function buildPageItems(current: number, total: number): Array<number | '…'> {
 
 export default function UserManagementPage() {
   const router = useRouter();
+  const tr = useTr(EN);
+  const locale = useLocale();
 
   const [checking, setChecking] = useState(true);
   const [currentUser, setCurrentUser] = useState<CurrentProfile | null>(null);
@@ -198,7 +281,7 @@ export default function UserManagementPage() {
         if (!active) return;
 
         if (profileError) {
-          alert(`无法验证权限：${profileError.message}`);
+          alert(tr('无法验证权限：{msg}', { msg: profileError.message }));
           router.push('/admin');
           return;
         }
@@ -207,7 +290,7 @@ export default function UserManagementPage() {
         const myLevel = levelOf(profile?.role_level);
 
         if (!canManageUsers(myLevel)) {
-          alert('🚫 权限不足：只有经理 (Lv.70) 及以上级别才能访问人员管理。');
+          alert(tr('🚫 权限不足：只有经理 (Lv.70) 及以上级别才能访问人员管理。'));
           router.push('/admin');
           return;
         }
@@ -237,7 +320,7 @@ export default function UserManagementPage() {
         setChecking(false);
       } catch (error) {
         if (!active) return;
-        alert(`无法验证权限：${errorMessage(error)}`);
+        alert(tr('无法验证权限：{msg}', { msg: tr(errorMessage(error)) }));
         router.push('/admin');
       }
     };
@@ -380,7 +463,7 @@ export default function UserManagementPage() {
     // 0) 靓号格式校验：非空时必须是 4-8 位数字（与数据库 profiles_custom_id_format 约束一致）
     const trimmedCustomId = editCustomId.trim();
     if (trimmedCustomId !== '' && !/^[0-9]{4,8}$/.test(trimmedCustomId)) {
-      alert('靓号必须是 4-8 位数字');
+      alert(tr('靓号必须是 4-8 位数字'));
       return;
     }
 
@@ -394,7 +477,7 @@ export default function UserManagementPage() {
     //    把自己从 100 降级会直接让社区失去最高管理员（且无法再改回来），属于不可逆误操作。
     //    这里仍允许改自己的靓号，但 role / role_level 必须保持不变；开发者权限转移请由另一位开发者操作。
     if (isSelf && (editRole !== (targetUser.role || 'member') || editLevel !== targetLevel)) {
-      alert('❌ 不能修改自己的职位或等级（防止误操作导致失去管理权限）。如需变更请联系其他开发者。');
+      alert(tr('❌ 不能修改自己的职位或等级（防止误操作导致失去管理权限）。如需变更请联系其他开发者。'));
       return;
     }
 
@@ -407,7 +490,7 @@ export default function UserManagementPage() {
 
     // roles 表未加载或该职位不存在时，禁止改职位（避免写入任意 role 字符串造成脏数据）
     if (!roleDef && roleChanged) {
-      alert('❌ 职位列表未加载或该职位不存在，暂时无法修改职位，请刷新页面后重试。');
+      alert(tr('❌ 职位列表未加载或该职位不存在，暂时无法修改职位，请刷新页面后重试。'));
       return;
     }
 
@@ -419,19 +502,19 @@ export default function UserManagementPage() {
     if (!isSelf) {
       // 3) 不能修改同级或上级；开发者除外
       if (!isDeveloper && targetLevel >= myLevel) {
-        alert('❌ 权限不足：你不能修改同级或上级的职位！');
+        alert(tr('❌ 权限不足：你不能修改同级或上级的职位！'));
         return;
       }
 
       // 4) 不能授予同级或更高职位；开发者除外
       if (!isDeveloper && nextLevel >= myLevel) {
-        alert('❌ 权限不足：你不能授予别人同级或更高的职位！');
+        alert(tr('❌ 权限不足：你不能授予别人同级或更高的职位！'));
         return;
       }
 
       // 5) 降级另一位开发者属于高危操作，要求二次确认
       if (targetLevel >= ROLE_LEVEL.DEVELOPER && nextLevel < targetLevel) {
-        if (!confirm('⚠️ 你正在降级另一位开发者，确定继续吗？此操作可能影响社区最高管理权限。')) {
+        if (!confirm(tr('⚠️ 你正在降级另一位开发者，确定继续吗？此操作可能影响社区最高管理权限。'))) {
           return;
         }
       }
@@ -450,7 +533,7 @@ export default function UserManagementPage() {
       .eq('id', targetUser.id);
 
     if (error) {
-      alert('保存失败: ' + error.message);
+      alert(tr('保存失败: {msg}', { msg: error.message }));
     } else {
       setEditingId(null);
       // 保存后刷新当前页（保持页码与筛选条件）
@@ -461,7 +544,7 @@ export default function UserManagementPage() {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#18191c] text-white">
-        加载权限数据中...
+        {tr('加载权限数据中...')}
       </div>
     );
   }
@@ -469,20 +552,33 @@ export default function UserManagementPage() {
   const myLevel = levelOf(currentUser?.role_level);
   const isDeveloper = myLevel >= ROLE_LEVEL.DEVELOPER;
 
-  // 展示用职位名：优先 ROLE_LABELS 标准中文名，其次 roles 表的 display_name，最后回退原始 role / 等级标签
-  const labelForRole = (role: string | null | undefined, level: number | null | undefined) =>
-    (role ? ROLE_LABELS[role] : undefined) ||
-    roles.find((item) => item.name === role)?.display_name ||
-    roleLabel(role, level);
+  // 展示用职位名：中文优先 ROLE_LABELS 标准名，其次 roles 表的 display_name，
+  // 最后回退原始 role / 等级标签；英文统一用 roleLabelEn。
+  const labelForRole = (role: string | null | undefined, level: number | null | undefined) => {
+    if (locale === 'en') {
+      return roleLabelEn(role, level === null || level === undefined ? 0 : levelOf(level));
+    }
+    return (
+      (role ? ROLE_LABELS[role] : undefined) ||
+      roles.find((item) => item.name === role)?.display_name ||
+      roleLabel(role, level)
+    );
+  };
+
+  // 编辑下拉 / 职位筛选里的职位名（英文同样用 roleLabelEn）。
+  const labelForRoleOption = (name: string, level: number) => {
+    if (locale === 'en') return roleLabelEn(name, levelOf(level));
+    return ROLE_LABELS[name] || roles.find((item) => item.name === name)?.display_name || name;
+  };
 
   // 非开发者最多只能授予「严格低于自己」的职位，避免越级提拔
   const allowedRoles = roles.filter((role) => isDeveloper || levelOf(role.level) < myLevel);
+  const roleSearchTerm = roleSearch.toLowerCase();
   const filteredRoles = allowedRoles.filter(
     (role) =>
-      (ROLE_LABELS[role.name] || role.display_name || '')
-        .toLowerCase()
-        .includes(roleSearch.toLowerCase()) ||
-      role.name.toLowerCase().includes(roleSearch.toLowerCase())
+      labelForRoleOption(role.name, role.level).toLowerCase().includes(roleSearchTerm) ||
+      (ROLE_LABELS[role.name] || role.display_name || '').toLowerCase().includes(roleSearchTerm) ||
+      role.name.toLowerCase().includes(roleSearchTerm)
   );
 
   return (
@@ -490,14 +586,14 @@ export default function UserManagementPage() {
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-gray-700 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">👑 人员与职位管理</h1>
+            <h1 className="text-2xl font-bold text-white">{tr('👑 人员与职位管理')}</h1>
             <p className="mt-1 text-xs text-gray-500">
-              当前登录身份：
+              {tr('当前登录身份：')}
               <span className="font-bold text-blue-400">{labelForRole(currentUser?.role, myLevel)}</span>
             </p>
           </div>
           <Link href="/admin" className="text-sm text-blue-400 transition hover:text-blue-300">
-            返回控制台
+            {tr('返回控制台')}
           </Link>
         </div>
 
@@ -507,9 +603,13 @@ export default function UserManagementPage() {
         >
           <div className="space-y-3 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-bold text-white">👥 成员列表</h2>
+              <h2 className="text-sm font-bold text-white">{tr('👥 成员列表')}</h2>
               <span className="text-xs text-gray-500">
-                共 {total} 人 · 第 {currentPage} / {totalPages} 页
+                {tr('共 {total} 人 · 第 {currentPage} / {totalPages} 页', {
+                  total,
+                  currentPage,
+                  totalPages,
+                })}
               </span>
             </div>
 
@@ -518,9 +618,9 @@ export default function UserManagementPage() {
                 type="text"
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="昵称 / 专属 ID / Steam ID"
+                placeholder={tr('昵称 / 专属 ID / Steam ID')}
                 maxLength={64}
-                aria-label="搜索成员"
+                aria-label={tr('搜索成员')}
                 className="flex-1 rounded border border-gray-600 bg-[#18191c] p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none"
               />
               <select
@@ -529,13 +629,16 @@ export default function UserManagementPage() {
                   setRoleFilter(event.target.value);
                   setPage(1);
                 }}
-                aria-label="按职位筛选"
+                aria-label={tr('按职位筛选')}
                 className="rounded border border-gray-600 bg-[#18191c] p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none md:w-48"
               >
-                <option value="all">全部职位</option>
+                <option value="all">{tr('全部职位')}</option>
                 {roles.map((role) => (
                   <option key={role.name} value={role.name}>
-                    {ROLE_LABELS[role.name] || role.display_name}（Lv.{levelOf(role.level)}）
+                    {tr('{name}（Lv.{level}）', {
+                      name: labelForRoleOption(role.name, role.level),
+                      level: levelOf(role.level),
+                    })}
                   </option>
                 ))}
               </select>
@@ -545,7 +648,7 @@ export default function UserManagementPage() {
                   disabled={listLoading}
                   className="rounded bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {listLoading ? '加载中...' : '搜索'}
+                  {listLoading ? tr('加载中...') : tr('搜索')}
                 </button>
                 <button
                   type="button"
@@ -553,7 +656,7 @@ export default function UserManagementPage() {
                   disabled={listLoading}
                   className="rounded border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
                 >
-                  刷新
+                  {tr('刷新')}
                 </button>
                 {hasFilters && (
                   <button
@@ -561,18 +664,20 @@ export default function UserManagementPage() {
                     onClick={resetFilters}
                     className="rounded border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white"
                   >
-                    清除筛选
+                    {tr('清除筛选')}
                   </button>
                 )}
               </div>
             </form>
 
             <p className="text-xs text-gray-500">
-              每页 {PAGE_SIZE} 条；数字关键词匹配专属 ID / Steam ID，文字匹配昵称。
+              {tr('每页 {size} 条；数字关键词匹配专属 ID / Steam ID，文字匹配昵称。', {
+                size: PAGE_SIZE,
+              })}
               {query && (
                 <>
                   {' '}
-                  当前搜索：<span className="text-gray-300">“{query}”</span>
+                  {tr('当前搜索：')}<span className="text-gray-300">“{query}”</span>
                 </>
               )}
             </p>
@@ -580,33 +685,33 @@ export default function UserManagementPage() {
 
           {listError ? (
             <div className="border-t border-gray-700 p-6 text-center">
-              <p className="text-sm font-bold text-red-400">加载失败</p>
-              <p className="mt-1 break-all text-xs text-red-300/80">{listError}</p>
+              <p className="text-sm font-bold text-red-400">{tr('加载失败')}</p>
+              <p className="mt-1 break-all text-xs text-red-300/80">{tr(listError)}</p>
               <button
                 type="button"
                 onClick={handleRefresh}
                 className="mt-3 rounded bg-red-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-red-600"
               >
-                重试
+                {tr('重试')}
               </button>
             </div>
           ) : (
             <>
               <div className="hidden border-t border-gray-700 bg-[#232428] px-4 py-3 text-xs font-bold text-gray-400 lg:grid lg:grid-cols-[minmax(0,1.3fr)_8rem_10rem_minmax(0,1fr)_11rem] lg:gap-4">
-                <span>成员名称</span>
-                <span>原始 ID</span>
-                <span>专属靓号</span>
-                <span>当前职位</span>
-                <span>操作</span>
+                <span>{tr('成员名称')}</span>
+                <span>{tr('原始 ID')}</span>
+                <span>{tr('专属靓号')}</span>
+                <span>{tr('当前职位')}</span>
+                <span>{tr('操作')}</span>
               </div>
 
               <div className="divide-y divide-gray-700/60 border-t border-gray-700 lg:border-t-0">
                 {listLoading ? (
-                  <p className="px-4 py-10 text-center text-sm text-gray-500">加载中...</p>
+                  <p className="px-4 py-10 text-center text-sm text-gray-500">{tr('加载中...')}</p>
                 ) : users.length === 0 ? (
                   <div className="px-4 py-10 text-center">
                     <p className="text-sm text-gray-400">
-                      {hasFilters ? '没有符合当前筛选条件的成员' : '暂无成员数据'}
+                      {hasFilters ? tr('没有符合当前筛选条件的成员') : tr('暂无成员数据')}
                     </p>
                     {hasFilters && (
                       <button
@@ -614,7 +719,7 @@ export default function UserManagementPage() {
                         onClick={resetFilters}
                         className="mt-3 text-xs font-bold text-blue-400 transition hover:text-blue-300"
                       >
-                        清除筛选
+                        {tr('清除筛选')}
                       </button>
                     )}
                   </div>
@@ -632,16 +737,16 @@ export default function UserManagementPage() {
                       >
                         <div className="flex items-center justify-between gap-3 lg:block">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                            成员名称
+                            {tr('成员名称')}
                           </span>
                           <span className="min-w-0 truncate font-bold text-white">
-                            {user.display_name || '未命名'}
+                            {user.display_name || tr('未命名')}
                           </span>
                         </div>
 
                         <div className="flex items-center justify-between gap-3 lg:block">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                            原始 ID
+                            {tr('原始 ID')}
                           </span>
                           <span className="font-mono text-xs text-gray-500">
                             {user.random_id || '-'}
@@ -650,7 +755,7 @@ export default function UserManagementPage() {
 
                         <div className="flex items-center justify-between gap-3 lg:block">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                            专属靓号
+                            {tr('专属靓号')}
                           </span>
                           {isEditingRow ? (
                             <input
@@ -660,22 +765,22 @@ export default function UserManagementPage() {
                                 setEditCustomId(event.target.value.replace(/\D/g, ''))
                               }
                               maxLength={8}
-                              aria-label="专属靓号"
+                              aria-label={tr('专属靓号')}
                               className="w-24 rounded border border-blue-500 bg-[#18191c] px-2 py-1 text-sm text-white"
-                              placeholder="留空撤回"
+                              placeholder={tr('留空撤回')}
                             />
                           ) : user.custom_id ? (
                             <span className="rounded border border-blue-700/50 bg-blue-900/30 px-2 py-1 font-mono text-xs text-blue-400">
                               {user.custom_id}
                             </span>
                           ) : (
-                            <span className="text-xs italic text-gray-600">未分配</span>
+                            <span className="text-xs italic text-gray-600">{tr('未分配')}</span>
                           )}
                         </div>
 
                         <div className="flex items-center justify-between gap-3 lg:block">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                            当前职位
+                            {tr('当前职位')}
                           </span>
                           {isEditingRow ? (
                             <div className="relative w-full lg:w-48" ref={dropdownRef}>
@@ -685,22 +790,21 @@ export default function UserManagementPage() {
                                   !isSelfRow && setIsRoleDropdownOpen(!isRoleDropdownOpen)
                                 }
                                 disabled={isSelfRow}
-                                title={isSelfRow ? '不能修改自己的职位/等级' : undefined}
+                                title={isSelfRow ? tr('不能修改自己的职位/等级') : undefined}
                                 className={`flex w-full items-center justify-between gap-2 rounded border border-blue-500 bg-[#18191c] px-3 py-1.5 text-left text-sm text-white ${
                                   isSelfRow ? 'cursor-not-allowed opacity-60' : ''
                                 }`}
                               >
                                 <span className="truncate">
-                                  {(editRole ? ROLE_LABELS[editRole] : undefined) ||
-                                    roles.find((role) => role.name === editRole)?.display_name ||
-                                    editRole ||
-                                    '选择职位...'}
+                                  {editRole
+                                    ? labelForRoleOption(editRole, editLevel)
+                                    : tr('选择职位...')}
                                 </span>
                                 <span className="text-xs text-gray-500">▼</span>
                               </button>
                               {isSelfRow && (
                                 <p className="mt-1 text-[10px] text-yellow-500/80">
-                                  不能修改自己的职位/等级（可改靓号）
+                                  {tr('不能修改自己的职位/等级（可改靓号）')}
                                 </p>
                               )}
 
@@ -711,8 +815,8 @@ export default function UserManagementPage() {
                                       type="text"
                                       value={roleSearch}
                                       onChange={(event) => setRoleSearch(event.target.value)}
-                                      placeholder="搜索职位..."
-                                      aria-label="搜索职位"
+                                      placeholder={tr('搜索职位...')}
+                                      aria-label={tr('搜索职位')}
                                       className="w-full rounded border border-gray-600 bg-[#111] p-1.5 text-xs text-white focus:outline-none"
                                       autoFocus
                                     />
@@ -720,7 +824,7 @@ export default function UserManagementPage() {
                                   <div className="max-h-60 overflow-y-auto">
                                     {filteredRoles.length === 0 ? (
                                       <p className="py-2 text-center text-xs text-gray-500">
-                                        无匹配职位 (请检查 Supabase 数据库)
+                                        {tr('无匹配职位 (请检查 Supabase 数据库)')}
                                       </p>
                                     ) : (
                                       filteredRoles.map((role) => (
@@ -739,7 +843,7 @@ export default function UserManagementPage() {
                                           }`}
                                         >
                                           <div className="flex justify-between">
-                                            <span>{ROLE_LABELS[role.name] || role.display_name}</span>
+                                            <span>{labelForRoleOption(role.name, role.level)}</span>
                                             <span className="text-xs opacity-50">
                                               Lv.{levelOf(role.level)}
                                             </span>
@@ -775,7 +879,7 @@ export default function UserManagementPage() {
 
                         <div className="flex items-center justify-between gap-3 lg:justify-start">
                           <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
-                            操作
+                            {tr('操作')}
                           </span>
                           {isEditingRow ? (
                             <div className="flex items-center gap-2">
@@ -784,14 +888,14 @@ export default function UserManagementPage() {
                                 onClick={() => void handleSave(user)}
                                 className="rounded bg-green-600 px-3 py-1 text-sm text-white transition hover:bg-green-500"
                               >
-                                保存
+                                {tr('保存')}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setEditingId(null)}
                                 className="text-sm text-gray-400 transition hover:text-white"
                               >
-                                取消
+                                {tr('取消')}
                               </button>
                             </div>
                           ) : canEditRow ? (
@@ -800,10 +904,10 @@ export default function UserManagementPage() {
                               onClick={() => handleEditClick(user)}
                               className="text-sm font-bold text-blue-400 transition hover:text-blue-300"
                             >
-                              编辑
+                              {tr('编辑')}
                             </button>
                           ) : (
-                            <span className="text-sm text-gray-600">不可操作</span>
+                            <span className="text-sm text-gray-600">{tr('不可操作')}</span>
                           )}
                         </div>
                       </article>
@@ -817,7 +921,11 @@ export default function UserManagementPage() {
           {!listError && total > 0 && (
             <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-700 px-4 py-3 sm:flex-row">
               <p className="text-xs text-gray-500">
-                共 {total} 人 · 第 {currentPage} / {totalPages} 页
+                {tr('共 {total} 人 · 第 {currentPage} / {totalPages} 页', {
+                  total,
+                  currentPage,
+                  totalPages,
+                })}
               </p>
               <div className="flex flex-wrap items-center gap-1">
                 <button
@@ -826,7 +934,7 @@ export default function UserManagementPage() {
                   disabled={currentPage <= 1}
                   className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  上一页
+                  {tr('上一页')}
                 </button>
                 {pageItems.map((item, index) =>
                   typeof item === 'number' ? (
@@ -855,7 +963,7 @@ export default function UserManagementPage() {
                   disabled={currentPage >= totalPages}
                   className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  下一页
+                  {tr('下一页')}
                 </button>
               </div>
             </div>

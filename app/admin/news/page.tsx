@@ -5,12 +5,70 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
+import { useTr } from '@/components/I18nProvider';
 import { canManageAnnouncements, levelOf } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+/** 正文编辑器占位提示（中文原文作为翻译 key）。 */
+const CONTENT_PLACEHOLDER =
+  '支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题';
+
+/** 静态 UI 文案：中文原文 -> 英文。英文缺失时 useTr 自动回退中文。 */
+const EN: Record<string, string> = {
+  // ---------- 页面外壳 ----------
+  '验证权限中...': 'Checking permissions...',
+  '📰 发布官方新闻': '📰 Publish Official News',
+  '← 返回控制台': '← Back to console',
+  '查看新闻列表 →': 'View news list →',
+
+  // ---------- 表单：类型与标题 ----------
+  '新闻类型': 'News type',
+  '公告': 'Announcement',
+  '更新': 'Update',
+  '新闻': 'News',
+  '活动': 'Event',
+  '新闻标题': 'News title',
+  '英文标题（选填 · 英文界面优先显示）': 'English title (optional · shown first in the English UI)',
+  '留空时英文界面回退中文标题。':
+    'When left empty, the English UI falls back to the Chinese title.',
+
+  // ---------- 表单：图片与链接 ----------
+  '封面图片 URL (推荐 Imgur 直链)': 'Cover image URL (Imgur direct links recommended)',
+  '点击图片跳转链接 (选填，不填则跳转站内详情)':
+    'Image click-through link (optional; defaults to the in-site detail page)',
+
+  // ---------- 表单：正文 ----------
+  '正文内容': 'Content',
+  [CONTENT_PLACEHOLDER]:
+    'Supports **bold**, *italic*, `code`, [links](https://...), ![images](https://...), > quotes, - lists, ## headings',
+  'English content（选填 · 英文界面优先显示）':
+    'English content (optional · shown first in the English UI)',
+  '留空时英文界面回退中文正文。':
+    'When left empty, the English UI falls back to the Chinese content.',
+
+  // ---------- 发布反馈 ----------
+  '发布失败: {msg}': 'Failed to publish: {msg}',
+  '🎉 已发布，去新闻页查看。': '🎉 Published. View it on the news page.',
+  '正在发布...': 'Publishing...',
+  '立即发布': 'Publish now',
+
+  // ---------- 最近公告 ----------
+  '最近公告': 'Recent announcements',
+  'EN 标记表示是否已有英文翻译': 'The EN badge shows whether an English translation exists',
+  '暂无公告。': 'No announcements yet.',
+  '未命名公告': 'Untitled announcement',
+  'EN 完整': 'EN complete',
+  'EN 部分': 'EN partial',
+  '仅中文': 'Chinese only',
+
+  // ---------- 权限提示 ----------
+  '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能发布新闻与公告。':
+    '🚫 Insufficient permissions: only staff (Lv.40) and above can publish news and announcements.',
+};
 
 type RecentAnnouncement = {
   id: number;
@@ -21,6 +79,7 @@ type RecentAnnouncement = {
 };
 
 export default function AdminNewsPage() {
+  const tr = useTr(EN);
   const [title, setTitle] = useState('');
   const [titleEn, setTitleEn] = useState('');
   const [content, setContent] = useState('');
@@ -32,6 +91,7 @@ export default function AdminNewsPage() {
   const [linkUrl, setLinkUrl] = useState('');
   
   const [msg, setMsg] = useState('');
+  const [msgError, setMsgError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [recent, setRecent] = useState<RecentAnnouncement[]>([]);
@@ -65,7 +125,7 @@ export default function AdminNewsPage() {
       
       const { data } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
       if (!canManageAnnouncements(levelOf(data?.role_level))) {
-        alert('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能发布新闻与公告。');
+        alert(tr('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能发布新闻与公告。'));
         router.push('/');
         return;
       }
@@ -92,9 +152,11 @@ export default function AdminNewsPage() {
     }]);
 
     if (error) {
-      setMsg(`发布失败: ${error.message}`);
+      setMsg(tr('发布失败: {msg}', { msg: error.message }));
+      setMsgError(true);
     } else {
-      setMsg('🎉 已发布，去新闻页查看。');
+      setMsg(tr('🎉 已发布，去新闻页查看。'));
+      setMsgError(false);
       setTitle('');
       setTitleEn('');
       setContent('');
@@ -107,36 +169,36 @@ export default function AdminNewsPage() {
   };
 
   if (checking) {
-    return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">验证权限中...</div>;
+    return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('验证权限中...')}</div>;
   }
 
   return (
     <main className="min-h-screen bg-[#18191c] text-white p-10 flex flex-col items-center font-sans">
       <div className="w-full max-w-2xl bg-[#2c2d31] p-8 rounded-xl border border-gray-700 shadow-2xl">
         <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
-          <h1 className="text-2xl font-bold text-blue-400">📰 发布官方新闻</h1>
-          <Link href="/admin" className="text-gray-400 hover:text-white transition">← 返回控制台</Link>
+          <h1 className="text-2xl font-bold text-blue-400">{tr('📰 发布官方新闻')}</h1>
+          <Link href="/admin" className="text-gray-400 hover:text-white transition">{tr('← 返回控制台')}</Link>
         </div>
         
         <form onSubmit={handlePublish} className="space-y-5">
           <div>
-            <label className="block text-gray-400 mb-1 text-sm">新闻类型</label>
+            <label className="block text-gray-400 mb-1 text-sm">{tr('新闻类型')}</label>
             <select value={type} onChange={(e) => setType(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 p-3 rounded text-white focus:outline-none focus:border-blue-500">
-              <option value="公告">公告</option>
-              <option value="更新">更新</option>
-              <option value="新闻">新闻</option>
-              <option value="活动">活动</option>
+              <option value="公告">{tr('公告')}</option>
+              <option value="更新">{tr('更新')}</option>
+              <option value="新闻">{tr('新闻')}</option>
+              <option value="活动">{tr('活动')}</option>
             </select>
           </div>
           
           <div>
-            <label className="block text-gray-400 mb-1 text-sm">新闻标题</label>
+            <label className="block text-gray-400 mb-1 text-sm">{tr('新闻标题')}</label>
             <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 p-3 rounded text-white focus:outline-none focus:border-blue-500" required />
           </div>
 
           <div>
             <label htmlFor="admin-news-title-en" className="block text-gray-400 mb-1 text-sm">
-              英文标题（选填 · 英文界面优先显示）
+              {tr('英文标题（选填 · 英文界面优先显示）')}
             </label>
             <input
               id="admin-news-title-en"
@@ -146,12 +208,12 @@ export default function AdminNewsPage() {
               className="w-full bg-[#18191c] border border-gray-600 p-3 rounded text-white focus:outline-none focus:border-blue-500"
               placeholder="English title (optional)"
             />
-            <p className="mt-1 text-xs text-gray-500">留空时英文界面回退中文标题。</p>
+            <p className="mt-1 text-xs text-gray-500">{tr('留空时英文界面回退中文标题。')}</p>
           </div>
 
           {/* 🌟 改成图片 URL 输入框 */}
           <div>
-            <label className="block text-gray-400 mb-1 text-sm">封面图片 URL (推荐 Imgur 直链)</label>
+            <label className="block text-gray-400 mb-1 text-sm">{tr('封面图片 URL (推荐 Imgur 直链)')}</label>
             <input 
               type="url" 
               value={imageUrl} 
@@ -163,7 +225,7 @@ export default function AdminNewsPage() {
 
           {/* 🌟 改成跳转链接 URL 输入框 */}
           <div>
-            <label className="block text-gray-400 mb-1 text-sm">点击图片跳转链接 (选填，不填则跳转站内详情)</label>
+            <label className="block text-gray-400 mb-1 text-sm">{tr('点击图片跳转链接 (选填，不填则跳转站内详情)')}</label>
             <input 
               type="url" 
               value={linkUrl} 
@@ -175,46 +237,46 @@ export default function AdminNewsPage() {
 
           <div>
             <RichTextEditor
-              label="正文内容"
+              label={tr('正文内容')}
               value={content}
               onChange={setContent}
               rows={8}
               required
-              placeholder="支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题"
+              placeholder={tr(CONTENT_PLACEHOLDER)}
             />
           </div>
 
           <div>
             <RichTextEditor
-              label="English content（选填 · 英文界面优先显示）"
+              label={tr('English content（选填 · 英文界面优先显示）')}
               value={contentEn}
               onChange={setContentEn}
               rows={6}
               placeholder="Optional English content. Supports the same **Markdown** syntax."
             />
-            <p className="mt-1 text-xs text-gray-500">留空时英文界面回退中文正文。</p>
+            <p className="mt-1 text-xs text-gray-500">{tr('留空时英文界面回退中文正文。')}</p>
           </div>
           
           <button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 w-full py-3 rounded font-bold text-lg transition disabled:opacity-50 shadow-lg">
-            {loading ? '正在发布...' : '立即发布'}
+            {loading ? tr('正在发布...') : tr('立即发布')}
           </button>
         </form>
 
         <div className="mt-5 text-center">
           <Link href="/news" className="text-sm text-blue-400 hover:text-blue-300 transition">
-            查看新闻列表 →
+            {tr('查看新闻列表 →')}
           </Link>
         </div>
 
-        {msg && <p className={`mt-4 text-center font-bold ${msg.includes('失败') ? 'text-red-400' : 'text-green-400'}`}>{msg}</p>}
+        {msg && <p className={`mt-4 text-center font-bold ${msgError ? 'text-red-400' : 'text-green-400'}`}>{msg}</p>}
 
         <div className="mt-8 border-t border-gray-700 pt-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-bold text-gray-200">最近公告</h2>
-            <span className="text-[11px] text-gray-500">EN 标记表示是否已有英文翻译</span>
+            <h2 className="text-sm font-bold text-gray-200">{tr('最近公告')}</h2>
+            <span className="text-[11px] text-gray-500">{tr('EN 标记表示是否已有英文翻译')}</span>
           </div>
           {recent.length === 0 ? (
-            <p className="text-xs text-gray-500">暂无公告。</p>
+            <p className="text-xs text-gray-500">{tr('暂无公告。')}</p>
           ) : (
             <ul className="space-y-2">
               {recent.map((item) => {
@@ -232,7 +294,7 @@ export default function AdminNewsPage() {
                       href={`/news/${item.id}`}
                       className="min-w-0 truncate text-sm text-gray-300 transition hover:text-blue-400"
                     >
-                      {item.title?.trim() || '未命名公告'}
+                      {item.title?.trim() || tr('未命名公告')}
                     </Link>
                     <span
                       className={`shrink-0 rounded border px-2 py-0.5 text-[10px] font-bold ${
@@ -243,7 +305,7 @@ export default function AdminNewsPage() {
                             : 'border-gray-600 bg-[#232428] text-gray-400'
                       }`}
                     >
-                      {fullEn ? 'EN 完整' : hasEn ? 'EN 部分' : '仅中文'}
+                      {fullEn ? tr('EN 完整') : hasEn ? tr('EN 部分') : tr('仅中文')}
                     </span>
                   </li>
                 );
