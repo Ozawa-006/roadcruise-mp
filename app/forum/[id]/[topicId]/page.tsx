@@ -81,7 +81,12 @@ export default function TopicDetailPage() {
     
     let finalContent = replyContent;
     if (quoteUser) {
-      finalContent = `> 引用 @${quoteUser} 的发言：\n> ${quoteContent}\n\n${replyContent}`;
+      // 多行引用：每一行都加 "> " 前缀，避免只有第一行被富文本渲染成引用块
+      const quotedLines = quoteContent
+        .split(/\r?\n/)
+        .map((line) => (line.trim() ? `> ${line}` : '>'))
+        .join('\n');
+      finalContent = `> 引用 @${quoteUser} 的发言：\n${quotedLines}\n\n${replyContent}`;
     }
 
     if (!finalContent.trim()) return;

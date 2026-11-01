@@ -42,6 +42,10 @@ export const CHANGELOG: ChangelogEntry[] = [
         kind: 'chore',
         text: '历史纯文本帖子/公告保持原样显示（换行保留），无需数据迁移',
       },
+      {
+        kind: 'fix',
+        text: '多行引用回复：引用内容每一行都加 `> ` 前缀，富文本下正确显示为引用块',
+      },
     ],
   },
   {
