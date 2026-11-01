@@ -21,10 +21,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.32v',
+    date: '2026-11-01',
+    title: '邮件通道与找回密码上线',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '自助找回密码正式可用：登录页「忘记密码？」→ 阿里云邮件推送发送重置邮件 → `/reset-password` 设置新密码（实测 QQ 邮箱可正常收到）',
+      },
+      {
+        kind: 'feature',
+        text: '认证邮件模板中文化：重置密码 / 注册确认邮件改为中文并带 RCT MP 品牌样式',
+      },
+      {
+        kind: 'chore',
+        text: 'Supabase 自定义 SMTP（smtpdm.aliyun.com:465 SSL）配置完成；认证邮件限流由 2 封/小时提高到 30 封/小时',
+      },
+      {
+        kind: 'chore',
+        text: '发信域名 `mail.roadcruise-mp.com` 完成 SPF / DKIM / DMARC / MX 解析验证',
+      },
+    ],
+  },
+  {
     version: '0.0.31v',
     date: '2026-11-01',
     title: '账号找回与后台分页',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

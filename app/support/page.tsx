@@ -340,8 +340,11 @@ export default function SupportPage() {
                 仍能登录时，请到<TextLink href="/settings">账号设置</TextLink>的「账号安全」修改密码：需要先输入当前密码，新密码至少 8 个字符。
               </p>
               <p className="mt-2">
-                站内暂未提供自助「忘记密码」入口。如果已经完全无法登录，可请仍能登录的成员到
-                <TextLink href="/forum/3">论坛帮助版块</TextLink>代为发帖，说明注册邮箱、绑定的 Steam
+                完全无法登录时，请在<TextLink href="/login">登录页</TextLink>点「忘记密码？」，输入注册邮箱，系统会发送一封重置密码邮件（发件人
+                <span className="text-gray-300">RCT MP &lt;noreply@mail.roadcruise-mp.com&gt;</span>）。点击邮件里的链接即可设置新密码；如果没收到，请检查垃圾邮件，或稍等几分钟再试。
+              </p>
+              <p className="mt-2">
+                若邮箱也已无法使用，请到<TextLink href="/forum/3">论坛帮助版块</TextLink>发帖，说明注册邮箱、绑定的 Steam
                 主页和最后一次正常登录时间，由工作人员核实后协助处理。
               </p>
               <p className="mt-2 text-gray-500">
