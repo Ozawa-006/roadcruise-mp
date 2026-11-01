@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import RichText from '@/components/RichText';
 import { sanitizeHttpUrl } from '@/lib/rich-text';
+import { uploadPostImage } from '@/lib/post-image';
 
 export interface RichTextEditorProps {
   value: string;
@@ -75,8 +76,19 @@ export default function RichTextEditor({
 }: RichTextEditorProps) {
   const editorId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingSelection = useRef<{ start: number; end: number } | null>(null);
+  /** 点开文件选择器时的光标位置；上传是异步的，完成后按这里插入。 */
+  const uploadAnchor = useRef<{ start: number; end: number } | null>(null);
+  /** 上传期间用户可能继续编辑，异步插入必须用最新值，避免覆盖输入。 */
+  const valueRef = useRef(value);
   const [preview, setPreview] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   // 受控 textarea 重新渲染后再恢复选区，避免 setSelectionRange 被旧值截断。
   useEffect(() => {
@@ -122,6 +134,12 @@ export default function RichTextEditor({
     commit(nextValue, innerStart, innerStart + inner.length);
   };
 
+  /** 在 [start, end) 区间插入一段 Markdown，并把光标放到片段之后。 */
+  const insertAt = (start: number, end: number, syntax: string) => {
+    const nextValue = value.slice(0, start) + syntax + value.slice(end);
+    commit(nextValue, start + syntax.length);
+  };
+
   const insertLink = () => {
     const { start, end } = readSelection();
     const selected = value.slice(start, end);
@@ -139,8 +157,7 @@ export default function RichTextEditor({
 
     const linkText = escapeInlineLabel(selected.trim() || '链接文字');
     const syntax = `[${linkText}](${encodeUrlForMarkdown(href)})`;
-    const nextValue = value.slice(0, start) + syntax + value.slice(end);
-    commit(nextValue, start + syntax.length);
+    insertAt(start, end, syntax);
   };
 
   const insertImage = () => {
@@ -157,8 +174,65 @@ export default function RichTextEditor({
 
     const alt = escapeInlineLabel(selected.trim() || '图片描述');
     const syntax = `![${alt}](${encodeUrlForMarkdown(src)})`;
-    const nextValue = value.slice(0, start) + syntax + value.slice(end);
-    commit(nextValue, start + syntax.length);
+    insertAt(start, end, syntax);
+  };
+
+  /** 打开系统文件选择器；先记下光标位置，避免失焦后插入点漂移。 */
+  const openImagePicker = () => {
+    if (preview || uploading) return;
+    uploadAnchor.current = readSelection();
+    setUploadError(null);
+    fileInputRef.current?.click();
+  };
+
+  /**
+   * 上传成功后把 `![图片](url)` 插到上传前光标处。
+   * 用 valueRef 的当前值拼接，上传期间用户的新输入不会被覆盖。
+   */
+  const insertUploadedImage = (url: string): boolean => {
+    const currentValue = valueRef.current;
+    const anchor = uploadAnchor.current ?? {
+      start: currentValue.length,
+      end: currentValue.length,
+    };
+    const start = Math.min(anchor.start, currentValue.length);
+    const end = Math.min(Math.max(anchor.end, start), currentValue.length);
+    const syntax = `![图片](${encodeUrlForMarkdown(url)})`;
+    const nextValue = currentValue.slice(0, start) + syntax + currentValue.slice(end);
+    const caret = start + syntax.length;
+
+    // 异步插入不走 commit()：闭包里的 value 可能已过期，这里以 valueRef 为准。
+    if (typeof maxLength === 'number' && nextValue.length > maxLength) return false;
+    pendingSelection.current = { start: caret, end: caret };
+    onChange(nextValue);
+    textareaRef.current?.focus();
+    return true;
+  };
+
+  const handleImageFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    // 清空 value，保证再次选择同一张图片也能触发 change。
+    input.value = '';
+
+    if (!file) return;
+    if (preview) return;
+
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const { url } = await uploadPostImage(file);
+      const inserted = insertUploadedImage(url);
+      if (!inserted) {
+        setUploadError('内容长度已达上限，图片未能插入');
+        return;
+      }
+      uploadAnchor.current = null;
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : '图片上传失败，请稍后重试');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const applyLinePrefix = (prefix: string) => {
@@ -243,6 +317,17 @@ export default function RichTextEditor({
         ))}
 
       <div className="overflow-hidden rounded-lg border border-gray-700 bg-[#18191c] transition-colors focus-within:border-blue-500">
+        {/* 隐藏的文件选择器：由工具栏「上传图片」按钮触发。 */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={handleImageFileChange}
+          disabled={preview || uploading}
+        />
         <div className="flex items-center gap-2 border-b border-gray-700 bg-[#2c2d31] px-2 py-2">
           <div
             role="toolbar"
@@ -283,6 +368,13 @@ export default function RichTextEditor({
               disabled={preview}
             >
               图片
+            </ToolbarButton>
+            <ToolbarButton
+              title="上传图片（JPG/PNG/WebP，最大 5MB）"
+              onClick={openImagePicker}
+              disabled={preview || uploading}
+            >
+              {uploading ? '上传中…' : '上传图片'}
             </ToolbarButton>
             <ToolbarButton
               title="引用 (> 文字)"
@@ -365,6 +457,12 @@ export default function RichTextEditor({
           )}
         </div>
       </div>
+
+      {uploadError && (
+        <p role="alert" className="mt-2 text-xs font-bold text-red-400">
+          {uploadError}
+        </p>
+      )}
     </div>
   );
 }

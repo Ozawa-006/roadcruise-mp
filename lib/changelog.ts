@@ -21,10 +21,30 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.33v',
+    date: '2026-11-01',
+    title: '富文本图片上传',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '富文本编辑器新增「上传图片」：发帖/回帖/公告/车队新闻/活动描述可直接上传 JPG/PNG/WebP（≤5MB）并插入正文，不再只支持外链图床',
+      },
+      {
+        kind: 'feature',
+        text: '新增 Supabase Storage 桶 `post-images`：公开读、仅登录用户可写自己目录、支持删除自己的图片（单文件 5MB、类型白名单）',
+      },
+      {
+        kind: 'chore',
+        text: '上传失败/未登录/超限在编辑器内红字提示；上传中按钮禁用防重复',
+      },
+    ],
+  },
+  {
     version: '0.0.32v',
     date: '2026-11-01',
     title: '邮件通道与找回密码上线',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
