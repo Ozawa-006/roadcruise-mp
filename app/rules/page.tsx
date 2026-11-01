@@ -6,7 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
 import { canEditRules, levelOf } from '@/lib/permissions';
-import { useTr } from '@/components/I18nProvider';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import type { Locale } from '@/lib/i18n';
 
 // ---------------------------------------------------------------------------
 // 英文文案：key 为中文原文，value 为英文译文；英文缺失时自动回退中文。
@@ -30,14 +31,42 @@ const EN: Record<string, string> = {
   '⚠️ 处罚：{penalty}': '⚠️ Penalty: {penalty}',
 };
 
+/** 数据库中的中文章节名 → 英文标题；未匹配的章节回退原文。 */
+const SECTION_EN: Record<string, string> = {
+  '1. 社区总则': '1. Community Guidelines',
+  '2. 游戏与联运': '2. Gameplay & Convoys',
+  '3. 论坛与交流': '3. Forum & Communication',
+  '4. 违规与处罚': '4. Violations & Penalties',
+};
+
+/** 英文模式优先英文，英文为空（或仅空白）时回退中文。 */
+function localizedText(
+  zh: string | null | undefined,
+  en: string | null | undefined,
+  locale: Locale
+): string {
+  if (locale === 'en' && en && en.trim() !== '') return en;
+  return zh ?? '';
+}
+
+/** 英文模式下映射章节名；未匹配时保留数据库原文。 */
+function localizedSection(section: string, locale: Locale): string {
+  if (locale !== 'en') return section;
+  return SECTION_EN[section] ?? section;
+}
+
 /** rules_articles 表中本页用到的字段（仅做类型标注，数据读取逻辑不变）。 */
 type RuleArticle = {
   id: string | number;
   section: string;
   article_number: string | number;
   title: string;
+  title_en: string | null;
   content: string;
+  content_en: string | null;
   penalty: string | null;
+  penalty_en: string | null;
+  status: string;
   updated_at: string;
 };
 
@@ -48,6 +77,7 @@ const supabase = createClient(
 
 export default function RulesPage() {
   const tr = useTr(EN);
+  const locale = useLocale();
   const [articles, setArticles] = useState<RuleArticle[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -66,12 +96,12 @@ export default function RulesPage() {
       // 1. 拉取已发布的条款
       const { data } = await supabase
         .from('rules_articles')
-        .select('*')
+        .select('id, section, article_number, title, title_en, content, content_en, penalty, penalty_en, status, updated_at')
         .eq('status', 'published')
         .order('section', { ascending: true })
         .order('article_number', { ascending: true });
       
-      if (data) setArticles(data);
+      if (data) setArticles(data as RuleArticle[]);
       setLoading(false);
     };
     fetchRules();
@@ -88,7 +118,9 @@ export default function RulesPage() {
 
   // 最后更新时间来自数据库；未取到任何条款时展示占位文案。
   const updatedLabel =
-    articles.length > 0 ? new Date(articles[0].updated_at).toLocaleString() : tr('暂无更新');
+    articles.length > 0
+      ? new Date(articles[0].updated_at).toLocaleString(locale === 'en' ? 'en-US' : 'zh-CN')
+      : tr('暂无更新');
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -128,7 +160,7 @@ export default function RulesPage() {
                       href={`#${section.replace(/\s+/g, '-')}`} 
                       className="block text-gray-400 hover:text-blue-400 hover:bg-[#3a3b40] px-2 py-1.5 rounded transition"
                     >
-                      {section}
+                      {localizedSection(section, locale)}
                     </a>
                   </li>
                 ))}
@@ -146,27 +178,30 @@ export default function RulesPage() {
               >
                 {/* 章节标题 */}
                 <div className="bg-[#232428] px-6 py-3 border-b border-gray-700">
-                  <h2 className="text-xl font-bold text-white">{section}</h2>
+                  <h2 className="text-xl font-bold text-white">{localizedSection(section, locale)}</h2>
                 </div>
                 
                 {/* 章节内的具体条款 */}
                 <div className="p-6 space-y-6">
-                  {sectionArticles.map((article) => (
-                    <div key={article.id} className="border-b border-gray-700/50 pb-5 last:border-0 last:pb-0">
-                      <h3 className="text-lg font-bold text-blue-400 mb-2">
-                        {article.article_number} - {article.title}
-                      </h3>
-                      <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap mb-3">
-                        {article.content}
-                      </p>
-                      {/* 如果有处罚说明，则显示红色标签 */}
-                      {article.penalty && (
-                        <div className="bg-red-900/20 border border-red-900/50 text-red-400 text-xs px-3 py-1.5 rounded inline-block font-bold">
-                          {tr('⚠️ 处罚：{penalty}', { penalty: article.penalty })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {sectionArticles.map((article) => {
+                    const penaltyText = localizedText(article.penalty, article.penalty_en, locale);
+                    return (
+                      <div key={article.id} className="border-b border-gray-700/50 pb-5 last:border-0 last:pb-0">
+                        <h3 className="text-lg font-bold text-blue-400 mb-2">
+                          {article.article_number} - {localizedText(article.title, article.title_en, locale)}
+                        </h3>
+                        <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap mb-3">
+                          {localizedText(article.content, article.content_en, locale)}
+                        </p>
+                        {/* 如果有处罚说明，则显示红色标签 */}
+                        {penaltyText && (
+                          <div className="bg-red-900/20 border border-red-900/50 text-red-400 text-xs px-3 py-1.5 rounded inline-block font-bold">
+                            {tr('⚠️ 处罚：{penalty}', { penalty: penaltyText })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}

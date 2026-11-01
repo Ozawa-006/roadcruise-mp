@@ -4,12 +4,13 @@
 import { useMemo, useState } from 'react';
 import Navbar from '../../components/Navbar';
 import { CHANGELOG } from '../../lib/changelog';
-import type { ChangeKind, ChangelogEntry } from '../../lib/changelog';
-import { useTr } from '@/components/I18nProvider';
+import type { ChangeKind, ChangeItem, ChangelogEntry } from '../../lib/changelog';
+import { useLocale, useTr } from '@/components/I18nProvider';
 
 // ---------------------------------------------------------------------------
-// 英文文案：key 为中文原文，value 为英文译文；英文缺失时自动回退中文。
-// 版本号 / 日期 / 变更条目内容来自 lib/changelog.ts，不在翻译范围内。
+// 页面 UI 英文文案：key 为中文原文，value 为英文译文；英文缺失时自动回退中文。
+// 版本条目的 title / items / summary 由 lib/changelog.ts 的 *_en 字段提供，
+// 缺失时同样回退中文。
 // ---------------------------------------------------------------------------
 const EN: Record<string, string> = {
   // 标题区
@@ -83,10 +84,12 @@ const REPO_URL = 'https://github.com/Ozawa-006/roadcruise-mp';
 
 type VisibleEntry = {
   entry: ChangelogEntry;
-  items: ChangelogEntry['items'];
+  items: Array<{ item: ChangeItem; textEn?: string }>;
 };
 
 export default function ChangelogPage() {
+  const locale = useLocale();
+  const isEnglish = locale === 'en';
   const tr = useTr(EN);
   const [filter, setFilter] = useState<FilterKind>('all');
 
@@ -97,13 +100,13 @@ export default function ChangelogPage() {
 
   // 筛选时同时过滤版本与版本内的条目：只留下包含该类变更的版本，
   // 并且只展示匹配的条目，避免出现「点进新功能却看到安全条目」的干扰。
+  // items_en 与 items 同序，这里先按原索引配对英文，再按类型筛选。
   const visibleEntries = useMemo<VisibleEntry[]>(() => {
     return CHANGELOG.map((entry) => ({
       entry,
-      items:
-        filter === 'all'
-          ? entry.items
-          : entry.items.filter((item) => item.kind === filter),
+      items: entry.items
+        .map((item, index) => ({ item, textEn: entry.items_en?.[index] }))
+        .filter(({ item }) => filter === 'all' || item.kind === filter),
     })).filter((row) => row.items.length > 0);
   }, [filter]);
 
@@ -228,6 +231,12 @@ export default function ChangelogPage() {
             <ol className="flex flex-col gap-6 md:gap-8">
               {visibleEntries.map(({ entry, items }) => {
                 const highlighted = entry.highlight === true;
+                const title = isEnglish
+                  ? entry.title_en ?? entry.title
+                  : entry.title;
+                const summary = isEnglish
+                  ? entry.summary_en ?? entry.summary
+                  : entry.summary;
 
                 return (
                   <li
@@ -261,7 +270,7 @@ export default function ChangelogPage() {
                         {entry.date}
                       </time>
                       <h2 className="mt-1 text-base font-bold text-white md:text-lg">
-                        {entry.title}
+                        {title}
                       </h2>
                     </div>
 
@@ -282,15 +291,16 @@ export default function ChangelogPage() {
                         </span>
                       </div>
 
-                      {entry.summary ? (
+                      {summary ? (
                         <p className="mt-3 text-sm leading-6 text-gray-400">
-                          {entry.summary}
+                          {summary}
                         </p>
                       ) : null}
 
                       <ul className="mt-3 flex flex-col gap-3">
-                        {items.map((item, index) => {
+                        {items.map(({ item, textEn }, index) => {
                           const meta = KIND_META[item.kind];
+                          const text = isEnglish ? textEn ?? item.text : item.text;
                           return (
                             <li
                               key={`${entry.version}-${index}`}
@@ -302,7 +312,7 @@ export default function ChangelogPage() {
                                 {tr(meta.label)}
                               </span>
                               <p className="min-w-0 text-sm leading-6 text-gray-300">
-                                {item.text}
+                                {text}
                               </p>
                             </li>
                           );

@@ -13,18 +13,51 @@ export interface ChangelogEntry {
   version: string; // 如 '0.0.26v'
   date: string; // '2026-11-01'
   title: string;
+  /** 可选英文标题；英文模式优先使用，缺失时回退 title。 */
+  title_en?: string;
   summary?: string;
+  /** 可选英文摘要；英文模式优先使用，缺失时回退 summary。 */
+  summary_en?: string;
   items: ChangeItem[];
+  /** 可选英文条目，必须与 items 一一对应（同数量、同顺序）；缺失项回退中文。 */
+  items_en?: string[];
   commit?: string; // 可选：提交短哈希
   highlight?: boolean;
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.45v',
+    date: '2026-11-02',
+    title: '社区规则与更新日志双语',
+    title_en: 'Bilingual community rules and changelog',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '社区规则支持中英双语：新增 title_en/content_en/penalty_en 字段，12 条规则已补英文；英文模式按语言显示，后台可编辑英文',
+      },
+      {
+        kind: 'feature',
+        text: '更新日志全部 25 个版本、110 条记录补英文标题与条目；英文模式显示英文，缺失回退中文',
+      },
+      {
+        kind: 'chore',
+        text: '已有中文规则/日志内容不修改；新增 `supabase/rules-english.sql`',
+      },
+    ],
+    items_en: [
+      'Community rules now support Chinese and English: added title_en / content_en / penalty_en fields, English available for all 12 rules, editable in the admin page',
+      'The changelog now has English titles and entries for all 25 versions and 110 items; English mode prefers English and falls back to Chinese',
+      'Existing Chinese rule and changelog content is unchanged; added `supabase/rules-english.sql`',
+    ],
+  },
+  {
     version: '0.0.44v',
     date: '2026-11-02',
     title: '英文模式 UI 全英文化与内容双语',
-    highlight: true,
+    title_en: 'English UI coverage and bilingual content',
+    highlight: false,
     items: [
       {
         kind: 'feature',
@@ -47,11 +80,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '404 / 加载中 / 路由错误 / 全局错误页与语言切换提示在英文模式下不再出现中文',
       },
     ],
+    items_en: [
+      'English mode now covers the remaining UI: role and position labels, the rich-text editor toolbar, navigation fallbacks, and page metadata (title/description)',
+      'Posts and announcements support optional English fields (title_en / content_en) when creating, editing, and publishing; English mode shows the translation first and falls back to the original Chinese',
+      'Forum board names and descriptions now have English variants (Official Announcements / General Discussion / Help and Support), shown in English mode',
+      'Existing Chinese posts and announcements are left untouched; adds `supabase/bilingual-content.sql`',
+      '404 / loading / route error / global error pages and the language-switch notice no longer show Chinese in English mode',
+    ],
   },
   {
     version: '0.0.43v',
     date: '2026-11-02',
     title: '中英双语语言系统',
+    title_en: 'Bilingual Chinese-English language system',
     highlight: false,
     items: [
       {
@@ -67,11 +108,17 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '后台管理页保持中文（工作人员使用）；新增 `lib/i18n.ts`、`lib/i18n-server.ts`、`I18nProvider`、`LanguageSwitcher`',
       },
     ],
+    items_en: [
+      'New language system: Simplified Chinese / English; switch via the globe control in the navbar, remembered with Cookie + localStorage and synced during server rendering',
+      'English translation completed for the main pages: home, navbar/footer, sign-in and sign-up, forum, news, events, VTC, profile, account settings, notifications, search, rules, servers, changelog, map and more',
+      'Admin pages stay in Chinese for staff; adds `lib/i18n.ts`, `lib/i18n-server.ts`, `I18nProvider`, `LanguageSwitcher`',
+    ],
   },
   {
     version: '0.0.42v',
     date: '2026-11-02',
     title: '撤回申请与招募统计',
+    title_en: 'Application withdrawal and recruitment stats',
     highlight: false,
     items: [
       {
@@ -91,11 +138,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '新增 `supabase/recruitment-withdraw.sql`；状态约束与通知文案补充「已撤回」',
       },
     ],
+    items_en: [
+      'Applicants can withdraw a pending or in-review application (status becomes Withdrawn), and can then apply for the same position again',
+      'Admin recruitment adds stat cards: total / pending / in review / approved / rejected / withdrawn applications',
+      'Export the currently filtered applications as CSV (up to 1000 rows, including applicant, position, status, answers and more)',
+      'Adds `supabase/recruitment-withdraw.sql`; status constraints and notification copy now include Withdrawn',
+    ],
   },
   {
     version: '0.0.41v',
     date: '2026-11-02',
     title: '招募通知按部门与逐级升级',
+    title_en: 'Recruitment notifications by department and escalation',
     highlight: false,
     items: [
       {
@@ -111,11 +165,17 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '启用 pg_cron，每小时执行一次「升级提醒 + 实习到期提醒」；移除 Vercel 每日 Cron 以避免重复',
       },
     ],
+    items_en: [
+      'New recruitment applications notify only the manager of the department owning the position (Community / Events / Games / Support / Development); falls back to Lv.90+ when no manager exists so nothing is left unattended',
+      'Automatic escalation: unhandled after 24 hours → senior managers; after 48 hours → decision makers (Lv.98+); after 72 hours, remind decision makers every 24 hours',
+      'Enables `pg_cron` to run escalation and internship-expiry reminders hourly; removes the Vercel daily cron to avoid duplicates',
+    ],
   },
   {
     version: '0.0.40v',
     date: '2026-11-01',
     title: '实习期提醒与回复删除',
+    title_en: 'Internship reminders and reply deletion',
     highlight: false,
     items: [
       {
@@ -139,11 +199,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '新增 `vercel.json` 每日 Cron（UTC 01:00）与 `/api/cron/recruitment-reminders`（CRON_SECRET 校验）；新增 `supabase/recruitment-trainee.sql`',
       },
     ],
+    items_en: [
+      'Each internship position can configure a duration in days (default 30); approving an application records the start and end dates, and admin shows Internship active / Internship expired / Converted',
+      'New daily cron: reminds all Lv.40+ management and the member when an internship is within 3 days of expiry and not yet converted (no repeat within 7 days)',
+      'Recruitment application status changes (review started / approved / rejected) notify other management automatically for coordinated handling',
+      'Forum replies can be deleted by their author or Lv.70+ management; reply counts are updated by a database trigger',
+      'Adds `vercel.json` daily cron (UTC 01:00) and `/api/cron/recruitment-reminders` (CRON_SECRET check); adds `supabase/recruitment-trainee.sql`',
+    ],
   },
   {
     version: '0.0.39v',
     date: '2026-11-01',
     title: '审核权限与历史申请职位同步',
+    title_en: 'Review permissions and historical position sync',
     highlight: false,
     items: [
       {
@@ -163,11 +231,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '新增 `supabase/recruitment-permissions.sql` 与一次性 `recruitment-backfill.sql`',
       },
     ],
+    items_en: [
+      'Tighter recruitment review permissions: only the manager of the position department or above can approve / convert / sync positions (Community requires Community Manager or above; Lv.90 Senior Manager and Lv.100 Developer can cross departments), enforced inside the RPC',
+      'Admin approved applications gain a Sync position button to backfill historical applications; the approved CC application was synced to Event Planner Lv.60',
+      'Adds the standalone rank Event Planner Lv.60 so profile position names match the applied position',
+      'Adds `supabase/recruitment-permissions.sql` and a one-off `recruitment-backfill.sql`',
+    ],
   },
   {
     version: '0.0.38v',
     date: '2026-11-01',
     title: '招募转正同步与团队变更',
+    title_en: 'Recruitment conversion sync and team changes',
     highlight: false,
     items: [
       {
@@ -187,11 +262,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '新增 `team_changes` 表与 profiles 角色变更触发器；新增 RPC `rct_recruitment_accept` / `rct_recruitment_promote`',
       },
     ],
+    items_en: [
+      'Approved recruitment automatically syncs the applicant position: admin can configure the role granted on approval per position — full roles are granted directly, internships grant the trainee role first',
+      'New internship system: Trainee Community Moderator / Trainee Game Admin / Trainee Supporter / Trainee Translator / Trainee Event Staff; approved internship applications can be converted to the full role in one click',
+      'Forum home adds a Team position changes card showing recent joins, promotions, demotions, internships and position changes',
+      'Adds the `team_changes` table and a profiles role-change trigger; adds RPCs `rct_recruitment_accept` / `rct_recruitment_promote`',
+    ],
   },
   {
     version: '0.0.37v',
     date: '2026-11-01',
     title: '招募文案编辑与申请通知',
+    title_en: 'Recruitment copy editing and application notifications',
     highlight: false,
     items: [
       {
@@ -207,11 +289,17 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '新增 `supabase/recruitment-notify-staff.sql` 触发器；已实测申请插入后员工通知 +1',
       },
     ],
+    items_en: [
+      'Restores recruitment copy editing at `/admin/recruitment`: edit the page title, intro and requirements (changes take effect on the public page immediately after saving)',
+      'Submitting a recruitment application notifies all Lv.40+ staff in-site with the position name and a link to the admin review page',
+      'Adds the `supabase/recruitment-notify-staff.sql` trigger; verified that an inserted application raises staff notifications by 1',
+    ],
   },
   {
     version: '0.0.36v',
     date: '2026-11-01',
     title: '招募职位独立开关与专属问题',
+    title_en: 'Per-position recruitment toggles and custom questions',
     highlight: false,
     items: [
       {
@@ -239,11 +327,20 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '总开关关闭时公开页不再把任何职位显示为「开放中」；问题类型切换去掉不安全的类型断言',
       },
     ],
+    items_en: [
+      'Each recruitment position can be opened or closed individually; the public page lists only open positions, and the master switch disables all applications',
+      'Each position can define custom application questions (text / textarea / select, required flag, options); the public page builds the form per position and stores answers with the application',
+      'Admin supports position create/edit/delete, ordering, per-position toggles and a question editor; the application list filters by position/status and expands answers',
+      'Database adds `recruitment_positions`; applications add `position_id`/`answers`; the unique constraint becomes one pending application per user per position',
+      'Ships 5 positions with TMP-style general and position-specific questions (closed by default; staff enable them in admin)',
+      'With the master switch off the public page no longer marks any position as open; question-type switching drops an unsafe type assertion',
+    ],
   },
   {
     version: '0.0.35v',
     date: '2026-11-01',
     title: '招募系统上线',
+    title_en: 'Recruitment system launch',
     highlight: false,
     items: [
       {
@@ -263,11 +360,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '论坛侧栏「招募 (Recruitment)」入口改为指向 `/recruitment`；补充默认招募文案（职位/要求可在后台修改）',
       },
     ],
+    items_en: [
+      'Adds the public recruitment page `/recruitment`: recruitment status, team intro, requirements and position list; when open, submit an application (position / contact / notes) and track its progress',
+      'Adds admin `/admin/recruitment`: one-click open/close recruitment, edit title/intro/requirements/positions, review applications (in review / approve / reject + notes)',
+      'Status changes send in-site notifications; a user can have only one pending application; the database blocks applications without Steam verification or while recruitment is closed',
+      'Forum sidebar Recruitment entry now points to `/recruitment`; default recruitment copy added (positions and requirements editable in admin)',
+    ],
   },
   {
     version: '0.0.34v',
     date: '2026-11-01',
     title: '图床链接插入（路过图床）',
+    title_en: 'Image host link insertion (imgchr)',
     highlight: false,
     items: [
       {
@@ -287,11 +391,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '修复论坛侧栏「VTC System」死链（原指向不存在的 `/forum/4`），改为「VTC 车队系统」→ `/vtc`',
       },
     ],
+    items_en: [
+      'The rich-text image button now offers two image-host insertion modes: Full image inserts `![alt](image URL)`; Thumbnail inserts `[![thumb](thumb URL)](full image URL)` so clicking the thumbnail opens the full image',
+      'Supports the image URL and thumbnail URL links generated by imgchr.com / ax1x.com; any http(s) image-host address can be pasted',
+      'Removes the editor upload-image button backed by local Storage (the `post-images` bucket is kept for later use; no data deleted)',
+      'Fixes the dead VTC System link in the forum sidebar (previously pointed to the missing `/forum/4`); now VTC Fleet System → `/vtc`',
+    ],
   },
   {
     version: '0.0.33v',
     date: '2026-11-01',
     title: '富文本图片上传',
+    title_en: 'Rich-text image upload',
     highlight: false,
     items: [
       {
@@ -307,11 +418,17 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '上传失败/未登录/超限在编辑器内红字提示；上传中按钮禁用防重复',
       },
     ],
+    items_en: [
+      'The rich-text editor adds Upload image: posts, replies, announcements, VTC news and event descriptions can upload JPG/PNG/WebP (≤5MB) and insert it inline, not just external image hosts',
+      'Adds the Supabase Storage bucket `post-images`: public read, signed-in users write only to their own folder, own images can be deleted (5MB per file, type allowlist)',
+      'Upload failure / signed-out / size limit errors show in red inside the editor; the button is disabled while uploading to prevent duplicates',
+    ],
   },
   {
     version: '0.0.32v',
     date: '2026-11-01',
     title: '邮件通道与找回密码上线',
+    title_en: 'Email channel and password reset launch',
     highlight: false,
     items: [
       {
@@ -335,11 +452,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '修复找回密码邮件链接落到首页的问题：根布局检测到 recovery hash 时自动跳转 `/reset-password`',
       },
     ],
+    items_en: [
+      'Self-service password reset is live: Forgot password? on the sign-in page → Alibaba Cloud DirectMail sends the reset email → `/reset-password` sets a new password (verified with a QQ mailbox)',
+      'Auth emails keep the default Supabase English templates (kept in English per the site owner) and the sender shows `RCT MP`',
+      'Supabase custom SMTP (`smtpdm.aliyun.com:465` SSL) is configured; the auth email rate limit is raised from 2 to 30 per hour',
+      'Sending domain `mail.roadcruise-mp.com` passed SPF / DKIM / DMARC / MX verification',
+      'Fixes reset links landing on the home page: the root layout detects the recovery hash and redirects to `/reset-password`',
+    ],
   },
   {
     version: '0.0.31v',
     date: '2026-11-01',
     title: '账号找回与后台分页',
+    title_en: 'Account recovery and admin pagination',
     highlight: false,
     items: [
       {
@@ -363,11 +488,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '注意：自助找回邮件需要项目配置自定义 SMTP 才能向所有用户发信（Supabase 默认邮件服务仅限项目成员）；代码流程已就绪',
       },
     ],
+    items_en: [
+      'Adds the forgot-password flow: Forgot password? on the sign-in page sends a reset email, and the link opens `/reset-password` to set a new password (only genuine reset links are accepted; a normal session cannot change it directly)',
+      'Admin audit log and reports use server-side pagination (50 per page, with filters, totals and page numbers)',
+      'Admin user management and moderation records use server-side pagination plus server-side search/filter (nickname, custom ID, SteamID, role, action, status)',
+      'Supabase Auth Site URL is now `https://www.roadcruise-mp.com`, and the redirect allow list includes both the www and non-www domains',
+      'Note: self-service reset emails need custom SMTP configured on the project to reach all users (the default Supabase mailer only reaches project members); the code path is ready',
+    ],
   },
   {
     version: '0.0.30v',
     date: '2026-11-01',
     title: '团队架构与社区治理',
+    title_en: 'Team structure and community governance',
     highlight: false,
     items: [
       {
@@ -395,11 +528,20 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '数据库新增 moderation_actions（RLS + 发文拦截触发器等）；roles 表改为公开只读以支撑团队页',
       },
     ],
+    items_en: [
+      'Adds the Team and organization page `/team`: active members grouped by department, a full position list, and communication/reporting lines (aligned with the TruckersMP team page, not a promotion ladder)',
+      'Adds moderation admin `/admin/moderation`: warn / mute / ban (with duration), revoke, recent records; active mutes and bans block posting, replies, VTC news, reports and event registration',
+      'Profile pages show the real current moderation status (muted/banned with expiry) instead of a hard-coded 0',
+      'Home news now uses the official announcement source: announcements published at `/admin/news` appear in the home carousel, removing the duplicate forum announcement board',
+      'Forum reply pagination (20 per page) so long threads no longer load every reply at once',
+      'Database adds `moderation_actions` (RLS + posting-block triggers); the `roles` table becomes publicly readable to support the team page',
+    ],
   },
   {
     version: '0.0.29v',
     date: '2026-11-01',
     title: '社区治理与帮助中心',
+    title_en: 'Community governance and help center',
     highlight: false,
     items: [
       {
@@ -431,11 +573,21 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '数据库新增 reports 表与 RLS；论坛回复编辑在数据库层锁定归属字段（topic_id/author_id/created_at）',
       },
     ],
+    items_en: [
+      'Adds reporting/appeals: submit reports at `/reports` and track their progress; staff handle them at `/admin/reports` (start / resolved / dismissed + notes) with automatic status notifications',
+      'Forum topics and replies can be edited by their authors (Lv.70+ can manage content from others); topics and replies gain a Report entry',
+      'Adds the help and support center `/support` (FAQ + shortcuts) and the client download page `/download` (launcher in testing, clearly marked coming soon)',
+      'Account settings support password changes (current password required, at least 8 characters)',
+      'Site-wide search now covers posts / players / events / news / VTC fleets by type',
+      'Event admin can view the registration list for each event (nickname, custom ID, Steam verification, notes, registration time)',
+      'Database adds the `reports` table and RLS; reply editing locks ownership fields at the database level (`topic_id`/`author_id`/`created_at`)',
+    ],
   },
   {
     version: '0.0.28v',
     date: '2026-11-01',
     title: '安全富文本与头像管理',
+    title_en: 'Safe rich text and avatar management',
     highlight: false,
     items: [
       {
@@ -459,11 +611,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '多行引用回复：引用内容每一行都加 `> ` 前缀，富文本下正确显示为引用块',
       },
     ],
+    items_en: [
+      'Posts/replies, news announcements, VTC news and event descriptions support safe rich text (Markdown subset: bold/italic/inline code/links/images/quotes/lists/H2-H3), parsed in-house with no third-party dependency',
+      'New rich-text editor: toolbar, live preview, character count; link/image URLs accept http(s) only, invalid syntax renders as plain text, and innerHTML is never used',
+      'Avatar management: JPG/PNG/WebP only and ≤2MB, local preview after selection, old Storage avatars cleaned up on replacement, and avatars can be removed',
+      'Legacy plain-text posts and announcements render unchanged (line breaks preserved), with no data migration',
+      'Multi-line quoted replies prefix every line with `> `, rendering correctly as a quote block in rich text',
+    ],
   },
   {
     version: '0.0.27v',
     date: '2026-11-01',
     title: '安全审计与内容初始化',
+    title_en: 'Security audit and content bootstrap',
     highlight: false,
     items: [
       {
@@ -483,11 +643,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '更新安全文档：P1 收尾状态与限流局限说明',
       },
     ],
+    items_en: [
+      'Adds an operation audit log (`audit_log` + triggers on 6 tables) recording key changes to roles, VTC, events, rules and news; Lv.90+ can view before/after at `/admin/audit`',
+      'IP rate limiting on Steam verification/callback/binding and the server status proxy (in-memory fallback; counters are not shared across instances, with Upstash planned for strict limits)',
+      'Seeds 12 community rules and publishes them at `/rules` (general, game and cross-play, forum and communication, violations and penalties), editable at `/admin/rules`',
+      'Updates security docs: P1 wrap-up status and rate-limit limitations',
+    ],
   },
   {
     version: '0.0.26v',
     date: '2026-11-01',
     title: '内容生态与通知中心',
+    title_en: 'Content ecosystem and notification center',
     commit: 'c5e2d92',
     highlight: false,
     items: [
@@ -512,11 +679,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '完善 sitemap / 页面入口',
       },
     ],
+    items_en: [
+      'Adds the VTC fleet news page (`/vtc/[id]/news`); fleet leaders and vice leaders can publish, edit and delete their fleet news',
+      'Adds the event calendar view (`/events/calendar`) with month browsing and per-day events',
+      'Adds the notification center (`/notifications`) with mark-all-read, unread-only and pagination; the navbar bell links to it',
+      'Adds the in-site changelog page (this page) recording each release',
+      'Polishes the sitemap and page entry points',
+    ],
   },
   {
     version: '0.0.25v',
     date: '2026-11-01',
     title: '活动系统收尾',
+    title_en: 'Event system wrap-up',
     commit: 'd27bce0',
     items: [
       {
@@ -532,11 +707,17 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '数据库新增 custom_id（4-8 位数字）格式约束与唯一索引',
       },
     ],
+    items_en: [
+      'Send an empty string when the event description is empty to avoid a database NOT NULL error',
+      'Reset staff permission state in the event list after sign-out',
+      'Database adds a `custom_id` (4-8 digits) format constraint and unique index',
+    ],
   },
   {
     version: '0.0.24v',
     date: '2026-11-01',
     title: '活动系统',
+    title_en: 'Event system',
     commit: 'fb868be',
     items: [
       {
@@ -560,11 +741,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '活动/报名表 RLS（匿名只读已发布活动；报名记录仅本人与工作人员可读）',
       },
     ],
+    items_en: [
+      'Adds the event system: event list `/events`, event detail `/events/[id]` (register/cancel), admin `/admin/events` (create/edit/publish/cancel/delete)',
+      'The home VTC Events block now uses real event data, and the stats use the published event count',
+      'The navbar Events dropdown links to the event list; staff can reach event admin from the admin console',
+      'Public registration counts (without exposing attendee identities); registration requires Steam verification and supports a capacity limit',
+      'RLS on events and registrations (anonymous read of published events only; registration rows readable by the owner and staff)',
+    ],
   },
   {
     version: '0.0.23v',
     date: '2026-11-01',
     title: 'VTC 进阶管理',
+    title_en: 'Advanced VTC management',
     commit: '843e1d5',
     items: [
       {
@@ -588,11 +777,19 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '所有跨用户车队操作走 SECURITY DEFINER RPC + 数据库校验，客户端无法绕过',
       },
     ],
+    items_en: [
+      'Fleet join modes (open / application review / invite only); the application-review flow; invite to join; leave fleet',
+      'Member positions (leader / vice leader / dispatcher / driver), position settings, member removal',
+      'Transfer fleet leadership, dissolve fleet (DISSOLVE confirmation)',
+      'Fleet management actions send in-site notifications automatically',
+      'All cross-user fleet operations go through SECURITY DEFINER RPCs with database checks; clients cannot bypass them',
+    ],
   },
   {
     version: '0.0.22v',
     date: '2026-11-01',
     title: '网站体验与工程修补',
+    title_en: 'Site experience and engineering fixes',
     commit: 'd384d59',
     items: [
       {
@@ -620,11 +817,20 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '地图页标注「演示数据」，服务器列表页提供友好空状态；导航栏在线人数 30s 轮询',
       },
     ],
+    items_en: [
+      'Cleans up dead links site-wide (my fleet / help / reports and more); footer and help entries point to real pages',
+      'Adds the `/news` announcements list page (previously only detail pages existed)',
+      'Adds 404 / error / global-error / loading fallback pages',
+      'sitemap.xml, robots.txt, metadataBase/openGraph, `lang=zh-CN`',
+      'Adds security response headers (nosniff / Referrer-Policy / X-Frame-Options / Permissions-Policy / HSTS)',
+      'The map page is labeled demo data, the server list page has a friendly empty state, and the navbar online count polls every 30s',
+    ],
   },
   {
     version: '0.0.21v',
     date: '2026-11-01',
     title: '安全加固 + 服务器列表',
+    title_en: 'Security hardening + server list',
     commit: 'be957e8',
     items: [
       {
@@ -644,11 +850,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         text: '服务器列表页 `/servers` + 服务端代理（对接游戏服 `/status`，当前留空等待软件测试完成）',
       },
     ],
+    items_en: [
+      'Steam ownership verification now does real OpenID signature checks (check_authentication), an HMAC-signed HttpOnly cookie registration gate, and a server-side binding endpoint',
+      'Database RLS hardening (28 policies, guard/count triggers) and removal of old permissive policies; unprovable legacy verifications revoked',
+      'Removes the hard-coded super-admin email and unifies `role_level` permissions (10/40/70/90/100)',
+      'Server list page `/servers` plus a server-side proxy (talks to the game server `/status`, currently empty until software testing finishes)',
+    ],
   },
   {
     version: '0.0.20v',
     date: '2026-11-01',
     title: 'VTC 基础功能',
+    title_en: 'VTC basics',
     commit: '6f9559a',
     items: [
       {
@@ -659,6 +872,10 @@ export const CHANGELOG: ChangelogEntry[] = [
         kind: 'chore',
         text: '更早版本（0.0.08–0.0.19）以 VTC 功能迭代为主，详见 GitHub 提交历史',
       },
+    ],
+    items_en: [
+      'VTC fleet lobby, fleet creation, fleet detail, member display, join/leave',
+      'Earlier versions (0.0.08–0.0.19) were mostly VTC feature iterations; see the GitHub commit history',
     ],
   },
 ];
