@@ -21,10 +21,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.44v',
+    date: '2026-11-02',
+    title: '英文模式 UI 全英文化与内容双语',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '英文模式下补齐剩余 UI：角色/职位标签英文化、富文本编辑器工具栏、导航兜底文案、页面 metadata（title/description）英文化',
+      },
+      {
+        kind: 'feature',
+        text: '帖子与公告支持可选英文翻译字段（title_en / content_en）：发帖、编辑、公告发布均可填写；英文模式优先显示英文，未翻译时回退原中文',
+      },
+      {
+        kind: 'feature',
+        text: '论坛版块名称与简介增加英文（官方公告/综合讨论/帮助支持），英文模式显示英文',
+      },
+      {
+        kind: 'chore',
+        text: '已发布的中文帖子/公告不修改；新增 `supabase/bilingual-content.sql`',
+      },
+    ],
+  },
+  {
     version: '0.0.43v',
     date: '2026-11-02',
     title: '中英双语语言系统',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

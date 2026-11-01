@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../components/Navbar';
 import Link from 'next/link';
 import { plainTextExcerpt } from '@/lib/rich-text';
-import { useTr } from '@/components/I18nProvider';
+import { useLocale, useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,7 +17,9 @@ const supabase = createClient(
 type Announcement = {
   id: number | string;
   title: string | null;
+  title_en: string | null;
   content: string | null;
+  content_en: string | null;
   type: string | null;
   image_url: string | null;
   link_url: string | null;
@@ -128,6 +130,7 @@ const EN = {
 
 export default function Home() {
   const tr = useTr(EN);
+  const locale = useLocale();
   const [latestAnnouncements, setLatestAnnouncements] = useState<Announcement[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [stats, setStats] = useState({ users: 0, vtc: 0, events: 0, team: 0 });
@@ -138,7 +141,7 @@ export default function Home() {
       // 1. 获取最新官方公告（与 /news、后台 /admin/news 使用同一数据源）
       const { data: announcementData, error: announcementError } = await supabase
         .from('announcements')
-        .select('id,title,content,type,image_url,link_url,created_at')
+        .select('id,title,title_en,content,content_en,type,image_url,link_url,created_at')
         .order('created_at', { ascending: false })
         .limit(5);
       if (!announcementError && announcementData) {
@@ -253,7 +256,11 @@ export default function Home() {
                 <img 
                   src={item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'} 
                   className="w-full h-full object-cover"
-                  alt={item.title?.trim() || tr('官方公告配图')}
+                  alt={
+                    (locale === 'en'
+                      ? item.title_en?.trim() || item.title?.trim()
+                      : item.title?.trim()) || tr('官方公告配图')
+                  }
                 />
                 <div className="absolute inset-0 bg-black/60"></div>
               </div>
@@ -280,10 +287,18 @@ export default function Home() {
               {/* 右侧：动态轮播的官方公告 */}
               <div className="w-full md:w-1/2 flex flex-col items-center md:items-start justify-center text-center md:text-left h-64 md:h-[21rem] relative pointer-events-auto">
                 {latestAnnouncements.map((item, index) => {
+                  const isEnglish = locale === 'en';
                   const typeLabel = item.type?.trim() || tr('公告');
-                  const title = item.title?.trim() || tr('未命名公告');
-                  const summary = item.content
-                    ? plainTextExcerpt(item.content, ANNOUNCEMENT_SUMMARY_LENGTH)
+                  const title =
+                    (isEnglish
+                      ? item.title_en?.trim() || item.title?.trim()
+                      : item.title?.trim()) || tr('未命名公告');
+                  // 英文界面优先英文正文，缺失时回退中文正文。
+                  const summarySource = isEnglish
+                    ? item.content_en?.trim() || item.content
+                    : item.content;
+                  const summary = summarySource
+                    ? plainTextExcerpt(summarySource, ANNOUNCEMENT_SUMMARY_LENGTH)
                     : '';
                   const publishedAt = formatAnnouncementTime(item.created_at, tr('时间待定'));
 

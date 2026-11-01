@@ -6,8 +6,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
-import { useTr } from '../../components/I18nProvider';
+import { useTr, useLocale } from '../../components/I18nProvider';
 import Navbar from '../../components/Navbar';
+import { roleLabelEn } from '../../lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +19,8 @@ const supabase = createClient(
  * 静态 UI 文案：中文原文 -> 英文。英文缺失时 useTr 自动回退中文。
  * 按区块分组：页面头部 / 组织架构说明 / 在任成员 / 完整职位一览 / 加入团队 / 保留文案。
  * 说明：部门名（如「社区线」）、职位名（如「社区版主」）、等级数字与抓取日期属于数据结构，
- * 不在此翻译；这里只翻译页面自身的说明性文案与状态标签。
+ * 展示时优先使用 DEPARTMENT_META / 职位 display_name 中的英文，缺失则回退中文；
+ * 这里只翻译页面自身的说明性文案与状态标签。
  */
 const EN: Record<string, string> = {
   // ---------- 页面头部 ----------
@@ -475,8 +477,10 @@ function DepartmentCard({
   roleByName: ReadonlyMap<string, RoleRow>;
 }) {
   const tr = useTr(EN);
+  const locale = useLocale();
   const meta = DEPARTMENT_META[department];
   const isLeadership = department === '顶层治理' || department === '高层';
+  const departmentName = locale === 'en' && meta ? meta.en : department;
 
   return (
     <div
@@ -493,10 +497,10 @@ function DepartmentCard({
             className={`mt-1 h-5 w-1 shrink-0 rounded-full ${isLeadership ? 'bg-orange-500' : 'bg-blue-500'}`}
           />
           <div className="min-w-0">
-            <h3 className="text-base font-black text-white">{department}</h3>
+            <h3 className="text-base font-black text-white">{departmentName}</h3>
             {meta ? (
               <p className="text-[11px] text-gray-500">
-                {meta.en} · {tr(meta.description)}
+                {locale === 'en' ? tr(meta.description) : `${meta.en} · ${tr(meta.description)}`}
               </p>
             ) : null}
           </div>
@@ -514,10 +518,16 @@ function DepartmentCard({
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {members.map((member) => {
             const role = member.role ? roleByName.get(member.role) : undefined;
-            const roleLabel = role
-              ? splitDisplayName(role.display_name).zh
-              : member.role?.trim() || tr('未分配职位');
-            return <MemberCard key={member.id} member={member} roleLabel={roleLabel} />;
+            const roleText = role
+              ? locale === 'en'
+                ? splitDisplayName(role.display_name).en || roleLabelEn(role.name, role.level)
+                : splitDisplayName(role.display_name).zh
+              : member.role?.trim()
+                ? locale === 'en'
+                  ? roleLabelEn(member.role, 0)
+                  : member.role.trim()
+                : tr('未分配职位');
+            return <MemberCard key={member.id} member={member} roleLabel={roleText} />;
           })}
         </div>
       )}
@@ -618,6 +628,7 @@ function ActionLink({
 
 export default function TeamPage() {
   const tr = useTr(EN);
+  const locale = useLocale();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -855,7 +866,11 @@ export default function TeamPage() {
                 {RANKS_BY_DEPARTMENT.map(({ department, ranks }) => (
                   <div key={department} className="rounded-xl border border-gray-700 bg-[#2c2d31] p-4">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-black text-white">{department}</h3>
+                      <h3 className="text-sm font-black text-white">
+                        {locale === 'en'
+                          ? DEPARTMENT_META[department]?.en ?? department
+                          : department}
+                      </h3>
                       <span className="rounded-full border border-gray-700 bg-[#18191c] px-2 py-0.5 text-[10px] font-bold text-gray-500">
                         {tr('{count} 个职位', { count: ranks.length })}
                       </span>
@@ -865,14 +880,18 @@ export default function TeamPage() {
                       {ranks.map((rank) => {
                         const name = splitDisplayName(rank.display_name);
                         const tier = tierOf(rank.level);
+                        const rankName =
+                          locale === 'en'
+                            ? name.en || roleLabelEn(rank.name, rank.level)
+                            : name.zh;
                         return (
                           <li
                             key={rank.name}
                             className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
                           >
                             <div className="min-w-0">
-                              <p className="text-sm font-bold text-gray-200">{name.zh}</p>
-                              {name.en ? (
+                              <p className="text-sm font-bold text-gray-200">{rankName}</p>
+                              {locale !== 'en' && name.en ? (
                                 <p className="font-mono text-[10px] uppercase tracking-wide text-gray-500">
                                   {name.en}
                                 </p>

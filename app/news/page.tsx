@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
-import { useTr } from '@/components/I18nProvider';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import { plainTextExcerpt } from '@/lib/rich-text';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,7 +15,10 @@ const supabase = createClient(
 const PAGE_SIZE = 10;
 const SUMMARY_LENGTH = 120;
 
-/** 英文文案表（中文原文为 key）：公告正文/标题、公告分类名等数据库内容不翻译。 */
+/**
+ * 英文文案表（中文原文为 key）：仅翻译页面 UI。
+ * 公告标题/正文由数据库的 title_en/content_en 提供，缺失时回退中文原文。
+ */
 const EN: Record<string, string> = {
   // ---- 页面标题区 ----
   '新闻公告': 'News & Announcements',
@@ -50,7 +54,9 @@ const EN: Record<string, string> = {
 type Announcement = {
   id: number;
   title: string | null;
+  title_en: string | null;
   content: string | null;
+  content_en: string | null;
   type: string | null;
   image_url: string | null;
   link_url: string | null;
@@ -146,6 +152,7 @@ function EmptyState() {
 
 export default function NewsListPage() {
   const tr = useTr(EN);
+  const locale = useLocale();
   const [items, setItems] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -162,7 +169,7 @@ export default function NewsListPage() {
       try {
         const { data, error } = await supabase
           .from('announcements')
-          .select('id,title,content,type,image_url,link_url,created_at')
+          .select('id,title,title_en,content,content_en,type,image_url,link_url,created_at')
           .order('created_at', { ascending: false });
 
         if (cancelled) return;
@@ -233,9 +240,20 @@ export default function NewsListPage() {
           <>
             <div className="space-y-4">
               {pageItems.map((item) => {
+                const isEnglish = locale === 'en';
                 const type = item.type?.trim() || '公告';
-                const title = item.title?.trim() || tr('未命名公告');
-                const summary = summarize(item.content);
+                const titleSource = isEnglish
+                  ? item.title_en?.trim() || item.title?.trim()
+                  : item.title?.trim();
+                const title = titleSource || tr('未命名公告');
+                const summarySource = isEnglish
+                  ? item.content_en?.trim() || item.content
+                  : item.content;
+                // 英文界面优先英文正文；缺失时回退中文正文，仍按纯文本摘要展示。
+                const summary =
+                  isEnglish && summarySource
+                    ? plainTextExcerpt(summarySource, SUMMARY_LENGTH)
+                    : summarize(item.content);
 
                 return (
                   <Link

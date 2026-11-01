@@ -6,8 +6,9 @@ import { createClient, type User } from '@supabase/supabase-js';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
-import { useTr } from '@/components/I18nProvider';
-import { canAccessAdmin, levelOf, roleLabel } from '@/lib/permissions';
+import { useTr, useLocale } from '@/components/I18nProvider';
+import { canAccessAdmin, levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
+import type { Locale } from '@/lib/i18n';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,8 +24,19 @@ const VTC_ROLE_LABELS: Record<string, string> = {
   manager: '经理',
 };
 
-function vtcRoleLabel(role: string | null | undefined): string {
-  return (role && VTC_ROLE_LABELS[role]) || '车手';
+const VTC_ROLE_LABELS_EN: Record<string, string> = {
+  owner: 'Leader',
+  vice_owner: 'Deputy Leader',
+  dispatcher: 'Dispatcher',
+  member: 'Driver',
+  manager: 'Manager',
+};
+
+function vtcRoleLabel(role: string | null | undefined, locale: Locale): string {
+  const key = role?.trim();
+  if (!key) return locale === 'en' ? 'Driver' : '车手';
+  const labels = locale === 'en' ? VTC_ROLE_LABELS_EN : VTC_ROLE_LABELS;
+  return labels[key] ?? (locale === 'en' ? roleLabelEn(key, 0) : key);
 }
 
 /** 页面文案：中文原文为 key，英文缺失时回退中文。 */
@@ -191,6 +203,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const targetId = params?.id as string;
   const tr = useTr(EN);
+  const locale = useLocale();
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileWithVtc | null>(null);
@@ -312,6 +325,8 @@ export default function ProfilePage() {
 
   const displayName = profile.display_name || tr('玩家');
   const avatarUrl = profile.avatar_url;
+  const displayRole =
+    locale === 'en' ? roleLabelEn(profile.role, roleLevel) : roleDisplayName;
   
   const isOwnProfile = currentUser?.id === profile.id;
   const sanctionBadge = buildSanctionBadge(activeSanctions, tr);
@@ -337,7 +352,7 @@ export default function ProfilePage() {
                 <div className="mt-8">
                   <h2 className="text-white font-bold text-lg">{displayName}</h2>
                   {/* 🌟 替换：动态职位 */}
-                  <p className="text-xs text-gray-500">{roleDisplayName}</p>
+                  <p className="text-xs text-gray-500">{displayRole}</p>
                 </div>
               </div>
             </div>
@@ -401,7 +416,7 @@ export default function ProfilePage() {
                     <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">{profile.languages || 'Chinese (Simplified)'}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile.steam_id || tr('未绑定')}</span></p>
                     {/* 🌟 替换：动态职位 */}
-                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={canAccessAdmin(roleLevel) ? 'text-red-400 font-bold' : 'text-green-400'}>{roleDisplayName}</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={canAccessAdmin(roleLevel) ? 'text-red-400 font-bold' : 'text-green-400'}>{displayRole}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">{activeSanctions.length}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Linked games:</span> <span className="text-white">Euro Truck Simulator 2</span></p>
                     <p><span className="text-gray-500 inline-block w-28">In-game status:</span> <span className="text-gray-500">Offline</span></p>
@@ -457,7 +472,7 @@ export default function ProfilePage() {
                         <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{profile.vtc_info.name}</h3>
                         {profile.vtc_info.tag && <span className="text-xs text-blue-400 font-mono">[{profile.vtc_info.tag}]</span>}
                         <span className="text-[10px] font-bold text-blue-300 bg-blue-900/40 border border-blue-800 px-2 py-0.5 rounded">
-                          {vtcRoleLabel(profile.vtc_role as string | null | undefined)}
+                          {vtcRoleLabel(profile.vtc_role as string | null | undefined, locale)}
                         </span>
                       </div>
                     </div>

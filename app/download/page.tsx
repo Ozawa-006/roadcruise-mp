@@ -6,12 +6,18 @@ import Navbar from '../../components/Navbar';
 import { getLocale } from '../../lib/i18n-server';
 import { tr } from '../../lib/i18n';
 
-export const metadata: Metadata = {
-  title: '客户端下载',
-  description:
-    'RCT MP 启动器仍在内部测试，正式发布后将在此页面提供官方下载。当前可查看服务器开放状态与更新公告。',
-  alternates: { canonical: '/download' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getLocale();
+  return {
+    title: tr(locale, EN, '客户端下载'),
+    description: tr(
+      locale,
+      EN,
+      'RCT MP 启动器仍在内部测试，正式发布后将在此页面提供官方下载。当前可查看服务器开放状态与更新公告。'
+    ),
+    alternates: { canonical: '/download' },
+  };
+}
 
 /**
  * 静态 UI 文案：中文原文 -> 英文。英文缺失时回退中文。
@@ -19,6 +25,10 @@ export const metadata: Metadata = {
  * 说明：链接路径（如 /download）、版本号与日期不翻译。
  */
 const EN: Record<string, string> = {
+  // ---------- metadata ----------
+  'RCT MP 启动器仍在内部测试，正式发布后将在此页面提供官方下载。当前可查看服务器开放状态与更新公告。':
+    'The RCT MP launcher is still in internal testing; the official download will be available on this page after release. You can check server status and release announcements now.',
+
   // ---------- 页面头部 ----------
   '客户端下载': 'Download the client',
   '测试中 · 即将开放': 'In testing · Coming soon',

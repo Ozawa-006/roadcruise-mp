@@ -39,6 +39,14 @@ const EN: Record<string, string> = {
   '正文内容': 'Content',
   '在这里输入详细内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题':
     'Enter the details here... supports **bold**, *italic*, `code`, [link](https://...), ![image](https://...), > quote, - list, ## heading',
+
+  // ---- 可选英文内容（英文界面优先显示，留空回退中文） ----
+  '英文标题（可选）': 'English title (optional)',
+  '一句话概括英文标题...': 'Summarize the English title in one sentence...',
+  '英文正文（可选）': 'English content (optional)',
+  '在这里输入英文内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题':
+    'Enter the English content here... supports **bold**, *italic*, `code`, [link](https://...), ![image](https://...), > quote, - list, ## heading',
+
   '添加配图链接 (选填)': 'Image URL (optional)',
   'https://i.imgur.com/xxxxx.jpg (推荐图床直链)':
     'https://i.imgur.com/xxxxx.jpg (direct image link recommended)',
@@ -54,6 +62,12 @@ const EN: Record<string, string> = {
   '发帖失败: {msg}': 'Failed to post: {msg}',
 };
 
+/** 可选英文字段：trim 后为空则写 null，避免数据库里出现空白字符串。 */
+function nullIfBlank(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 export default function NewTopicPage() {
   const tr = useTr(EN);
   const { id } = useParams();
@@ -61,6 +75,8 @@ export default function NewTopicPage() {
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [titleEn, setTitleEn] = useState('');
+  const [contentEn, setContentEn] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [tag, setTag] = useState('综合讨论'); 
   const [loading, setLoading] = useState(false);
@@ -150,6 +166,8 @@ export default function NewTopicPage() {
       author_id: user.id,
       title,
       content,
+      title_en: nullIfBlank(titleEn),
+      content_en: nullIfBlank(contentEn),
       image_url: imageUrl,
       tag: finalTag
     });
@@ -229,6 +247,18 @@ export default function NewTopicPage() {
             />
           </div>
 
+          {/* 可选英文标题：留空时英文界面显示中文标题 */}
+          <div>
+            <label className="block text-sm font-bold text-gray-400 mb-2">{tr('英文标题（可选）')}</label>
+            <input 
+              type="text" 
+              value={titleEn}
+              onChange={(e) => setTitleEn(e.target.value)}
+              className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
+              placeholder={tr('一句话概括英文标题...')}
+            />
+          </div>
+
           <div>
             <RichTextEditor
               label={tr('正文内容')}
@@ -237,6 +267,17 @@ export default function NewTopicPage() {
               placeholder={tr('在这里输入详细内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题')}
               rows={8}
               required
+            />
+          </div>
+
+          {/* 可选英文正文：留空时英文界面显示中文正文 */}
+          <div>
+            <RichTextEditor
+              label={tr('英文正文（可选）')}
+              value={contentEn}
+              onChange={setContentEn}
+              placeholder={tr('在这里输入英文内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题')}
+              rows={6}
             />
           </div>
 

@@ -5,8 +5,9 @@ import { createClient, type User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
-import { useTr } from '@/components/I18nProvider';
-import { canAccessAdmin, levelOf, roleLabel } from '@/lib/permissions';
+import { useTr, useLocale } from '@/components/I18nProvider';
+import { canAccessAdmin, levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
+import type { Locale } from '@/lib/i18n';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,8 +23,19 @@ const VTC_ROLE_LABELS: Record<string, string> = {
   manager: '经理',
 };
 
-function vtcRoleLabel(role: string | null | undefined): string {
-  return (role && VTC_ROLE_LABELS[role]) || '车手';
+const VTC_ROLE_LABELS_EN: Record<string, string> = {
+  owner: 'Leader',
+  vice_owner: 'Deputy Leader',
+  dispatcher: 'Dispatcher',
+  member: 'Driver',
+  manager: 'Manager',
+};
+
+function vtcRoleLabel(role: string | null | undefined, locale: Locale): string {
+  const key = role?.trim();
+  if (!key) return locale === 'en' ? 'Driver' : '车手';
+  const labels = locale === 'en' ? VTC_ROLE_LABELS_EN : VTC_ROLE_LABELS;
+  return labels[key] ?? (locale === 'en' ? roleLabelEn(key, 0) : key);
 }
 
 /** 页面文案：中文原文为 key，英文缺失时回退中文。 */
@@ -128,6 +140,7 @@ export default function ProfilePage() {
   
   const router = useRouter();
   const tr = useTr(EN);
+  const locale = useLocale();
 
   useEffect(() => {
     const loadData = async () => {
@@ -194,7 +207,8 @@ export default function ProfilePage() {
   // 角色判断体系：判权只看 role_level，role 仅用于展示
   const userRole = profile?.role || 'member';
   const userLevel = levelOf(profile?.role_level);
-  const displayRole = roleLabel(userRole, userLevel);
+  const displayRole =
+    locale === 'en' ? roleLabelEn(userRole, userLevel) : roleLabel(userRole, userLevel);
   const showAdminEntry = canAccessAdmin(userLevel);
 
   return (
@@ -380,7 +394,7 @@ export default function ProfilePage() {
                         <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{profile.vtc_info.name}</h3>
                         {profile.vtc_info.tag && <span className="text-xs text-blue-400 font-mono">[{profile.vtc_info.tag}]</span>}
                         <span className="text-[10px] font-bold text-blue-300 bg-blue-900/40 border border-blue-800 px-2 py-0.5 rounded">
-                          {vtcRoleLabel(profile.vtc_role as string | null | undefined)}
+                          {vtcRoleLabel(profile.vtc_role as string | null | undefined, locale)}
                         </span>
                       </div>
                     </div>

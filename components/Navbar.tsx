@@ -88,7 +88,7 @@ export default function Navbar() {
   const [user, setUser] = useState<User | null>(null);
   const [players, setPlayers] = useState<number | null>(null); 
   const [userLevel, setUserLevel] = useState(0);
-  const [displayName, setDisplayName] = useState<string>('玩家');
+  const [displayName, setDisplayName] = useState<string>('');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timeZone, setTimeZone] = useState('');
   
@@ -131,7 +131,7 @@ export default function Navbar() {
           .single();
 
         setUserLevel(levelOf(profile?.role_level));
-        setDisplayName(profile?.display_name || user.email?.split('@')[0] || '玩家');
+        setDisplayName(profile?.display_name || user.email?.split('@')[0] || '');
 
         // 已登录但还未绑定 Steam 的账号：如果浏览器持有服务端签名的验证凭证，
         // 自动完成绑定（覆盖“邮箱确认后直接落到任意页面”的情况）。
@@ -288,6 +288,7 @@ export default function Navbar() {
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
+  const displayNameText = displayName || tr('玩家');
 
   return (
     <header className="w-full bg-[#111111] border-b border-gray-800 flex flex-col font-sans relative z-50">
@@ -372,13 +373,13 @@ export default function Navbar() {
               {/* 用户名下拉 */}
               <div className="relative" ref={menuRef}>
                 <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="flex items-center space-x-1 hover:text-white transition focus:outline-none">
-                  <span className="font-bold text-gray-200">{displayName}</span>
+                  <span className="font-bold text-gray-200">{displayNameText}</span>
                   <span className="text-[10px] ml-1">▼</span>
                 </button>
                 {isMenuOpen && (
                   <div className="absolute right-0 top-full mt-2 w-48 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 z-50">
                     <div className="px-4 py-2 border-b border-gray-700 mb-1">
-                      <p className="text-gray-300 font-bold truncate">{displayName}</p>
+                      <p className="text-gray-300 font-bold truncate">{displayNameText}</p>
                       <p className="text-gray-500 text-[10px] truncate">{user.email}</p>
                     </div>
                     <Link href={`/profile/${user.id}`} className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>{tr('个人中心 (Profile)')}</Link>

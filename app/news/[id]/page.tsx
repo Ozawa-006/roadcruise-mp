@@ -6,33 +6,57 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
 import RichText from '@/components/RichText';
 import Link from 'next/link';
+import { useLocale } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+type Announcement = {
+  id: number;
+  title: string | null;
+  title_en: string | null;
+  content: string | null;
+  content_en: string | null;
+  type: string | null;
+  image_url: string | null;
+  created_at: string | null;
+};
+
+function formatDate(value: string | null): string {
+  if (!value) return '——';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '——';
+  return date.toLocaleDateString();
+}
+
 export default function NewsDetailPage() {
   const { id } = useParams(); // 从网址里获取公告的 ID
   const router = useRouter();
-  const [article, setArticle] = useState<any>(null);
+  const locale = useLocale();
+  const [article, setArticle] = useState<Announcement | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchArticle = async () => {
-      if (!id) return;
-      
+      const announcementId = Array.isArray(id) ? id[0] : id;
+      if (!announcementId) {
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('announcements')
-        .select('*')
-        .eq('id', id)
+        .select('id,title,title_en,content,content_en,type,image_url,created_at')
+        .eq('id', announcementId)
         .single();
 
       if (error || !data) {
         alert('找不到这篇公告，可能已被删除。');
         router.push('/'); // 找不到就退回主页
       } else {
-        setArticle(data);
+        setArticle(data as Announcement);
       }
       setLoading(false);
     };
@@ -40,9 +64,17 @@ export default function NewsDetailPage() {
     fetchArticle();
   }, [id, router]);
 
-  if (loading) {
+  if (loading || !article) {
     return <div className="min-h-screen bg-black text-white flex justify-center items-center">加载中...</div>;
   }
+
+  // 英文界面优先英文标题/正文；英文为空时回退已有的中文内容。
+  const title =
+    locale === 'en' ? article.title_en?.trim() || article.title : article.title;
+  const content =
+    locale === 'en' && article.content_en?.trim()
+      ? article.content_en
+      : article.content;
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col pb-20">
@@ -62,10 +94,10 @@ export default function NewsDetailPage() {
             {article.type}
           </span>
           <h1 className="text-4xl md:text-5xl font-black mb-4 leading-tight drop-shadow-lg">
-            {article.title}
+            {title}
           </h1>
           <div className="flex items-center text-gray-400 text-sm">
-            <span>发布于：{new Date(article.created_at).toLocaleDateString()}</span>
+            <span>发布于：{formatDate(article.created_at)}</span>
             <span className="mx-3">•</span>
             <span>RCT MP 社区管理组</span>
           </div>
@@ -76,7 +108,7 @@ export default function NewsDetailPage() {
       <div className="max-w-4xl mx-auto w-full px-6 md:px-10 py-12">
         <div className="bg-[#111111] border border-gray-800 rounded-2xl p-6 md:p-10 shadow-2xl">
           {/* 富文本渲染：旧纯文本内容会原样保留换行 */}
-          <RichText text={article.content} className="text-gray-300 text-lg leading-loose" />
+          <RichText text={content} className="text-gray-300 text-lg leading-loose" />
         </div>
 
         {/* 底部返回按钮 */}

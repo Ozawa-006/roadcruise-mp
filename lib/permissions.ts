@@ -100,3 +100,33 @@ export function roleLabel(
   }
   return roleLabelFromLevel(level ?? 0);
 }
+
+/** 英文标题化：community_moderator -> Community Moderator。 */
+function titleCaseRoleKey(key: string): string {
+  return key
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * 公开页面用的英文职位名：role 为空时回退等级标签。
+ * 与 roleLabel 并存，后台仍使用中文版本。
+ */
+export function roleLabelEn(
+  role: string | null | undefined,
+  level: number
+): string {
+  const key = role?.trim();
+  if (key) {
+    if (key === 'manager') return 'Community Manager';
+    if (key === 'member') return 'Member';
+    if (key === 'developer') return 'Developer';
+    if (key === 'game_producer') return 'Game Producer';
+    if (key === 'project_manager') return 'Project Manager';
+    if (key.startsWith('senior_')) return `Senior ${titleCaseRoleKey(key.slice(7))}`;
+    return titleCaseRoleKey(key);
+  }
+  return `Level ${level}`;
+}

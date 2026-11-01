@@ -19,34 +19,54 @@ const geistMono = Geist_Mono({
 const SITE_URL = process.env.NEXTAUTH_URL ?? "https://www.roadcruise-mp.com";
 const SITE_NAME = "Road Cruise Transport MP";
 const SITE_DESCRIPTION = "欢迎来到属于卡友的公路世界！加入我们，体验最真实的欧卡2联运。";
+const SITE_DESCRIPTION_EN =
+  "Welcome to the truckers' highway world! Join us for the most authentic Euro Truck Simulator 2 convoys.";
+const SITE_KEYWORDS = [
+  "Road Cruise Transport MP",
+  "欧洲卡车模拟2",
+  "欧卡2联运",
+  "TruckersMP",
+  "公路游轮",
+];
+const SITE_KEYWORDS_EN = [
+  "Road Cruise Transport MP",
+  "Euro Truck Simulator 2",
+  "ETS2 convoy",
+  "TruckersMP",
+  "Road Cruise",
+];
 
-export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
-  title: {
-    default: `${SITE_NAME} | 公路游轮运输`,
-    template: `%s | ${SITE_NAME}`,
-  },
-  description: SITE_DESCRIPTION,
-  keywords: [
-    "Road Cruise Transport MP",
-    "欧洲卡车模拟2",
-    "欧卡2联运",
-    "TruckersMP",
-    "公路游轮",
-  ],
-  openGraph: {
-    type: "website",
-    siteName: SITE_NAME,
-    locale: "zh_CN",
-    title: `${SITE_NAME} | 公路游轮运输`,
-    description: SITE_DESCRIPTION,
-  },
-  twitter: {
-    card: "summary",
-    title: `${SITE_NAME} | 公路游轮运输`,
-    description: SITE_DESCRIPTION,
-  },
-};
+/** 按当前语言输出站点级 metadata；中文保持原有文案。 */
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getLocale();
+  const isEnglish = locale === "en";
+  const title = isEnglish
+    ? `${SITE_NAME} | Community & Convoys`
+    : `${SITE_NAME} | 公路游轮运输`;
+  const description = isEnglish ? SITE_DESCRIPTION_EN : SITE_DESCRIPTION;
+
+  return {
+    metadataBase: new URL(SITE_URL),
+    title: {
+      default: title,
+      template: `%s | ${SITE_NAME}`,
+    },
+    description,
+    keywords: isEnglish ? SITE_KEYWORDS_EN : SITE_KEYWORDS,
+    openGraph: {
+      type: "website",
+      siteName: SITE_NAME,
+      locale: isEnglish ? "en_US" : "zh_CN",
+      title,
+      description,
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
+}
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const locale = await getLocale();

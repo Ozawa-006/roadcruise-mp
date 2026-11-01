@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../../components/Navbar';
-import { useTr } from '@/components/I18nProvider';
-import { roleLabel } from '@/lib/permissions';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import { levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,6 +40,7 @@ const EN: Record<string, string> = {
   '没有找到与 "{query}" 相关的内容，请尝试其他关键词或 ID。':
     'No results found for "{query}". Try different keywords or IDs.',
   '搜索中…': 'Searching…',
+  '加载中...': 'Loading...',
   '重试': 'Retry',
   '搜索请求失败，请稍后重试。': 'Search request failed, please try again later.',
   '关键词只包含无效字符（% _ , ( )），请换一个关键词。':
@@ -114,6 +115,7 @@ interface MemberRow {
   display_name: string | null;
   avatar_url: string | null;
   role: string | null;
+  role_level: number | null;
   custom_id: string | null;
   random_id: string | null;
 }
@@ -241,6 +243,7 @@ function SectionHeading({
 function SearchResults() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const locale = useLocale();
   const tr = useTr(EN);
 
   const query = searchParams.get('q') || '';
@@ -313,7 +316,7 @@ function SearchResults() {
 
         const memberBase = supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, role, custom_id, random_id');
+          .select('id, display_name, avatar_url, role, role_level, custom_id, random_id');
 
         const membersRequest = wantsMembers
           ? (isNumeric
@@ -627,7 +630,9 @@ function SearchResults() {
                       </p>
                       {member.role ? (
                         <p className="mt-1 inline-flex rounded border border-gray-600 bg-[#232428] px-1.5 py-0.5 text-[11px] text-gray-400">
-                          {roleLabel(member.role, null)}
+                          {locale === 'en'
+                            ? roleLabelEn(member.role, levelOf(member.role_level))
+                            : roleLabel(member.role, levelOf(member.role_level))}
                         </p>
                       ) : null}
                     </div>

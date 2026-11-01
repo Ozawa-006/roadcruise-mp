@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
 import RichText from '@/components/RichText';
 import RichTextEditor from '@/components/RichTextEditor';
+import { useTr } from '@/components/I18nProvider';
 import { plainTextExcerpt } from '@/lib/rich-text';
 
 const supabase = createClient(
@@ -19,6 +20,95 @@ const supabase = createClient(
 const SUMMARY_LENGTH = 200;
 
 const PERMISSION_HINT = '仅该车队的队长 / 副队长可以管理车队新闻。';
+
+/** useTr 返回值的签名，便于传给模块级函数。 */
+type Tr = (zh: string, vars?: Record<string, string | number>) => string;
+
+/** 页面文案：中文原文为 key，英文缺失时回退中文。 */
+const EN: Record<string, string> = {
+  // —— 通用 ——
+  '操作失败，请稍后重试': 'Something went wrong. Please try again later.',
+  '请稍后重试': 'Please try again later.',
+  '未知作者': 'Unknown author',
+  '仅该车队的队长 / 副队长可以管理车队新闻。':
+    'Only the owner / vice owner of this VTC can manage VTC news.',
+
+  // —— 加载 / 写操作错误 ——
+  '加载车队信息失败：{error}': 'Failed to load VTC info: {error}',
+  '加载车队新闻失败：{error}': 'Failed to load VTC news: {error}',
+  '更新失败：{message}': 'Failed to update: {message}',
+  '发布失败：{message}': 'Failed to publish: {message}',
+  '删除失败：{message}': 'Failed to delete: {message}',
+  '更新失败：数据库拒绝了本次操作（{message}）。{hint}':
+    'Failed to update: the database rejected this operation ({message}). {hint}',
+  '发布失败：数据库拒绝了本次操作（{message}）。{hint}':
+    'Failed to publish: the database rejected this operation ({message}). {hint}',
+  '删除失败：数据库拒绝了本次操作（{message}）。{hint}':
+    'Failed to delete: the database rejected this operation ({message}). {hint}',
+
+  // —— 页面骨架 / 未找到 ——
+  '加载车队新闻中...': 'Loading VTC news...',
+  '车队不存在': 'VTC not found',
+  '该车队可能已被解散，或链接有误。':
+    'This VTC may have been dissolved, or the link is invalid.',
+  '返回车队大厅': 'Back to the VTC lobby',
+  '车队新闻': 'VTC news',
+  '车队 Logo': 'VTC logo',
+  '管理层': 'Management',
+  '的车队公告与动态': 'announcements and updates',
+  '车队公告与动态': 'VTC announcements and updates',
+  '未命名车队': 'Unnamed VTC',
+  '共 {count} 条新闻': '{count} news items',
+  '← 返回车队': '← Back to VTC',
+  '你可以发布、编辑和删除本队新闻。':
+    'You can publish, edit and delete this VTC’s news.',
+  '仅车队管理层可发布新闻，其他玩家只读。':
+    'Only VTC management can publish news; other players have read-only access.',
+  '车队大厅': 'VTC lobby',
+
+  // —— 发布 / 编辑表单 ——
+  '编辑车队新闻': 'Edit VTC news',
+  '发布车队新闻': 'Publish VTC news',
+  '发布车队新闻 →': 'Publish VTC news →',
+  '收起': 'Collapse',
+  '正在编辑已有新闻，保存后将直接更新原文。':
+    'You are editing an existing news item. Saving will update the original post.',
+  '新闻标题 *': 'News title *',
+  '例如：本周车队联运与考核安排': 'e.g. This week’s convoy and evaluation schedule',
+  '正文（支持 Markdown）': 'Body (Markdown supported)',
+  '支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。':
+    'Supports **bold**, *italic*, `code`, [links](https://...), ![images](https://...), > quotes, - lists, ## headings; line breaks are preserved.',
+  '提交中...': 'Submitting...',
+  '保存修改': 'Save changes',
+  '发布新闻': 'Publish news',
+  '取消': 'Cancel',
+
+  // —— 新闻列表 ——
+  '全部新闻': 'All news',
+  '按发布时间倒序': 'Newest first',
+  '暂无车队新闻': 'No VTC news yet',
+  '点击上方「发布车队新闻」，为本队发布第一条公告。':
+    'Click “Publish VTC news” above to post the first announcement for this VTC.',
+  '该车队还没有发布新闻，请稍后再来看看。':
+    'This VTC has not published any news yet. Please check back later.',
+  '未命名新闻': 'Untitled news',
+  '已编辑': 'Edited',
+  '编辑': 'Edit',
+  '删除中...': 'Deleting...',
+  '删除': 'Delete',
+  '（无正文）': '(No content)',
+  '展开': 'Expand',
+
+  // —— 操作提示 / 确认 ——
+  '请填写新闻标题。': 'Please enter a news title.',
+  '请先登录后再发布新闻。': 'Please sign in before publishing news.',
+  '✅ 车队新闻已更新。': '✅ VTC news updated.',
+  '✅ 车队新闻已发布。': '✅ VTC news published.',
+  '🗑️ 已删除该条车队新闻。': '🗑️ VTC news item deleted.',
+  '确定删除新闻「{title}」吗？删除后无法恢复。':
+    'Delete the news item “{title}”? This cannot be undone.',
+  '← 返回车队主页': '← Back to VTC page',
+};
 
 interface VtcInfo {
   id: number;
@@ -72,9 +162,9 @@ function errorMessageOf(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/** 写操作错误文案：权限类错误额外给出中文提示，原始 message 始终保留。 */
-function writeErrorMessage(action: string, error: unknown): string {
-  const message = errorMessageOf(error, '操作失败，请稍后重试');
+/** 写操作错误文案：权限类错误额外给出提示，原始 message 始终保留。 */
+function writeErrorMessage(action: string, error: unknown, tr: Tr): string {
+  const message = errorMessageOf(error, tr('操作失败，请稍后重试'));
   const lower = message.toLowerCase();
   const isPermissionError =
     lower.includes('row-level security') ||
@@ -82,9 +172,12 @@ function writeErrorMessage(action: string, error: unknown): string {
     lower.includes('42501') ||
     lower.includes('jwt');
   if (isPermissionError) {
-    return `${action}失败：数据库拒绝了本次操作（${message}）。${PERMISSION_HINT}`;
+    return tr(`${action}失败：数据库拒绝了本次操作（{message}）。{hint}`, {
+      message,
+      hint: tr(PERMISSION_HINT),
+    });
   }
-  return `${action}失败：${message}`;
+  return tr(`${action}失败：{message}`, { message });
 }
 
 function formatDateTime(value: string | null): string {
@@ -98,22 +191,27 @@ function formatDateTime(value: string | null): string {
 function authorNameOf(
   embed: AuthorEmbed | AuthorEmbed[] | null | undefined,
   names: Record<string, string>,
-  authorId: string | null
+  authorId: string | null,
+  unknownAuthor: string
 ): string {
   const row = Array.isArray(embed) ? embed[0] : embed;
   const embedded = row?.display_name?.trim();
   if (embedded) return embedded;
   if (authorId && names[authorId]) return names[authorId];
-  return '未知作者';
+  return unknownAuthor;
 }
 
-function toNewsItem(row: VtcNewsRow, names: Record<string, string>): VtcNewsItem {
+function toNewsItem(
+  row: VtcNewsRow,
+  names: Record<string, string>,
+  unknownAuthor: string
+): VtcNewsItem {
   return {
     id: row.id,
     title: row.title ?? '',
     content: row.content ?? '',
     authorId: row.author_id ?? null,
-    authorName: authorNameOf(row.profiles, names, row.author_id ?? null),
+    authorName: authorNameOf(row.profiles, names, row.author_id ?? null, unknownAuthor),
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
   };
@@ -121,6 +219,7 @@ function toNewsItem(row: VtcNewsRow, names: Record<string, string>): VtcNewsItem
 
 export default function VtcNewsPage() {
   const params = useParams();
+  const tr = useTr(EN);
   const rawId = params?.id;
   const vtcId = typeof rawId === 'string' ? rawId : '';
 
@@ -192,7 +291,7 @@ export default function VtcNewsPage() {
           .maybeSingle();
 
         if (vtcError) {
-          setLoadError(`加载车队信息失败：${vtcError.message}`);
+          setLoadError(tr('加载车队信息失败：{error}', { error: vtcError.message }));
           setVtc(null);
           setItems([]);
           setIsManager(false);
@@ -265,7 +364,7 @@ export default function VtcNewsPage() {
                 console.error('读取新闻作者昵称失败:', profileListError);
               } else {
                 for (const profile of (profileRows ?? []) as unknown as AuthorProfileRow[]) {
-                  authorNames[profile.id] = profile.display_name?.trim() || '未知作者';
+                  authorNames[profile.id] = profile.display_name?.trim() || tr('未知作者');
                 }
               }
             }
@@ -273,18 +372,24 @@ export default function VtcNewsPage() {
         }
 
         if (authorFallbackFailed) {
-          setLoadError(`加载车队新闻失败：${authorFallbackFailed}`);
+          setLoadError(tr('加载车队新闻失败：{error}', { error: authorFallbackFailed }));
           setItems([]);
         } else {
-          setItems(rows.map((row) => toNewsItem(row, authorNames)));
+          setItems(rows.map((row) => toNewsItem(row, authorNames, tr('未知作者'))));
         }
       } catch (error: unknown) {
-        setLoadError(`加载车队新闻失败：${errorMessageOf(error, '请稍后重试')}`);
+        setLoadError(
+          tr('加载车队新闻失败：{error}', {
+            error: errorMessageOf(error, tr('请稍后重试')),
+          })
+        );
         setItems([]);
       } finally {
         setLoading(false);
       }
     },
+    // tr 每次渲染都是新函数，加入依赖会导致重复请求；语言切换由 Provider 刷新页面处理。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [vtcId]
   );
 
@@ -334,7 +439,7 @@ export default function VtcNewsPage() {
 
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      setFormError('请填写新闻标题。');
+      setFormError(tr('请填写新闻标题。'));
       return;
     }
 
@@ -351,14 +456,14 @@ export default function VtcNewsPage() {
           .eq('vtc_id', vtc.id);
 
         if (error) throw error;
-        setNotice('✅ 车队新闻已更新。');
+        setNotice(tr('✅ 车队新闻已更新。'));
       } else {
         const {
           data: { user: currentUser },
         } = await supabase.auth.getUser();
 
         if (!currentUser) {
-          setFormError('请先登录后再发布新闻。');
+          setFormError(tr('请先登录后再发布新闻。'));
           return;
         }
 
@@ -370,13 +475,13 @@ export default function VtcNewsPage() {
         });
 
         if (error) throw error;
-        setNotice('✅ 车队新闻已发布。');
+        setNotice(tr('✅ 车队新闻已发布。'));
       }
 
       resetForm();
       await loadPage(false);
     } catch (error: unknown) {
-      setFormError(writeErrorMessage(editingId !== null ? '更新' : '发布', error));
+      setFormError(writeErrorMessage(editingId !== null ? '更新' : '发布', error, tr));
     } finally {
       setSubmitting(false);
     }
@@ -384,8 +489,8 @@ export default function VtcNewsPage() {
 
   const handleDelete = async (item: VtcNewsItem) => {
     if (!vtc) return;
-    const label = item.title.trim() || '未命名新闻';
-    if (!window.confirm(`确定删除新闻「${label}」吗？删除后无法恢复。`)) return;
+    const label = item.title.trim() || tr('未命名新闻');
+    if (!window.confirm(tr('确定删除新闻「{title}」吗？删除后无法恢复。', { title: label }))) return;
 
     setRowBusyId(item.id);
     setLoadError('');
@@ -401,10 +506,10 @@ export default function VtcNewsPage() {
       if (error) throw error;
 
       if (editingId === item.id) resetForm();
-      setNotice('🗑️ 已删除该条车队新闻。');
+      setNotice(tr('🗑️ 已删除该条车队新闻。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setLoadError(writeErrorMessage('删除', error));
+      setLoadError(writeErrorMessage('删除', error, tr));
     } finally {
       setRowBusyId(null);
     }
@@ -420,7 +525,7 @@ export default function VtcNewsPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center font-sans">
-        加载车队新闻中...
+        {tr('加载车队新闻中...')}
       </div>
     );
   }
@@ -431,13 +536,13 @@ export default function VtcNewsPage() {
         <Navbar />
         <div className="flex-1 flex flex-col justify-center items-center gap-4 px-4">
           <p className="text-4xl">🚛</p>
-          <h1 className="text-xl font-bold text-white">车队不存在</h1>
-          <p className="text-sm text-gray-500">该车队可能已被解散，或链接有误。</p>
+          <h1 className="text-xl font-bold text-white">{tr('车队不存在')}</h1>
+          <p className="text-sm text-gray-500">{tr('该车队可能已被解散，或链接有误。')}</p>
           <Link
             href="/vtc"
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition"
           >
-            返回车队大厅
+            {tr('返回车队大厅')}
           </Link>
         </div>
       </main>
@@ -455,7 +560,11 @@ export default function VtcNewsPage() {
             <div className="w-16 h-16 bg-[#18191c] rounded-lg border border-gray-600 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
               {vtc?.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={vtc.logo_url} alt={vtc.name || '车队 Logo'} className="w-full h-full object-cover" />
+                <img
+                  src={vtc.logo_url}
+                  alt={vtc.name || tr('车队 Logo')}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <span className="text-2xl">🏢</span>
               )}
@@ -463,7 +572,7 @@ export default function VtcNewsPage() {
 
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-2xl font-black text-white">车队新闻</h1>
+                <h1 className="text-2xl font-black text-white">{tr('车队新闻')}</h1>
                 {vtc?.tag && (
                   <span className="text-xs bg-blue-900/50 text-blue-400 px-2 py-0.5 rounded font-mono border border-blue-800">
                     [{vtc.tag}]
@@ -471,7 +580,7 @@ export default function VtcNewsPage() {
                 )}
                 {isManager && (
                   <span className="text-xs bg-orange-900/30 text-orange-400 px-2 py-0.5 rounded font-bold border border-orange-800">
-                    管理层
+                    {tr('管理层')}
                   </span>
                 )}
               </div>
@@ -482,18 +591,20 @@ export default function VtcNewsPage() {
                       href={`/vtc/${vtc.id}`}
                       className="font-bold text-blue-400 hover:text-blue-300 transition"
                     >
-                      {vtc.name || '未命名车队'}
+                      {vtc.name || tr('未命名车队')}
                     </Link>{' '}
-                    的车队公告与动态
+                    {tr('的车队公告与动态')}
                   </>
                 ) : (
-                  '车队公告与动态'
+                  tr('车队公告与动态')
                 )}
               </p>
             </div>
 
             {!loading && (
-              <span className="text-xs text-gray-500 shrink-0">共 {items.length} 条新闻</span>
+              <span className="text-xs text-gray-500 shrink-0">
+                {tr('共 {count} 条新闻', { count: items.length })}
+              </span>
             )}
           </div>
 
@@ -502,16 +613,18 @@ export default function VtcNewsPage() {
               href={`/vtc/${vtcId}`}
               className="text-sm font-bold text-gray-300 hover:text-white transition"
             >
-              ← 返回车队
+              {tr('← 返回车队')}
             </Link>
             <span className="text-xs text-gray-600 hidden md:inline">
-              {isManager ? '你可以发布、编辑和删除本队新闻。' : '仅车队管理层可发布新闻，其他玩家只读。'}
+              {isManager
+                ? tr('你可以发布、编辑和删除本队新闻。')
+                : tr('仅车队管理层可发布新闻，其他玩家只读。')}
             </span>
             <Link
               href="/vtc"
               className="ml-auto text-xs text-gray-500 hover:text-gray-300 transition font-bold"
             >
-              车队大厅
+              {tr('车队大厅')}
             </Link>
           </div>
         </div>
@@ -544,7 +657,7 @@ export default function VtcNewsPage() {
                   />
                 </svg>
                 <span className="text-sm font-bold text-gray-400">
-                  {editingId !== null ? '编辑车队新闻' : '发布车队新闻'}
+                  {editingId !== null ? tr('编辑车队新闻') : tr('发布车队新闻')}
                 </span>
               </div>
               <button
@@ -553,7 +666,7 @@ export default function VtcNewsPage() {
                 disabled={submitting}
                 className="text-xs font-bold text-blue-400 hover:text-blue-300 transition disabled:opacity-50"
               >
-                {formOpen ? '收起' : '发布车队新闻 →'}
+                {formOpen ? tr('收起') : tr('发布车队新闻 →')}
               </button>
             </div>
 
@@ -561,13 +674,13 @@ export default function VtcNewsPage() {
               <form onSubmit={handleSubmit} className="p-6 space-y-4">
                 {editingId !== null && (
                   <p className="text-xs text-orange-400 font-bold bg-orange-900/20 border border-orange-800 rounded px-3 py-2">
-                    正在编辑已有新闻，保存后将直接更新原文。
+                    {tr('正在编辑已有新闻，保存后将直接更新原文。')}
                   </p>
                 )}
 
                 <div>
                   <label htmlFor="vtc-news-title" className="block text-sm font-bold text-gray-400 mb-2">
-                    新闻标题 *
+                    {tr('新闻标题 *')}
                   </label>
                   <input
                     id="vtc-news-title"
@@ -576,18 +689,20 @@ export default function VtcNewsPage() {
                     onChange={(event) => setTitle(event.target.value)}
                     maxLength={120}
                     required
-                    placeholder="例如：本周车队联运与考核安排"
+                    placeholder={tr('例如：本周车队联运与考核安排')}
                     className={inputClass}
                   />
                 </div>
 
                 <div>
                   <RichTextEditor
-                    label="正文（支持 Markdown）"
+                    label={tr('正文（支持 Markdown）')}
                     value={content}
                     onChange={setContent}
                     rows={8}
-                    placeholder="支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。"
+                    placeholder={tr(
+                      '支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。'
+                    )}
                   />
                 </div>
 
@@ -599,7 +714,11 @@ export default function VtcNewsPage() {
                     disabled={submitting || !title.trim()}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg disabled:opacity-50"
                   >
-                    {submitting ? '提交中...' : editingId !== null ? '保存修改' : '发布新闻'}
+                    {submitting
+                      ? tr('提交中...')
+                      : editingId !== null
+                        ? tr('保存修改')
+                        : tr('发布新闻')}
                   </button>
                   <button
                     type="button"
@@ -607,7 +726,7 @@ export default function VtcNewsPage() {
                     disabled={submitting}
                     className="text-sm text-gray-400 hover:text-white font-bold transition disabled:opacity-50"
                   >
-                    取消
+                    {tr('取消')}
                   </button>
                 </div>
               </form>
@@ -626,19 +745,19 @@ export default function VtcNewsPage() {
                   clipRule="evenodd"
                 />
               </svg>
-              <span className="text-sm font-bold text-gray-400">全部新闻</span>
+              <span className="text-sm font-bold text-gray-400">{tr('全部新闻')}</span>
             </div>
-            <span className="text-xs text-gray-500">按发布时间倒序</span>
+            <span className="text-xs text-gray-500">{tr('按发布时间倒序')}</span>
           </div>
 
           {items.length === 0 ? (
             <div className="text-center py-14 px-6">
               <p className="text-4xl">📰</p>
-              <p className="mt-3 text-base font-bold text-white">暂无车队新闻</p>
+              <p className="mt-3 text-base font-bold text-white">{tr('暂无车队新闻')}</p>
               <p className="mt-2 text-sm text-gray-500">
                 {isManager
-                  ? '点击上方「发布车队新闻」，为本队发布第一条公告。'
-                  : '该车队还没有发布新闻，请稍后再来看看。'}
+                  ? tr('点击上方「发布车队新闻」，为本队发布第一条公告。')
+                  : tr('该车队还没有发布新闻，请稍后再来看看。')}
               </p>
             </div>
           ) : (
@@ -665,7 +784,7 @@ export default function VtcNewsPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <h2 className="text-lg font-bold text-white break-words">
-                          {item.title.trim() || '未命名新闻'}
+                          {item.title.trim() || tr('未命名新闻')}
                         </h2>
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                           <span>✍️ {item.authorName}</span>
@@ -674,7 +793,7 @@ export default function VtcNewsPage() {
                           </time>
                           {edited && (
                             <span className="text-gray-600" title={formatDateTime(item.updatedAt)}>
-                              已编辑
+                              {tr('已编辑')}
                             </span>
                           )}
                         </div>
@@ -688,7 +807,7 @@ export default function VtcNewsPage() {
                             disabled={busy}
                             className="bg-[#18191c] border border-gray-600 hover:border-blue-500 hover:text-blue-400 text-gray-300 px-3 py-1.5 rounded text-xs font-bold transition disabled:opacity-50"
                           >
-                            编辑
+                            {tr('编辑')}
                           </button>
                           <button
                             type="button"
@@ -696,7 +815,7 @@ export default function VtcNewsPage() {
                             disabled={busy}
                             className="bg-red-900/30 hover:bg-red-800/50 text-red-400 border border-red-800 px-3 py-1.5 rounded text-xs font-bold transition disabled:opacity-50"
                           >
-                            {rowBusyId === item.id ? '删除中...' : '删除'}
+                            {rowBusyId === item.id ? tr('删除中...') : tr('删除')}
                           </button>
                         </div>
                       )}
@@ -709,7 +828,9 @@ export default function VtcNewsPage() {
                       />
                     ) : (
                       <p className="mt-3 text-sm leading-6 text-gray-300 whitespace-pre-wrap break-words">
-                        {showFull ? '（无正文）' : plainTextExcerpt(item.content, SUMMARY_LENGTH)}
+                        {showFull
+                          ? tr('（无正文）')
+                          : plainTextExcerpt(item.content, SUMMARY_LENGTH)}
                       </p>
                     )}
 
@@ -719,7 +840,7 @@ export default function VtcNewsPage() {
                         onClick={() => toggleExpanded(item.id)}
                         className="mt-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition"
                       >
-                        {expanded ? '收起' : '展开'}
+                        {expanded ? tr('收起') : tr('展开')}
                       </button>
                     )}
                   </li>
@@ -734,7 +855,7 @@ export default function VtcNewsPage() {
             href={`/vtc/${vtcId}`}
             className="text-sm font-bold text-gray-400 hover:text-white transition"
           >
-            ← 返回车队主页
+            {tr('← 返回车队主页')}
           </Link>
         </div>
       </div>

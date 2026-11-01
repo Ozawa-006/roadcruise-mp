@@ -5,7 +5,9 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
-import { useTr } from '@/components/I18nProvider';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import type { Locale } from '@/lib/i18n';
+import { roleLabelEn } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -99,11 +101,13 @@ const DEFAULT_CHANGE_TYPE_META: ChangeTypeMeta = {
   className: 'border-gray-600 bg-gray-500/10 text-gray-300',
 };
 
-/** 版块行（forum_categories） */
+/** 版块行（forum_categories）；name_en / description_en 为空时回退中文。 */
 interface ForumCategoryRow {
   id: number;
   name: string | null;
+  name_en: string | null;
   description: string | null;
+  description_en: string | null;
   icon: string | null;
 }
 
@@ -113,6 +117,7 @@ type TopicProfiles = { display_name: string | null } | { display_name: string | 
 interface LatestTopicRow {
   id: number;
   title: string;
+  title_en: string | null;
   created_at: string;
   category_id: number;
   profiles?: TopicProfiles;
@@ -121,6 +126,7 @@ interface LatestTopicRow {
 interface HotTopicRow {
   id: number;
   title: string;
+  title_en: string | null;
   replies_count: number | null;
   category_id: number;
   profiles?: TopicProfiles;
@@ -131,6 +137,17 @@ function authorNameOf(profiles: TopicProfiles | undefined): string | null {
   if (!profiles) return null;
   const profile = Array.isArray(profiles) ? profiles[0] : profiles;
   return profile?.display_name ?? null;
+}
+
+/** 双语字段取值：英文界面且英文字段非空时用英文，否则回退中文。 */
+function localizedText(
+  locale: Locale,
+  en: string | null | undefined,
+  zh: string | null | undefined
+): string {
+  const english = en?.trim();
+  if (locale === 'en' && english) return english;
+  return zh ?? '';
 }
 
 /** 在线成员行（profiles） */
@@ -152,10 +169,15 @@ function teamMemberNameOf(change: TeamChangeRow, fallback: string): string {
   return name || fallback;
 }
 
-/** roles.name -> roles.display_name；职位为空显示「—」，映射不到时退回原始 name。 */
-function roleLabelOf(role: string | null, roleNames: Record<string, string>): string {
+/** 职位徽章：英文模式统一走 roleLabelEn，中文模式用 roles.display_name；职位为空显示「—」。 */
+function roleLabelOf(
+  role: string | null,
+  roleNames: Record<string, string>,
+  locale: Locale
+): string {
   const name = role?.trim();
   if (!name) return '—';
+  if (locale === 'en') return roleLabelEn(name, 0);
   return roleNames[name]?.trim() || name;
 }
 
@@ -167,6 +189,7 @@ function formatChangeTime(createdAt: string): string {
 
 export default function ForumHome() {
   const tr = useTr(EN);
+  const locale = useLocale();
   const [categories, setCategories] = useState<ForumCategoryRow[]>([]);
   const [latestTopics, setLatestTopics] = useState<LatestTopicRow[]>([]);
   const [hotTopics, setHotTopics] = useState<HotTopicRow[]>([]);
@@ -179,15 +202,18 @@ export default function ForumHome() {
 
   useEffect(() => {
     const fetchForumData = async () => {
-      // 1. 获取版块
-      const { data: catData } = await supabase.from('forum_categories').select('*').order('id');
+      // 1. 获取版块（含英文字段，英文界面优先显示）
+      const { data: catData } = await supabase
+        .from('forum_categories')
+        .select('id, name, name_en, description, description_en, icon')
+        .order('id');
       if (catData) setCategories(catData);
 
       // 2. 获取最新动态（全站最新5条帖子）
       const { data: latest } = await supabase
         .from('forum_topics')
         .select(`
-          id, title, created_at, category_id,
+          id, title, title_en, created_at, category_id,
           profiles:author_id (display_name)
         `)
         .order('created_at', { ascending: false })
@@ -198,7 +224,7 @@ export default function ForumHome() {
       const { data: hot } = await supabase
         .from('forum_topics')
         .select(`
-          id, title, replies_count, category_id,
+          id, title, title_en, replies_count, category_id,
           profiles:author_id (display_name)
         `)
         .order('replies_count', { ascending: false })
@@ -343,8 +369,8 @@ export default function ForumHome() {
                         {cat.icon === 'megaphone' ? '📢' : cat.icon === 'help' ? '🆘' : '💬'}
                       </div>
                       <div className="flex-1">
-                        <h2 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{cat.name}</h2>
-                        <p className="text-gray-400 text-xs mt-1">{cat.description}</p>
+                        <h2 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{localizedText(locale, cat.name_en, cat.name)}</h2>
+                        <p className="text-gray-400 text-xs mt-1">{localizedText(locale, cat.description_en, cat.description)}</p>
                       </div>
                     </div>
                   </Link>
@@ -396,7 +422,7 @@ export default function ForumHome() {
                 ) : (
                   latestTopics.map(topic => (
                     <Link key={topic.id} href={`/forum/${topic.category_id}/${topic.id}`} className="block p-2 hover:bg-[#3a3b40] rounded transition border-b border-gray-700/50 last:border-0 group">
-                      <p className="text-xs text-white group-hover:text-blue-400 font-bold truncate">{topic.title}</p>
+                      <p className="text-xs text-white group-hover:text-blue-400 font-bold truncate">{localizedText(locale, topic.title_en, topic.title)}</p>
                       <p className="text-[10px] text-gray-500 mt-1 flex justify-between">
                         <span>{authorNameOf(topic.profiles) || tr('未知')}</span>
                         <span>{new Date(topic.created_at).toLocaleDateString()}</span>
@@ -431,8 +457,8 @@ export default function ForumHome() {
                   <ul>
                     {teamChanges.map((change) => {
                       const badge = changeTypeMetaOf(change.change_type);
-                      const oldRoleLabel = roleLabelOf(change.old_role, roleNames);
-                      const newRoleLabel = roleLabelOf(change.new_role, roleNames);
+                      const oldRoleLabel = roleLabelOf(change.old_role, roleNames, locale);
+                      const newRoleLabel = roleLabelOf(change.new_role, roleNames, locale);
                       return (
                         <li key={change.id} className="p-2 border-b border-gray-700/50 last:border-0">
                           <div className="flex items-center justify-between gap-2">
@@ -471,7 +497,7 @@ export default function ForumHome() {
                         #{index + 1}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-white group-hover:text-blue-400 font-bold truncate">{topic.title}</p>
+                        <p className="text-xs text-white group-hover:text-blue-400 font-bold truncate">{localizedText(locale, topic.title_en, topic.title)}</p>
                         <p className="text-[10px] text-gray-500 mt-1 flex justify-between">
                           <span>{authorNameOf(topic.profiles) || tr('未知')}</span>
                           <span>{tr('{n} 回复', { n: topic.replies_count || 0 })}</span>

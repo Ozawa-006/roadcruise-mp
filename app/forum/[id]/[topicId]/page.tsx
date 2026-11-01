@@ -7,8 +7,9 @@ import Navbar from '../../../../components/Navbar';
 import RichText from '@/components/RichText';
 import RichTextEditor from '@/components/RichTextEditor';
 import Link from 'next/link';
-import { ROLE_LEVEL, levelOf } from '@/lib/permissions';
-import { useTr } from '@/components/I18nProvider';
+import { ROLE_LEVEL, levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import type { Locale } from '@/lib/i18n';
 
 interface TopicAuthorProfile {
   display_name: string | null;
@@ -22,19 +23,22 @@ interface ReplyAuthorProfile extends TopicAuthorProfile {
 interface ForumTopic {
   id: string | number;
   title: string;
+  title_en: string | null;
   content: string;
+  content_en: string | null;
   author_id: string;
   image_url: string | null;
   created_at: string;
   replies_count?: number | null;
   profiles?: TopicAuthorProfile | null;
-  forum_categories?: { name: string | null } | null;
+  forum_categories?: { name: string | null; name_en: string | null } | null;
 }
 
 interface ForumReply {
   id: string | number;
   author_id: string;
   content: string;
+  content_en: string | null;
   created_at: string;
   profiles?: ReplyAuthorProfile | null;
 }
@@ -55,6 +59,28 @@ const supabase = createClient(
 
 /** 回复分页：每页 20 条 */
 const REPLY_PAGE_SIZE = 20;
+
+/** 可选英文字段：trim 后为空则写 null，避免数据库里出现空白字符串。 */
+function nullIfBlank(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+/** 双语字段取值：英文界面且英文字段非空时用英文，否则回退中文。 */
+function localizedText(
+  locale: Locale,
+  en: string | null | undefined,
+  zh: string | null | undefined
+): string {
+  const english = en?.trim();
+  if (locale === 'en' && english) return english;
+  return zh ?? '';
+}
+
+/** 当前是否正在显示英文内容（用于展示「EN translation」徽章）。 */
+function showsEnglish(locale: Locale, en: string | null | undefined): boolean {
+  return locale === 'en' && !!en?.trim();
+}
 
 /** 回复列表查询字段：保持原有 profiles embed 不变 */
 const REPLY_SELECT = `
@@ -77,6 +103,7 @@ const EN: Record<string, string> = {
   '看帖': 'Topic',
   '楼主': 'OP',
   '未知用户': 'Unknown user',
+  '成员': 'Member',
   '发表于：': 'Posted: ',
 
   // ---- 帖子 / 回复操作按钮 ----
@@ -97,6 +124,15 @@ const EN: Record<string, string> = {
   '正文': 'Content',
   '编辑帖子正文...': 'Edit the topic content...',
   '配图': 'Attached image',
+
+  // ---- 可选英文内容（英文界面优先显示，留空回退中文） ----
+  '英文标题（可选）': 'English title (optional)',
+  '一句话概括英文标题...': 'Summarize the English title in one sentence...',
+  '英文正文（可选）': 'English content (optional)',
+  '编辑英文正文...': 'Edit the English content...',
+  '英文回复正文（可选）': 'English reply content (optional)',
+  '在这里输入英文回复...': 'Write your reply in English...',
+  '编辑英文回复内容...': 'Edit the English reply content...',
 
   // ---- 回复列表 ----
   '全部回复 ({n})': 'All replies ({n})',
@@ -148,6 +184,7 @@ const EN: Record<string, string> = {
 
 export default function TopicDetailPage() {
   const tr = useTr(EN);
+  const locale = useLocale();
   const [quoteUser, setQuoteUser] = useState('');
   const [quoteContent, setQuoteContent] = useState('');
   const { id, topicId } = useParams();
@@ -167,12 +204,17 @@ export default function TopicDetailPage() {
   const [currentLevel, setCurrentLevel] = useState<number>(0);
 
   const [replyContent, setReplyContent] = useState('');
+  // 可选英文回复正文：留空则写 null，英文界面回退显示中文。
+  const [replyContentEn, setReplyContentEn] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // 帖子编辑状态
   const [editingTopic, setEditingTopic] = useState(false);
   const [topicTitle, setTopicTitle] = useState('');
   const [topicContent, setTopicContent] = useState('');
+  // 可选英文字段（编辑时回填原值，保存空则写 null）
+  const [topicTitleEn, setTopicTitleEn] = useState('');
+  const [topicContentEn, setTopicContentEn] = useState('');
   const [savingTopic, setSavingTopic] = useState(false);
   const [topicSaveError, setTopicSaveError] = useState('');
   const [topicNotice, setTopicNotice] = useState('');
@@ -180,6 +222,7 @@ export default function TopicDetailPage() {
   // 回复编辑状态（同一时间只编辑一条，保存时用 id 防串行）
   const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
   const [replyEditContent, setReplyEditContent] = useState('');
+  const [replyEditContentEn, setReplyEditContentEn] = useState('');
   const [savingReplyId, setSavingReplyId] = useState<string | null>(null);
   const [replyError, setReplyError] = useState<ReplyFeedback | null>(null);
   const [replyNotice, setReplyNotice] = useState<ReplyFeedback | null>(null);
@@ -200,7 +243,7 @@ export default function TopicDetailPage() {
       .select(`
         *,
         profiles:author_id (display_name, avatar_url),
-        forum_categories:category_id (name)
+        forum_categories:category_id (name, name_en)
       `)
       .eq('id', topicId)
       .single();
@@ -315,13 +358,15 @@ export default function TopicDetailPage() {
     const { error } = await supabase.from('forum_replies').insert({
       topic_id: topicId,
       author_id: user.id,
-      content: finalContent
+      content: finalContent,
+      content_en: nullIfBlank(replyContentEn)
     });
 
     if (!error) {
       // 注意：回复数 replies_count 由数据库触发器维护，客户端不再“读改写”该字段，
       // 避免并发回帖时互相覆盖导致计数丢失。
       setReplyContent('');
+      setReplyContentEn('');
       setQuoteUser('');
       setQuoteContent('');
 
@@ -358,6 +403,8 @@ export default function TopicDetailPage() {
     if (!topic) return;
     setTopicTitle(topic.title);
     setTopicContent(topic.content);
+    setTopicTitleEn(topic.title_en ?? '');
+    setTopicContentEn(topic.content_en ?? '');
     setTopicSaveError('');
     setTopicNotice('');
     setEditingTopic(true);
@@ -365,6 +412,8 @@ export default function TopicDetailPage() {
 
   const cancelTopicEdit = () => {
     setEditingTopic(false);
+    setTopicTitleEn('');
+    setTopicContentEn('');
     setTopicSaveError('');
   };
 
@@ -383,6 +432,9 @@ export default function TopicDetailPage() {
     }
 
     const nextContent = topicContent;
+    // 英文标题 / 正文均可选：trim 后为空则写 null，让英文界面回退中文。
+    const nextTitleEn = nullIfBlank(topicTitleEn);
+    const nextContentEn = nullIfBlank(topicContentEn);
 
     setSavingTopic(true);
     setTopicSaveError('');
@@ -391,7 +443,12 @@ export default function TopicDetailPage() {
     try {
       const { error } = await supabase
         .from('forum_topics')
-        .update({ title: nextTitle, content: nextContent })
+        .update({
+          title: nextTitle,
+          content: nextContent,
+          title_en: nextTitleEn,
+          content_en: nextContentEn,
+        })
         .eq('id', topicId);
 
       if (error) {
@@ -400,7 +457,15 @@ export default function TopicDetailPage() {
       }
 
       setTopic((prev) =>
-        prev ? { ...prev, title: nextTitle, content: nextContent } : prev
+        prev
+          ? {
+              ...prev,
+              title: nextTitle,
+              content: nextContent,
+              title_en: nextTitleEn,
+              content_en: nextContentEn,
+            }
+          : prev
       );
       setEditingTopic(false);
       setTopicNotice('✅ 帖子已更新。');
@@ -418,6 +483,7 @@ export default function TopicDetailPage() {
   const startReplyEdit = (reply: ForumReply) => {
     setEditingReplyId(String(reply.id));
     setReplyEditContent(reply.content);
+    setReplyEditContentEn(reply.content_en ?? '');
     setReplyError(null);
     setReplyNotice(null);
   };
@@ -425,6 +491,7 @@ export default function TopicDetailPage() {
   const cancelReplyEdit = () => {
     setEditingReplyId(null);
     setReplyEditContent('');
+    setReplyEditContentEn('');
     setReplyError(null);
   };
 
@@ -437,6 +504,8 @@ export default function TopicDetailPage() {
       setReplyError({ id: replyId, message: '回复内容不能为空。' });
       return;
     }
+    // 可选英文正文：trim 后为空则写 null。
+    const nextContentEn = nullIfBlank(replyEditContentEn);
 
     setSavingReplyId(replyId);
     setReplyError(null);
@@ -445,7 +514,7 @@ export default function TopicDetailPage() {
     try {
       const { error } = await supabase
         .from('forum_replies')
-        .update({ content: nextContent })
+        .update({ content: nextContent, content_en: nextContentEn })
         .eq('id', reply.id);
 
       if (error) {
@@ -454,10 +523,15 @@ export default function TopicDetailPage() {
       }
 
       setReplies((prev) =>
-        prev.map((item) => (item.id === reply.id ? { ...item, content: nextContent } : item))
+        prev.map((item) =>
+          item.id === reply.id
+            ? { ...item, content: nextContent, content_en: nextContentEn }
+            : item
+        )
       );
       setEditingReplyId(null);
       setReplyEditContent('');
+      setReplyEditContentEn('');
       setReplyNotice({ id: replyId, message: '✅ 回复已更新。' });
     } catch (error: unknown) {
       setReplyError({
@@ -493,6 +567,7 @@ export default function TopicDetailPage() {
       if (editingReplyId === replyId) {
         setEditingReplyId(null);
         setReplyEditContent('');
+        setReplyEditContentEn('');
       }
 
       // 回复数 replies_count 由数据库触发器维护，这里只重新拉取总数，不手动改该字段。
@@ -527,6 +602,8 @@ export default function TopicDetailPage() {
   const canEditTopic =
     !!user && (user.id === topic.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
   const replyTotalPages = Math.max(1, Math.ceil(replyTotal / REPLY_PAGE_SIZE));
+  const roleText = (role: string): string =>
+    locale === 'en' ? roleLabelEn(role, 0) : roleLabel(role, 0);
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans pb-12">
@@ -542,12 +619,12 @@ export default function TopicDetailPage() {
           <div className="text-sm text-gray-300 mb-2 flex items-center gap-2">
             <Link href="/forum" className="hover:text-white transition">{tr('论坛')}</Link>
             <span>/</span>
-            <Link href={`/forum/${id}`} className="hover:text-white transition">{topic.forum_categories?.name || tr('版块')}</Link>
+            <Link href={`/forum/${id}`} className="hover:text-white transition">{localizedText(locale, topic.forum_categories?.name_en, topic.forum_categories?.name) || tr('版块')}</Link>
             <span>/</span>
             <span className="text-gray-400">{tr('看帖')}</span>
           </div>
           <h1 className="text-2xl md:text-4xl font-black text-white drop-shadow-md">
-            {topic.title}
+            {localizedText(locale, topic.title_en, topic.title)}
           </h1>
         </div>
       </div>
@@ -623,12 +700,34 @@ export default function TopicDetailPage() {
                   />
                 </div>
 
+                <div>
+                  <label htmlFor="topic-edit-title-en" className="mb-1 block text-sm font-bold text-gray-400">
+                    {tr('英文标题（可选）')}
+                  </label>
+                  <input
+                    id="topic-edit-title-en"
+                    type="text"
+                    value={topicTitleEn}
+                    onChange={(event) => setTopicTitleEn(event.target.value)}
+                    placeholder={tr('一句话概括英文标题...')}
+                    className="w-full rounded border border-gray-600 bg-[#18191c] p-3 text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
                 <RichTextEditor
                   value={topicContent}
                   onChange={setTopicContent}
                   rows={8}
                   label={tr('正文')}
                   placeholder={tr('编辑帖子正文...')}
+                />
+
+                <RichTextEditor
+                  value={topicContentEn}
+                  onChange={setTopicContentEn}
+                  rows={6}
+                  label={tr('英文正文（可选）')}
+                  placeholder={tr('编辑英文正文...')}
                 />
 
                 {topicSaveError && (
@@ -656,10 +755,17 @@ export default function TopicDetailPage() {
                 </div>
               </form>
             ) : (
-              <RichText
-                text={topic.content}
-                className="text-gray-300 text-base leading-relaxed mb-6"
-              />
+              <>
+                {showsEnglish(locale, topic.content_en) && (
+                  <span className="mb-3 inline-block rounded border border-blue-500/40 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-300">
+                    EN translation
+                  </span>
+                )}
+                <RichText
+                  text={localizedText(locale, topic.content_en, topic.content)}
+                  className="text-gray-300 text-base leading-relaxed mb-6"
+                />
+              </>
             )}
             {topic.image_url && (
               <div className="mt-6">
@@ -713,13 +819,13 @@ export default function TopicDetailPage() {
 
                   {/* 动态徽章 */}
                   <div className="mt-2 text-center">
-                    {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ 开发者</span>}
-                    {reply.profiles?.role === 'senior_manager' && <span className="text-xs font-bold text-orange-400">🧭 高级社区经理</span>}
-                    {reply.profiles?.role === 'director' && <span className="text-xs font-bold text-purple-400">👑 论坛总经理</span>}
-                    {reply.profiles?.role === 'manager' && <span className="text-xs font-bold text-blue-400">🛡️ 社区经理</span>}
-                    {reply.profiles?.role === 'staff' && <span className="text-xs font-bold text-green-400">🔧 工作人员</span>}
-                    {reply.profiles?.role === 'community_moderator' && <span className="text-xs font-bold text-cyan-400">🧹 社区版主</span>}
-                    {(!reply.profiles?.role || reply.profiles?.role === 'member') && <span className="text-xs text-gray-500">成员</span>}
+                    {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ {roleText('developer')}</span>}
+                    {reply.profiles?.role === 'senior_manager' && <span className="text-xs font-bold text-orange-400">🧭 {roleText('senior_manager')}</span>}
+                    {reply.profiles?.role === 'director' && <span className="text-xs font-bold text-purple-400">👑 {roleText('director')}</span>}
+                    {reply.profiles?.role === 'manager' && <span className="text-xs font-bold text-blue-400">🛡️ {roleText('manager')}</span>}
+                    {reply.profiles?.role === 'staff' && <span className="text-xs font-bold text-green-400">🔧 {roleText('staff')}</span>}
+                    {reply.profiles?.role === 'community_moderator' && <span className="text-xs font-bold text-cyan-400">🧹 {roleText('community_moderator')}</span>}
+                    {(!reply.profiles?.role || reply.profiles?.role === 'member') && <span className="text-xs text-gray-500">{tr('成员')}</span>}
                   </div>
                 </div>
                 <div className="flex-1 p-6">
@@ -741,6 +847,14 @@ export default function TopicDetailPage() {
                         onChange={setReplyEditContent}
                         rows={4}
                         placeholder={tr('编辑回复内容...')}
+                      />
+
+                      <RichTextEditor
+                        value={replyEditContentEn}
+                        onChange={setReplyEditContentEn}
+                        rows={3}
+                        label={tr('英文回复正文（可选）')}
+                        placeholder={tr('编辑英文回复内容...')}
                       />
 
                       {replyError?.id === replyId && (
@@ -774,8 +888,13 @@ export default function TopicDetailPage() {
                           {tr(replyNotice.message)}
                         </p>
                       )}
+                      {showsEnglish(locale, reply.content_en) && (
+                        <span className="mb-2 inline-block rounded border border-blue-500/40 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-300">
+                          EN translation
+                        </span>
+                      )}
                       <RichText
-                        text={reply.content}
+                        text={localizedText(locale, reply.content_en, reply.content)}
                         className="text-gray-300 text-sm leading-relaxed mb-4"
                       />
                     </>
@@ -886,6 +1005,16 @@ export default function TopicDetailPage() {
                   rows={5}
                   required
                   placeholder={quoteUser ? tr('回复 @{name}...', { name: quoteUser }) : tr('写下你的看法...')}
+                />
+              </div>
+              {/* 可选英文正文：留空时英文界面显示中文回复 */}
+              <div className="mb-4">
+                <RichTextEditor
+                  value={replyContentEn}
+                  onChange={setReplyContentEn}
+                  rows={3}
+                  label={tr('英文回复正文（可选）')}
+                  placeholder={tr('在这里输入英文回复...')}
                 />
               </div>
               <div className="text-right">

@@ -6,12 +6,18 @@ import Navbar from '../../components/Navbar';
 import { getLocale } from '../../lib/i18n-server';
 import { tr } from '../../lib/i18n';
 
-export const metadata: Metadata = {
-  title: '帮助与支持',
-  description:
-    'RCT MP 帮助与支持中心：账号注册、Steam 正版验证、论坛发帖、VTC 车队、活动报名、违规举报与账号找回的常见问题解答。',
-  alternates: { canonical: '/support' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getLocale();
+  return {
+    title: tr(locale, EN, '帮助与支持'),
+    description: tr(
+      locale,
+      EN,
+      'RCT MP 帮助与支持中心：账号注册、Steam 正版验证、论坛发帖、VTC 车队、活动报名、违规举报与账号找回的常见问题解答。'
+    ),
+    alternates: { canonical: '/support' },
+  };
+}
 
 /**
  * 静态 UI 文案：中文原文 -> 英文。英文缺失时回退中文。
@@ -19,6 +25,10 @@ export const metadata: Metadata = {
  * 说明：站内链接路径、邮箱地址与日期不翻译。
  */
 const EN: Record<string, string> = {
+  // ---------- metadata ----------
+  'RCT MP 帮助与支持中心：账号注册、Steam 正版验证、论坛发帖、VTC 车队、活动报名、违规举报与账号找回的常见问题解答。':
+    'RCT MP Help & Support: answers to common questions about account registration, Steam verification, forum posting, VTCs, event sign-ups, reporting violations and account recovery.',
+
   // ---------- 页面头部 ----------
   '帮助与支持': 'Help & Support',
   '从注册、Steam 验证到发帖、加入车队和报名活动，这里汇总了 RCT MP 最常见的操作问题。找不到答案时，可以到论坛帮助版块求助。':

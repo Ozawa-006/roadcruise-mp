@@ -7,7 +7,8 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
 import { canPostOfficialTopic, levelOf } from '@/lib/permissions';
-import { useTr } from '@/components/I18nProvider';
+import { useLocale, useTr } from '@/components/I18nProvider';
+import type { Locale } from '@/lib/i18n';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,20 +17,47 @@ const supabase = createClient(
 
 const PAGE_SIZE = 10;
 
-/** 版块行（forum_categories） */
+/** 双语字段取值：英文界面且英文字段非空时用英文，否则回退中文。 */
+function localizedText(
+  locale: Locale,
+  en: string | null | undefined,
+  zh: string | null | undefined
+): string {
+  const english = en?.trim();
+  if (locale === 'en' && english) return english;
+  return zh ?? '';
+}
+
+/** 版块行（forum_categories）；name_en / description_en 为空时回退中文。 */
 interface CategoryRow {
   id: number;
   name: string | null;
+  name_en: string | null;
   description: string | null;
+  description_en: string | null;
 }
 
-/** 帖子列表行（forum_topics + profiles 嵌入） */
+/** PostgREST 多对一嵌入既可能返回对象也可能返回数组。 */
+type TopicProfiles =
+  | { display_name: string | null }
+  | { display_name: string | null }[]
+  | null;
+
+/** 统一取嵌入作者昵称：数组取第一条，缺失返回 null。 */
+function topicAuthorName(profiles: TopicProfiles | undefined): string | null {
+  if (!profiles) return null;
+  const profile = Array.isArray(profiles) ? profiles[0] : profiles;
+  return profile?.display_name ?? null;
+}
+
+/** 帖子列表行（forum_topics + profiles 嵌入）；title_en 为空时回退中文标题。 */
 interface TopicRow {
   id: number;
   title: string;
+  title_en: string | null;
   created_at: string;
   replies_count: number | null;
-  profiles?: { display_name: string | null } | null;
+  profiles?: TopicProfiles;
 }
 
 /** 英文文案表（中文原文为 key）：只覆盖静态 UI，版块名/简介与昵称不翻译。 */
@@ -59,6 +87,7 @@ const EN: Record<string, string> = {
 
 export default function CategoryPage() {
   const tr = useTr(EN);
+  const locale = useLocale();
   const { id } = useParams();
   const [category, setCategory] = useState<CategoryRow | null>(null);
   const [topics, setTopics] = useState<TopicRow[]>([]);
@@ -81,8 +110,12 @@ export default function CategoryPage() {
         setCurrentUserLevel(levelOf(profile?.role_level));
       }
 
-      // 1. 获取版块信息
-      const { data: catData } = await supabase.from('forum_categories').select('*').eq('id', id).single();
+      // 1. 获取版块信息（含英文字段，英文界面优先显示）
+      const { data: catData } = await supabase
+        .from('forum_categories')
+        .select('id, name, name_en, description, description_en')
+        .eq('id', id)
+        .single();
       if (catData) setCategory(catData);
 
       // 2. 获取帖子数量
@@ -99,7 +132,7 @@ export default function CategoryPage() {
 
       const { data: topicData } = await supabase
         .from('forum_topics')
-        .select(`*, profiles:author_id (display_name)`)
+        .select(`id, title, title_en, created_at, replies_count, profiles:author_id (display_name)`)
         .eq('category_id', id)
         .order('created_at', { ascending: false })
         .range(from, to);
@@ -121,6 +154,10 @@ export default function CategoryPage() {
   const isOfficialBoard = String(categoryId) === '1';
   const canPost = !isOfficialBoard || canPostOfficialTopic(currentUserLevel);
 
+  // 版块名称 / 简介：英文界面优先英文字段，缺失回退中文。
+  const categoryName = localizedText(locale, category.name_en, category.name);
+  const categoryDescription = localizedText(locale, category.description_en, category.description);
+
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
@@ -131,15 +168,15 @@ export default function CategoryPage() {
           <div className="text-sm text-gray-400 mb-2">
             <Link href="/forum" className="hover:text-white transition">{tr('CRT MP 论坛')}</Link>
             <span className="mx-2">/</span>
-            <span className="text-white font-bold">{category.name}</span>
+            <span className="text-white font-bold">{categoryName}</span>
           </div>
-          <h1 className="text-4xl font-black text-white drop-shadow-lg">{category.name}</h1>
+          <h1 className="text-4xl font-black text-white drop-shadow-lg">{categoryName}</h1>
         </div>
       </div>
 
       <div className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-8">
         <div className="flex justify-between items-center mb-6 bg-[#2c2d31] p-4 rounded-lg border border-gray-700 shadow-lg">
-          <p className="text-gray-400 text-sm">{category.description}</p>
+          <p className="text-gray-400 text-sm">{categoryDescription}</p>
           
           {/* 🌟 权限控制：只有 canPost 为 true 时才显示发布按钮 */}
           {canPost && (
@@ -162,9 +199,9 @@ export default function CategoryPage() {
                 className="flex items-center justify-between bg-[#2c2d31] border border-gray-700 p-4 rounded-md hover:border-blue-500 hover:bg-[#323338] transition group shadow-sm"
               >
                 <div>
-                  <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{topic.title}</h3>
+                  <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{localizedText(locale, topic.title_en, topic.title)}</h3>
                   <p className="text-xs text-gray-500 mt-1">
-                    {tr('由')} <span className="text-gray-300 font-bold">{topic.profiles?.display_name || tr('未知玩家')}</span> {tr('发表于')} {new Date(topic.created_at).toLocaleString()}
+                    {tr('由')} <span className="text-gray-300 font-bold">{topicAuthorName(topic.profiles) || tr('未知玩家')}</span> {tr('发表于')} {new Date(topic.created_at).toLocaleString()}
                   </p>
                 </div>
                 <div className="text-right text-sm text-gray-400">

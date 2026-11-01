@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import RichText from '@/components/RichText';
+import { useTr } from '@/components/I18nProvider';
 import { sanitizeHttpUrl } from '@/lib/rich-text';
 
 export interface RichTextEditorProps {
@@ -19,8 +20,69 @@ export interface RichTextEditorProps {
 const toolbarButtonClass =
   'shrink-0 whitespace-nowrap rounded border border-gray-600 bg-[#232428] px-2.5 py-1.5 text-xs font-bold text-gray-300 transition hover:border-blue-500 hover:bg-[#2f3035] hover:text-white focus:outline-none focus-visible:border-blue-400 focus-visible:text-white active:bg-[#18191c] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-600 disabled:hover:bg-[#232428] disabled:hover:text-gray-300';
 
-const defaultPlaceholder =
+const DEFAULT_PLACEHOLDER =
   '支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。';
+
+const SYNTAX_HELP =
+  '支持 **加粗**、*斜体*、`代码`、[链接]、![完整图片]、[![缩略图]](大图链接)、> 引用、- 列表、## 标题';
+
+/** 编辑器静态 UI 文案（中文原文为 key）。 */
+const EN: Record<string, string> = {
+  [DEFAULT_PLACEHOLDER]:
+    'Supports **bold**, *italic*, `code`, [links](https://...), ![images](https://...), > quotes, - lists, ## headings; line breaks are preserved.',
+  [SYNTAX_HELP]:
+    'Supports **bold**, *italic*, `code`, [links], ![full images], [![thumbnails]](full image links), > quotes, - lists, ## headings',
+
+  // 工具栏
+  '富文本格式工具栏': 'Rich text formatting toolbar',
+  '加粗 (**文字**)': 'Bold (**text**)',
+  '加粗文字': 'bold text',
+  '斜体 (*文字*)': 'Italic (*text*)',
+  '斜体文字': 'italic text',
+  '行内代码 (`代码`)': 'Inline code (`code`)',
+  '代码': 'code',
+  '插入链接 [文字](https://...)': 'Insert link [text](https://...)',
+  '链接': 'Link',
+  '插入完整图片 ![描述](图片URL)': 'Insert full image ![description](image URL)',
+  '完整图片': 'Full image',
+  '插入缩略图（点击看大图）': 'Insert thumbnail (click to view full size)',
+  '缩略图': 'Thumbnail',
+  '引用 (> 文字)': 'Quote (> text)',
+  '引用': 'Quote',
+  '无序列表 (- 文字)': 'Bullet list (- text)',
+  '列表': 'List',
+  '二级标题 (## 文字)': 'Heading 2 (## text)',
+  '预览': 'Preview',
+  '编辑': 'Edit',
+  '返回编辑': 'Back to editing',
+  '预览渲染效果': 'Preview rendered output',
+  '暂无内容，切换到编辑模式开始输入。':
+    'No content yet. Switch to edit mode to start typing.',
+
+  // 插入链接 / 图片时的提示
+  '请输入链接地址（仅支持 http://、https:// 或 mailto:）':
+    'Enter a link URL (only http://, https:// or mailto: are supported)',
+  '链接地址不合法：仅支持 http://、https:// 或 mailto:。':
+    'Invalid link URL: only http://, https:// or mailto: are supported.',
+  '链接文字': 'link text',
+  '请输入完整图片地址（路过图床的「图片URL链接」，http/https）':
+    'Enter the full image URL (the “Image URL” from your image host, http/https)',
+  '图片地址不合法：仅支持 http:// 或 https://。':
+    'Invalid image URL: only http:// or https:// are supported.',
+  '图片描述': 'image description',
+  '请输入缩略图地址（路过图床的「缩略图URL链接」，http/https）':
+    'Enter the thumbnail URL (the “Thumbnail URL” from your image host, http/https)',
+  '缩略图地址不合法：仅支持 http:// 或 https://。':
+    'Invalid thumbnail URL: only http:// or https:// are supported.',
+  '请输入点击后打开的大图/页面地址（完整图片URL或图片页面链接）':
+    'Enter the full-size image or page URL to open on click',
+  '大图地址不合法：仅支持 http:// 或 https://。':
+    'Invalid full-size image URL: only http:// or https:// are supported.',
+  '图片': 'image',
+
+  // 字数提示
+  '已输入 {n} / {max} 个字符': 'Characters: {n} / {max}',
+};
 
 /** 转义链接文字 / 图片 alt 中会破坏语法的字符。 */
 function escapeInlineLabel(value: string): string {
@@ -66,17 +128,19 @@ function ToolbarButton({
 export default function RichTextEditor({
   value,
   onChange,
-  placeholder = defaultPlaceholder,
+  placeholder,
   rows = 8,
   maxLength,
   label,
   className,
   required = false,
 }: RichTextEditorProps) {
+  const tr = useTr(EN);
   const editorId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingSelection = useRef<{ start: number; end: number } | null>(null);
   const [preview, setPreview] = useState(false);
+  const effectivePlaceholder = placeholder ?? tr(DEFAULT_PLACEHOLDER);
 
   // 受控 textarea 重新渲染后再恢复选区，避免 setSelectionRange 被旧值截断。
   useEffect(() => {
@@ -132,18 +196,18 @@ export default function RichTextEditor({
     const { start, end } = readSelection();
     const selected = value.slice(start, end);
     const input = window.prompt(
-      '请输入链接地址（仅支持 http://、https:// 或 mailto:）',
+      tr('请输入链接地址（仅支持 http://、https:// 或 mailto:）'),
       'https://'
     );
     if (input === null) return;
 
     const href = sanitizeHttpUrl(input, true);
     if (!href) {
-      window.alert('链接地址不合法：仅支持 http://、https:// 或 mailto:。');
+      window.alert(tr('链接地址不合法：仅支持 http://、https:// 或 mailto:。'));
       return;
     }
 
-    const linkText = escapeInlineLabel(selected.trim() || '链接文字');
+    const linkText = escapeInlineLabel(selected.trim() || tr('链接文字'));
     const syntax = `[${linkText}](${encodeUrlForMarkdown(href)})`;
     insertAt(start, end, syntax);
   };
@@ -152,18 +216,18 @@ export default function RichTextEditor({
     const { start, end } = readSelection();
     const selected = value.slice(start, end);
     const input = window.prompt(
-      '请输入完整图片地址（路过图床的「图片URL链接」，http/https）',
+      tr('请输入完整图片地址（路过图床的「图片URL链接」，http/https）'),
       'https://'
     );
     if (input === null) return;
 
     const src = sanitizeHttpUrl(input);
     if (!src) {
-      window.alert('图片地址不合法：仅支持 http:// 或 https://。');
+      window.alert(tr('图片地址不合法：仅支持 http:// 或 https://。'));
       return;
     }
 
-    const alt = escapeInlineLabel(selected.trim() || '图片描述');
+    const alt = escapeInlineLabel(selected.trim() || tr('图片描述'));
     const syntax = `![${alt}](${encodeUrlForMarkdown(src)})`;
     insertAt(start, end, syntax);
   };
@@ -177,30 +241,30 @@ export default function RichTextEditor({
     const selected = value.slice(start, end);
 
     const thumbInput = window.prompt(
-      '请输入缩略图地址（路过图床的「缩略图URL链接」，http/https）',
+      tr('请输入缩略图地址（路过图床的「缩略图URL链接」，http/https）'),
       'https://'
     );
     if (thumbInput === null) return;
 
     const thumb = sanitizeHttpUrl(thumbInput);
     if (!thumb) {
-      window.alert('缩略图地址不合法：仅支持 http:// 或 https://。');
+      window.alert(tr('缩略图地址不合法：仅支持 http:// 或 https://。'));
       return;
     }
 
     const fullInput = window.prompt(
-      '请输入点击后打开的大图/页面地址（完整图片URL或图片页面链接）',
+      tr('请输入点击后打开的大图/页面地址（完整图片URL或图片页面链接）'),
       thumb
     );
     if (fullInput === null) return;
 
     const full = sanitizeHttpUrl(fullInput);
     if (!full) {
-      window.alert('大图地址不合法：仅支持 http:// 或 https://。');
+      window.alert(tr('大图地址不合法：仅支持 http:// 或 https://。'));
       return;
     }
 
-    const alt = escapeInlineLabel(selected.trim() || '图片');
+    const alt = escapeInlineLabel(selected.trim() || tr('图片'));
     const syntax = `[![${alt}](${encodeUrlForMarkdown(thumb)})](${encodeUrlForMarkdown(full)})`;
     insertAt(start, end, syntax);
   };
@@ -290,66 +354,70 @@ export default function RichTextEditor({
         <div className="flex items-center gap-2 border-b border-gray-700 bg-[#2c2d31] px-2 py-2">
           <div
             role="toolbar"
-            aria-label="富文本格式工具栏"
+            aria-label={tr('富文本格式工具栏')}
             className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto"
           >
             <ToolbarButton
-              title="加粗 (**文字**)"
-              onClick={() => wrapSelection('**', '**', '加粗文字')}
+              title={tr('加粗 (**文字**)')}
+              onClick={() => wrapSelection('**', '**', tr('加粗文字'))}
               disabled={preview}
             >
               <span className="font-black">B</span>
             </ToolbarButton>
             <ToolbarButton
-              title="斜体 (*文字*)"
-              onClick={() => wrapSelection('*', '*', '斜体文字')}
+              title={tr('斜体 (*文字*)')}
+              onClick={() => wrapSelection('*', '*', tr('斜体文字'))}
               disabled={preview}
             >
               <em>I</em>
             </ToolbarButton>
             <ToolbarButton
-              title="行内代码 (`代码`)"
-              onClick={() => wrapSelection('`', '`', '代码')}
+              title={tr('行内代码 (`代码`)')}
+              onClick={() => wrapSelection('`', '`', tr('代码'))}
               disabled={preview}
             >
               <span className="font-mono text-[11px]">&lt;/&gt;</span>
             </ToolbarButton>
             <ToolbarButton
-              title="插入链接 [文字](https://...)"
+              title={tr('插入链接 [文字](https://...)')}
               onClick={insertLink}
               disabled={preview}
             >
-              链接
+              {tr('链接')}
             </ToolbarButton>
             <ToolbarButton
-              title="插入完整图片 ![描述](图片URL)"
+              title={tr('插入完整图片 ![描述](图片URL)')}
               onClick={insertImage}
               disabled={preview}
             >
-              完整图片
+              {tr('完整图片')}
             </ToolbarButton>
             <ToolbarButton
-              title="插入缩略图（点击看大图）"
+              title={tr('插入缩略图（点击看大图）')}
               onClick={insertThumbnail}
               disabled={preview}
             >
-              缩略图
+              {tr('缩略图')}
             </ToolbarButton>
             <ToolbarButton
-              title="引用 (> 文字)"
+              title={tr('引用 (> 文字)')}
               onClick={() => applyLinePrefix('> ')}
               disabled={preview}
             >
-              引用
+              {tr('引用')}
             </ToolbarButton>
             <ToolbarButton
-              title="无序列表 (- 文字)"
+              title={tr('无序列表 (- 文字)')}
               onClick={() => applyLinePrefix('- ')}
               disabled={preview}
             >
-              列表
+              {tr('列表')}
             </ToolbarButton>
-            <ToolbarButton title="二级标题 (## 文字)" onClick={applyHeading} disabled={preview}>
+            <ToolbarButton
+              title={tr('二级标题 (## 文字)')}
+              onClick={applyHeading}
+              disabled={preview}
+            >
               H2
             </ToolbarButton>
           </div>
@@ -358,14 +426,14 @@ export default function RichTextEditor({
             type="button"
             onClick={togglePreview}
             aria-pressed={preview}
-            title={preview ? '返回编辑' : '预览渲染效果'}
+            title={preview ? tr('返回编辑') : tr('预览渲染效果')}
             className={`shrink-0 whitespace-nowrap rounded border px-2.5 py-1.5 text-xs font-bold transition focus:outline-none focus-visible:border-blue-400 ${
               preview
                 ? 'border-orange-500/60 bg-orange-500/15 text-orange-300 hover:bg-orange-500/25'
                 : 'border-gray-600 bg-[#232428] text-gray-300 hover:border-blue-500 hover:text-white'
             }`}
           >
-            {preview ? '编辑' : '预览'}
+            {preview ? tr('编辑') : tr('预览')}
           </button>
         </div>
 
@@ -374,7 +442,7 @@ export default function RichTextEditor({
             {value.trim() ? (
               <RichText text={value} className="text-sm leading-relaxed text-gray-300" />
             ) : (
-              <p className="text-sm text-gray-500">暂无内容，切换到编辑模式开始输入。</p>
+              <p className="text-sm text-gray-500">{tr('暂无内容，切换到编辑模式开始输入。')}</p>
             )}
           </div>
         )}
@@ -391,7 +459,7 @@ export default function RichTextEditor({
           rows={rows}
           maxLength={maxLength}
           required={required}
-          placeholder={placeholder}
+          placeholder={effectivePlaceholder}
           tabIndex={preview ? -1 : undefined}
           onInvalid={handleInvalid}
           className={
@@ -402,11 +470,10 @@ export default function RichTextEditor({
         />
 
         <div className="flex items-center justify-between gap-3 border-t border-gray-700/60 bg-[#232428] px-3 py-1.5">
-          <span className="min-w-0 truncate text-[11px] text-gray-500">
-            支持 **加粗**、*斜体*、`代码`、[链接]、![完整图片]、[![缩略图]](&#8203;大图链接)、&gt; 引用、- 列表、## 标题
-          </span>
+          <span className="min-w-0 truncate text-[11px] text-gray-500">{tr(SYNTAX_HELP)}</span>
           {typeof maxLength === 'number' && (
             <span
+              aria-label={tr('已输入 {n} / {max} 个字符', { n: value.length, max: maxLength })}
               className={`shrink-0 font-mono text-[11px] ${
                 value.length >= maxLength ? 'text-orange-400' : 'text-gray-500'
               }`}
