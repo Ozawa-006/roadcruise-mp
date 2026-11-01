@@ -379,7 +379,11 @@ function SearchResults() {
         if (vtcsResponse?.error)
           errors.push(tr('车队：{message}', { message: vtcsResponse.error.message }));
 
-        const topicRows = (topicsResponse?.data ?? []) as TopicRow[];
+        // 旧官方公告帖（category_id = 1）已统一到 announcements：帖子结果里过滤掉，
+        // 避免把用户带回 /forum/1/{id}；公告内容由下方「相关新闻」分区覆盖。
+        const topicRows = ((topicsResponse?.data ?? []) as TopicRow[]).filter(
+          (row) => row.category_id !== 1
+        );
         const memberRows = (membersResponse?.data ?? []) as MemberRow[];
         const eventRows = (eventsResponse?.data ?? []) as EventRow[];
         const newsRows = (newsResponse?.data ?? []) as NewsRow[];

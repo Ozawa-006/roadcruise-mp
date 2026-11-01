@@ -224,23 +224,27 @@ export default function ForumHome() {
       if (announcementTotal !== null) setAnnouncementCount(announcementTotal);
 
       // 2. 获取最新动态（全站最新5条帖子）
+      // 官方公告版块（category_id = 1）已改为只读展示 announcements，旧公告帖不再出现在这里。
       const { data: latest } = await supabase
         .from('forum_topics')
         .select(`
           id, title, title_en, created_at, category_id,
           profiles:author_id (display_name)
         `)
+        .neq('category_id', 1)
         .order('created_at', { ascending: false })
         .limit(5);
       if (latest) setLatestTopics(latest);
 
       // 3. 获取热门主题（按回复数最多排序前5条）
+      // 同样排除官方公告版块的旧帖，避免链回 /forum/1/{id}。
       const { data: hot } = await supabase
         .from('forum_topics')
         .select(`
           id, title, title_en, replies_count, category_id,
           profiles:author_id (display_name)
         `)
+        .neq('category_id', 1)
         .order('replies_count', { ascending: false })
         .limit(5);
       if (hot) setHotTopics(hot);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { createClient, type User } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,9 @@ const supabase = createClient(
 
 /** 在线人数轮询间隔：30 秒，页面隐藏时暂停。 */
 const PLAYERS_POLL_INTERVAL_MS = 30_000;
+
+/** 通知轮询间隔：30 秒（页面重新可见或窗口重新聚焦时额外立即刷新）。 */
+const NOTIFICATIONS_POLL_INTERVAL_MS = 30_000;
 
 /** 移动端主导航项（桌面端仍使用下方完整导航，含活动下拉）。 */
 type MobileNavItem = {
@@ -115,16 +118,34 @@ export default function Navbar() {
   const notifRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // 获取通知（必须先于下方 useEffect 中的调用声明）
-  const fetchNotifications = async (userId: string) => {
-    const { data } = await supabase
-      .from('notifications')
-      .select(`*, actor:actor_id (display_name)`)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    if (data) setNotifications(data);
-  };
+  // 通知请求序号：只接受最后一次请求的结果，避免轮询与手动刷新并发时旧响应覆盖新数据。
+  const notificationsRequestRef = useRef(0);
+
+  // 获取通知；cancelled 由调用方提供，用于组件卸载/登出后丢弃在途响应。
+  const fetchNotifications = useCallback(
+    async (userId: string, cancelled?: () => boolean) => {
+      const requestId = ++notificationsRequestRef.current;
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select(`*, actor:actor_id (display_name)`)
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (cancelled?.() || requestId !== notificationsRequestRef.current) return;
+        if (error) {
+          console.warn('获取通知失败:', error.message);
+          return;
+        }
+        if (data) setNotifications(data);
+      } catch (err) {
+        if (cancelled?.() || requestId !== notificationsRequestRef.current) return;
+        console.warn('获取通知失败:', err instanceof Error ? err.message : err);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     // 1. 获取用户登录状态
@@ -153,15 +174,16 @@ export default function Navbar() {
           }
         }
 
-        // 获取未读通知
-        fetchNotifications(user.id);
+        // 通知由下方“登录后自动刷新”effect 统一加载。
       }
     };
     getUser();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user || null);
-      if (session?.user) fetchNotifications(session.user.id);
+      const nextUser = session?.user || null;
+      setUser(nextUser);
+      // 登出时清空本地通知，避免切换账号瞬间看到上一个账号的内容。
+      if (!nextUser) setNotifications([]);
     });
 
     // 2. 点击页面其他地方，自动关闭下拉菜单和通知
@@ -180,6 +202,37 @@ export default function Navbar() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // 登录后每 30 秒自动刷新通知列表与未读数；页面重新可见或窗口重新聚焦时立即刷新。
+  // 登出/卸载时清理定时器与监听，cancelled 守卫丢弃在途响应，避免旧数据覆盖新状态。
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+
+    const refresh = () => {
+      if (cancelled) return;
+      void fetchNotifications(userId, () => cancelled);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    refresh();
+    const timer = setInterval(refresh, NOTIFICATIONS_POLL_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', refresh);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [userId, fetchNotifications]);
 
   // 从站内代理获取游戏服务器在线人数（不再直连 TruckersMP API）。
   // 每 30 秒轮询一次；页面隐藏时暂停，切回前台立即刷新并恢复轮询；失败静默。
@@ -253,7 +306,11 @@ export default function Navbar() {
 
   // 标记通知为已读
   const markAsRead = async (id: number, link: string | null) => {
+    // 使在途的通知列表请求失效，避免旧响应把本次本地标记覆盖回未读。
+    notificationsRequestRef.current += 1;
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    // 写入完成后再失效一次，覆盖“更新期间新发起、但读到旧数据”的请求。
+    notificationsRequestRef.current += 1;
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     setIsNotifOpen(false);
     if (link) router.push(link);
@@ -262,6 +319,8 @@ export default function Navbar() {
   // 下拉内的「全部已读」：把当前用户的未读通知批量置为已读并刷新本地列表
   const markAllAsRead = async () => {
     if (!user) return;
+    // 同上：丢弃可能仍在途的旧列表响应。
+    notificationsRequestRef.current += 1;
     const { error } = await supabase
       .from('notifications')
       .update({ is_read: true })
@@ -271,6 +330,8 @@ export default function Navbar() {
       console.error('标记全部通知已读失败:', error.message);
       return;
     }
+    // 写入完成后再失效一次，避免窗口期内发起的请求用旧数据覆盖“全部已读”。
+    notificationsRequestRef.current += 1;
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 

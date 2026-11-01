@@ -27,11 +27,37 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.48v',
+    date: '2026-11-02',
+    title: '公告收尾与运营概览',
+    title_en: 'Announcement cleanup and admin overview',
+    highlight: true,
+    items: [
+      {
+        kind: 'fix',
+        text: '公告统一的遗留入口清理：论坛最新动态/热门主题/搜索不再展示旧公告帖；/forum/1/new 不再允许发帖，引导到 /news',
+      },
+      {
+        kind: 'feature',
+        text: '通知自动刷新：每 30 秒 + 页面重新可见/聚焦时更新，未读角标与通知下拉保持同步',
+      },
+      {
+        kind: 'feature',
+        text: '后台控制台新增运营概览：待处理举报、待审核招募、生效处罚、即将开始活动，可点击进入对应页面',
+      },
+    ],
+    items_en: [
+      'Cleaned up leftover announcement entry points: latest/hot topics and search no longer show old announcement posts; /forum/1/new is no longer available and links to /news',
+      'Notifications now refresh automatically every 30 seconds and when the page becomes visible/focused, keeping the unread badge in sync',
+      'The admin dashboard now shows an overview: open reports, pending recruitment applications, active penalties and upcoming events, each linking to its page',
+    ],
+  },
+  {
     version: '0.0.47v',
     date: '2026-11-02',
     title: 'Discord 社区接入',
     title_en: 'Discord community integration',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

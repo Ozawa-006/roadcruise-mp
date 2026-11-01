@@ -55,6 +55,13 @@ const EN: Record<string, string> = {
   // ---------- 权限提示 ----------
   '🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能访问此控制台。':
     '🚫 Insufficient permissions: only staff (Lv.40) and above can access this console.',
+
+  // ---------- 运营概览 ----------
+  '运营概览': 'Operations Overview',
+  '待处理举报': 'Open reports',
+  '待审核招募': 'Pending applications',
+  '生效处罚': 'Active moderation',
+  '即将开始活动': 'Upcoming events',
 };
 
 const supabase = createClient(
@@ -62,12 +69,27 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+/** 运营概览的四项统计；null 表示加载中或查询失败（统一显示 —）。 */
+type AdminStats = {
+  openReports: number | null;
+  pendingRecruitment: number | null;
+  activeModeration: number | null;
+  upcomingEvents: number | null;
+};
+
 export default function AdminDashboard() {
   const tr = useTr(EN);
   const locale = useLocale();
   const [role, setRole] = useState<string | null>(null);
   const [roleLevel, setRoleLevel] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<AdminStats>({
+    openReports: null,
+    pendingRecruitment: null,
+    activeModeration: null,
+    upcomingEvents: null,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
@@ -93,12 +115,74 @@ export default function AdminDashboard() {
     checkRole();
   }, [router]);
 
+  // 运营概览：权限校验通过后才并发统计四项数据；单项失败只显示 —，不阻塞页面。
+  useEffect(() => {
+    if (loading || !canAccessAdmin(roleLevel)) return;
+
+    let cancelled = false;
+    const nowIso = new Date().toISOString();
+
+    const loadStats = async () => {
+      try {
+        const [reports, recruitment, moderation, events] = await Promise.all([
+          supabase
+            .from('reports')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'open'),
+          supabase
+            .from('recruitment_applications')
+            .select('id', { count: 'exact', head: true })
+            .in('status', ['pending', 'reviewing']),
+          supabase
+            .from('moderation_actions')
+            .select('id', { count: 'exact', head: true })
+            .is('revoked_at', null)
+            .or(`expires_at.is.null,expires_at.gt.${nowIso}`),
+          supabase
+            .from('events')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'published')
+            .gte('start_at', nowIso),
+        ]);
+
+        if (cancelled) return;
+
+        if (reports.error) console.warn('统计待处理举报失败:', reports.error.message);
+        if (recruitment.error) console.warn('统计待审核招募失败:', recruitment.error.message);
+        if (moderation.error) console.warn('统计生效处罚失败:', moderation.error.message);
+        if (events.error) console.warn('统计即将开始活动失败:', events.error.message);
+
+        setStats({
+          openReports: reports.error ? null : reports.count,
+          pendingRecruitment: recruitment.error ? null : recruitment.count,
+          activeModeration: moderation.error ? null : moderation.count,
+          upcomingEvents: events.error ? null : events.count,
+        });
+        setStatsLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('加载运营概览失败:', err instanceof Error ? err.message : err);
+        setStatsLoading(false);
+      }
+    };
+
+    void loadStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, roleLevel]);
+
   if (loading) {
     return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('验证权限中...')}</div>;
   }
 
   // 角色名：中文用 roleLabel（含数据库展示名），英文统一用 roleLabelEn。
   const displayRole = locale === 'en' ? roleLabelEn(role, roleLevel) : roleLabel(role, roleLevel);
+
+  // 加载中或查询失败统一显示 —，避免误导为 0。
+  const formatStat = (value: number | null): string =>
+    statsLoading || value === null ? '—' : String(value);
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 p-10 font-sans">
@@ -107,6 +191,59 @@ export default function AdminDashboard() {
         <p className="text-gray-500 mb-8 border-b border-gray-700 pb-4">
           {tr('当前身份：')}<span className="text-blue-400 font-bold">{displayRole} (Lv.{roleLevel})</span>
         </p>
+
+        {/* 🌟 运营概览（Lv.40+）：四项统计并发加载，加载中/失败显示 — */}
+        {canAccessAdmin(roleLevel) && (
+          <section aria-labelledby="admin-overview-heading" className="mb-8">
+            <h2
+              id="admin-overview-heading"
+              className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3"
+            >
+              {tr('运营概览')}
+            </h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Link
+                href="/admin/reports"
+                className="block rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg transition hover:border-orange-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                <p className="mb-1 text-[11px] text-gray-400">
+                  <span aria-hidden="true">🚩</span> {tr('待处理举报')}
+                </p>
+                <p className="font-mono text-2xl font-bold text-white">{formatStat(stats.openReports)}</p>
+              </Link>
+
+              <Link
+                href="/admin/recruitment"
+                className="block rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg transition hover:border-green-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                <p className="mb-1 text-[11px] text-gray-400">
+                  <span aria-hidden="true">📢</span> {tr('待审核招募')}
+                </p>
+                <p className="font-mono text-2xl font-bold text-white">{formatStat(stats.pendingRecruitment)}</p>
+              </Link>
+
+              <Link
+                href="/admin/moderation"
+                className="block rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg transition hover:border-red-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                <p className="mb-1 text-[11px] text-gray-400">
+                  <span aria-hidden="true">⚖️</span> {tr('生效处罚')}
+                </p>
+                <p className="font-mono text-2xl font-bold text-white">{formatStat(stats.activeModeration)}</p>
+              </Link>
+
+              <Link
+                href="/admin/events"
+                className="block rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg transition hover:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                <p className="mb-1 text-[11px] text-gray-400">
+                  <span aria-hidden="true">🗓️</span> {tr('即将开始活动')}
+                </p>
+                <p className="font-mono text-2xl font-bold text-white">{formatStat(stats.upcomingEvents)}</p>
+              </Link>
+            </div>
+          </section>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           

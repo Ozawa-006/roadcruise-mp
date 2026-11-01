@@ -32,6 +32,12 @@ const EN: Record<string, string> = {
   '官方公告版块仅限经理 (Lv.70) 及以上发布，您当前没有该版块的发帖权限。':
     'The official announcements board is restricted to Manager (Lv.70) and above. You do not have permission to post in this board.',
 
+  // ---- 官方公告版块（category_id = 1，只读，统一由后台发布） ----
+  '官方公告版块': 'Official Announcements',
+  '官方公告由后台发布，请前往新闻页查看':
+    'Official announcements are published from the admin console. Please view them on the news page.',
+  '前往新闻页': 'Go to news',
+
   // ---- 表单 ----
   '主题分类': 'Topic category',
   '帖子标题': 'Topic title',
@@ -72,6 +78,8 @@ export default function NewTopicPage() {
   const tr = useTr(EN);
   const { id } = useParams();
   const router = useRouter();
+  // 官方公告版块（category_id = 1）已改为只读展示 announcements，这里不再提供发帖表单。
+  const isOfficialBoard = String(id) === '1';
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -91,6 +99,12 @@ export default function NewTopicPage() {
     let cancelled = false;
 
     const checkPermission = async () => {
+      // 官方公告版块不再提供发帖页：跳过权限检查，页面只展示只读提示。
+      if (isOfficialBoard) {
+        setCanPost(false);
+        return;
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -130,7 +144,7 @@ export default function NewTopicPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, isOfficialBoard]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +194,31 @@ export default function NewTopicPage() {
       router.refresh();
     }
   };
+
+  // 官方公告版块：不渲染发帖表单，避免旧链接/收藏夹继续进入发帖流程。
+  if (isOfficialBoard) {
+    return (
+      <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
+        <Navbar />
+
+        <div className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-8">
+          <div className="mt-8 bg-[#2c2d31] border border-gray-700 p-8 rounded-lg shadow-2xl text-center space-y-4">
+            <p className="text-3xl" aria-hidden="true">📢</p>
+            <h1 className="text-2xl font-black text-white">{tr('官方公告版块')}</h1>
+            <p className="text-sm text-gray-400">{tr('官方公告由后台发布，请前往新闻页查看')}</p>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <Link href="/news" className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition shadow-lg">
+                {tr('前往新闻页')}
+              </Link>
+              <Link href={`/forum/${id}`} className="bg-[#232428] hover:bg-[#3a3b40] border border-gray-600 text-gray-200 px-6 py-2 rounded font-bold transition">
+                {tr('返回版块')}
+              </Link>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
