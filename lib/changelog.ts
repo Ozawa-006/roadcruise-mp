@@ -32,7 +32,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       },
       {
         kind: 'feature',
-        text: '认证邮件模板中文化：重置密码 / 注册确认邮件改为中文并带 RCT MP 品牌样式',
+        text: '认证邮件沿用 Supabase 默认英文模板（按站长要求不中文化），发件人显示 `RCT MP`',
       },
       {
         kind: 'chore',
