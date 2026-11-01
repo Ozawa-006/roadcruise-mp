@@ -47,22 +47,26 @@ export default function UserManagementPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return router.push('/login');
 
-    // 🌟 修复：直接从 user.email 拿数据，同时判断 role 是否为 developer
     const { data: profile } = await supabase.from('profiles').select('role, role_level').eq('id', user.id).single();
     
     const isDev = user.email === '420075623@qq.com' || profile?.role === 'developer';
     const myLevel = isDev ? 100 : (profile?.role_level || 10);
     
-    // 小于 60 级直接踢走
     if (myLevel < 60 && !isDev) {
       alert('🚫 权限不足：只有组长及以上级别才能访问人员管理。');
       router.push('/admin');
       return;
     }
-    setCurrentUser({ ...profile, id: user.id, email: user.email }); // 把真正的 email 存进去
+    setCurrentUser({ ...profile, id: user.id, email: user.email }); 
 
-    const { data: rolesData } = await supabase.from('roles').select('*').order('level', { ascending: false });
-    if (rolesData) setRoles(rolesData);
+    // 🌟 修复：拉取职位库，并加上错误日志打印
+    const { data: rolesData, error: rolesError } = await supabase.from('roles').select('*').order('level', { ascending: false });
+    if (rolesError) {
+      console.error("拉取职位失败，请检查 Supabase roles 表是否创建并开放权限：", rolesError);
+    } else if (rolesData) {
+      console.log("拉取到的职位库：", rolesData);
+      setRoles(rolesData);
+    }
 
     const { data: usersData } = await supabase.from('profiles').select('*').order('role_level', { ascending: false });
     if (usersData) setUsers(usersData);
@@ -259,7 +263,7 @@ export default function UserManagementPage() {
                                 </div>
                                 <div className="max-h-60 overflow-y-auto">
                                   {filteredRoles.length === 0 ? (
-                                    <p className="text-xs text-gray-500 text-center py-2">无匹配职位</p>
+                                    <p className="text-xs text-gray-500 text-center py-2">无匹配职位 (请检查 Supabase 数据库)</p>
                                   ) : (
                                     filteredRoles.map(r => (
                                       <div 
