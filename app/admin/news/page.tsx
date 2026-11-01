@@ -62,7 +62,7 @@ export default function AdminNewsPage() {
     if (error) {
       setMsg(`发布失败: ${error.message}`);
     } else {
-      setMsg('🎉 发布成功！你可以去主页查看轮播图了。');
+      setMsg('🎉 已发布，去新闻页查看。');
       setTitle('');
       setContent('');
       setImageUrl('');
@@ -132,7 +132,13 @@ export default function AdminNewsPage() {
             {loading ? '正在发布...' : '立即发布'}
           </button>
         </form>
-        
+
+        <div className="mt-5 text-center">
+          <Link href="/news" className="text-sm text-blue-400 hover:text-blue-300 transition">
+            查看新闻列表 →
+          </Link>
+        </div>
+
         {msg && <p className={`mt-4 text-center font-bold ${msg.includes('失败') ? 'text-red-400' : 'text-green-400'}`}>{msg}</p>}
       </div>
     </main>

@@ -33,10 +33,11 @@ export default function Home() {
       // 2. 获取统计数据
       const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
       const { count: teamCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('role_level', 40);
+      const { count: vtcCount } = await supabase.from('vtcs').select('*', { count: 'exact', head: true });
       
       setStats({
         users: userCount || 0,
-        vtc: 0, 
+        vtc: vtcCount || 0, 
         events: 0, 
         team: teamCount || 0
       });
@@ -251,7 +252,7 @@ export default function Home() {
           </div>
           <div>
             <p className="text-4xl font-black text-white">{stats.events}</p>
-            <p className="text-sm text-gray-500 mt-2">发布的活动</p>
+            <p className="text-sm text-gray-500 mt-2">联运活动（即将上线）</p>
           </div>
           <div>
             <p className="text-4xl font-black text-white">{stats.team}</p>
@@ -280,9 +281,12 @@ export default function Home() {
             <h4 className="text-white font-bold mb-4">有用链接</h4>
             <ul className="space-y-2 text-sm text-gray-400">
               <li><Link href="/forum" className="hover:text-blue-400">论坛首页</Link></li>
+              <li><Link href="/news" className="hover:text-blue-400">新闻公告</Link></li>
               <li><Link href="/rules" className="hover:text-blue-400">社区规则</Link></li>
               <li><Link href="/map" className="hover:text-blue-400">实时地图</Link></li>
-              <li><Link href="/login" className="hover:text-blue-400">下载客户端 (即将推出)</Link></li>
+              <li>
+                <span className="text-gray-600 cursor-default" title="客户端尚未发布">下载客户端（即将推出）</span>
+              </li>
             </ul>
           </div>
 
@@ -292,18 +296,21 @@ export default function Home() {
               <li><Link href="/privacy" className="hover:text-blue-400">隐私政策 (Privacy)</Link></li>
               <li><Link href="/terms" className="hover:text-blue-400">服务条款 (Terms of Service)</Link></li>
               <li><Link href="/code-of-conduct" className="hover:text-blue-400">行为准则 (Code of Conduct)</Link></li>
-              <li><Link href="#" className="hover:text-blue-400">平台状态 (Status)</Link></li>
+              <li><Link href="/servers" className="hover:text-blue-400">服务器状态 (Status)</Link></li>
             </ul>
           </div>
 
           <div>
             <h4 className="text-white font-bold mb-4">支持我们</h4>
             <p className="text-sm text-gray-400 mb-4">
-              如果您喜欢我们的工作，并希望支持服务器的日常维护，请考虑成为赞助人。
+              如果您喜欢我们的工作，并希望支持服务器的日常维护，欢迎联系我们。
             </p>
-            <button className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded font-bold text-sm transition">
-              成为赞助人
-            </button>
+            <Link
+              href="/forum/3"
+              className="inline-block bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded font-bold text-sm transition"
+            >
+              联系我们
+            </Link>
           </div>
         </div>
 

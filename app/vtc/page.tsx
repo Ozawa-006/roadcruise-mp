@@ -84,7 +84,11 @@ export default function VTCHome() {
           )}
           {user && userVtcId && (
             <div className="bg-[#2c2d31] px-4 py-2 rounded-lg border border-gray-600 text-sm">
-              你已加入车队，点击右上角“我的车队”查看。
+              你已加入车队，前往
+              <Link href="/profile" className="text-blue-400 hover:text-blue-300 underline underline-offset-2 mx-1">
+                个人中心
+              </Link>
+              查看我的车队。
             </div>
           )}
         </div>

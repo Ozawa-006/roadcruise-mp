@@ -34,6 +34,14 @@ export default function MapPage() {
   return (
     <main className="h-screen bg-[#111] flex flex-col overflow-hidden font-sans text-white">
       <Navbar />
+
+      {/* 演示数据提示：地图与玩家位置目前都是模拟的 */}
+      <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-center text-xs leading-5 text-amber-200">
+        <span className="mr-2 inline-flex items-center rounded-full border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+          演示数据 · Mock Data
+        </span>
+        当前地图与玩家位置均为模拟数据，仅用于界面预览；遥测接口接入后将替换为真实数据。
+      </div>
       
       <div className="flex-1 relative flex">
         {/* 左侧控制面板 */}

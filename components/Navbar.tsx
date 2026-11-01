@@ -11,6 +11,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+/** 在线人数轮询间隔：30 秒，页面隐藏时暂停。 */
+const PLAYERS_POLL_INTERVAL_MS = 30_000;
+
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
   const [players, setPlayers] = useState<number | null>(null); 
@@ -75,18 +78,7 @@ export default function Navbar() {
       if (session?.user) fetchNotifications(session.user.id);
     });
 
-    // 2. 从站内代理获取游戏服务器在线人数（不再直连 TruckersMP API）
-    fetch('/api/servers/status', { cache: 'no-store' })
-      .then((res) => res.json())
-      .then((data: { servers?: { online?: number | null }[] }) => {
-        const list = data?.servers ?? [];
-        if (list.length > 0) {
-          setPlayers(list.reduce((sum, server) => sum + (server.online ?? 0), 0));
-        }
-      })
-      .catch(() => {});
-
-    // 3. 点击页面其他地方，自动关闭下拉菜单和通知
+    // 2. 点击页面其他地方，自动关闭下拉菜单和通知
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
@@ -100,6 +92,76 @@ export default function Navbar() {
     return () => {
       authListener.subscription.unsubscribe();
       document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // 从站内代理获取游戏服务器在线人数（不再直连 TruckersMP API）。
+  // 每 30 秒轮询一次；页面隐藏时暂停，切回前台立即刷新并恢复轮询；失败静默。
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const loadPlayers = async () => {
+      try {
+        const res = await fetch('/api/servers/status', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data: {
+          servers?: { online?: number | null }[];
+          configured?: boolean;
+        } = await res.json();
+        if (cancelled) return;
+
+        const list = Array.isArray(data?.servers) ? data.servers : [];
+        if (data?.configured === false || list.length === 0) {
+          setPlayers(null);
+          return;
+        }
+
+        setPlayers(
+          list.reduce(
+            (sum, server) =>
+              sum + (typeof server?.online === 'number' && Number.isFinite(server.online)
+                ? server.online
+                : 0),
+            0
+          )
+        );
+      } catch {
+        // 静默失败：保留上一次的在线人数，不打扰用户。
+      }
+    };
+
+    const stopTimer = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    const startTimer = () => {
+      if (timer !== null) return;
+      timer = setInterval(() => {
+        void loadPlayers();
+      }, PLAYERS_POLL_INTERVAL_MS);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadPlayers();
+        startTimer();
+      } else {
+        stopTimer();
+      }
+    };
+
+    void loadPlayers();
+    if (document.visibilityState === 'visible') startTimer();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      stopTimer();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -222,10 +284,9 @@ export default function Navbar() {
                       <p className="text-gray-500 text-[10px] truncate">{user.email}</p>
                     </div>
                     <Link href={`/profile/${user.id}`} className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>个人中心 (Profile)</Link>
-                    <Link href="/my-vtc" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>我的车队 (My VTC)</Link>
+                    <Link href="/profile" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>我的车队 (My VTC)</Link>
                     <Link href="/settings" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>账号设置 (Settings)</Link>
-                    <Link href="/support" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>帮助与支持 (Support)</Link>
-                    <Link href="/reports" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>违规举报 (Reports)</Link>
+                    <Link href="/forum/3" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>帮助与支持 (Support)</Link>
                     <div className="border-t border-gray-700 my-1"></div>
                     <button onClick={handleLogout} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-[#333333] transition">退出登录 (Logout)</button>
                   </div>
@@ -259,6 +320,7 @@ export default function Navbar() {
           <div className="relative">
             <button 
               onClick={() => setIsLangOpen(!isLangOpen)}
+              title="多语言切换开发中"
               className="flex items-center space-x-1 hover:text-white transition focus:outline-none"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -267,9 +329,9 @@ export default function Navbar() {
               <span className="text-xs ml-1">{currentLang}</span>
             </button>
             {isLangOpen && (
-              <div className="absolute right-0 top-full mt-4 w-32 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 z-50">
-                <button onClick={() => { setCurrentLang('简中'); setIsLangOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">简体中文</button>
-                <button onClick={() => { setCurrentLang('EN'); setIsLangOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">English</button>
+              <div className="absolute right-0 top-full mt-4 w-44 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 z-50">
+                <button onClick={() => { setCurrentLang('简中'); setIsLangOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">简体中文（当前）</button>
+                <button disabled title="多语言切换开发中" className="block w-full text-left px-4 py-2 text-sm text-gray-500 cursor-not-allowed opacity-60">English（开发中）</button>
               </div>
             )}
           </div>
@@ -283,7 +345,7 @@ export default function Navbar() {
               <svg className="w-3 h-3 text-gray-500 group-hover:text-white transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </button>
             <div className="absolute top-full left-0 mt-1 w-48 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-              <Link href="#" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">暂无活动</Link>
+              <span className="block px-4 py-2 text-sm text-gray-500 cursor-default select-none">暂无活动（敬请期待）</span>
             </div>
           </div>
           
@@ -291,7 +353,7 @@ export default function Navbar() {
           <Link href="/servers" className="hover:text-white transition">服务器列表</Link>
           <Link href="/vtc" className="hover:text-white transition">车队 (VTC)</Link>
           <Link href="/rules" className="hover:text-white transition">社区规则</Link>
-          <Link href="#" className="hover:text-white transition">帮助与支持</Link>
+          <Link href="/forum/3" className="hover:text-white transition">帮助与支持</Link>
 
           {/* 🌟 全局搜索框 (带分类下拉) */}
           <form onSubmit={handleSearch} className="relative ml-4 flex items-center bg-[#232428] border border-gray-700 rounded-full focus-within:border-blue-500 transition-all focus-within:w-80 w-64 h-8">

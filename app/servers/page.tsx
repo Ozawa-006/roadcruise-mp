@@ -31,11 +31,11 @@ const STATUS_META = {
 type ServerState = keyof typeof STATUS_META;
 
 const ERROR_LABELS: Record<string, string> = {
-  unauthorized: '鉴权失败：游戏服务器 API Key 不匹配或缺失（HTTP 401）',
-  timeout: '请求超时：游戏服务器在 2.5 秒内没有响应',
-  bad_response: '响应异常：非 200、非 JSON，或返回结构不符合 /status 规范',
-  network_error: '网络错误：无法连接游戏服务器（DNS / 端口 / 防火墙）',
-  unknown_server: '未知服务器 ID：该 id 不在服务器注册表中',
+  unauthorized: '服务器鉴权未通过，请稍后再试或联系管理员。',
+  timeout: '服务器响应超时，请稍后再试。',
+  bad_response: '服务器返回的数据异常，请稍后再试。',
+  network_error: '暂时无法连接游戏服务器，请稍后再试。',
+  unknown_server: '未找到该服务器。',
 };
 
 function isServersStatusPayload(value: unknown): value is ServersStatusPayload {
@@ -186,6 +186,8 @@ function ServerCard({
     ? status.players
     : status.players.slice(0, PLAYER_PREVIEW_LIMIT);
   const canExpand = status.players.length > PLAYER_PREVIEW_LIMIT;
+  // 最近一次刷新失败时状态已不可信，连接入口应先禁用，避免把玩家带到不可用的服务器。
+  const connectDisabled = stale;
 
   return (
     <article className="overflow-hidden rounded-xl border border-gray-700 bg-[#2c2d31] shadow-lg shadow-black/20">
@@ -227,7 +229,13 @@ function ServerCard({
               <button
                 type="button"
                 onClick={() => launchServer(status.id)}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:w-auto"
+                disabled={connectDisabled}
+                aria-disabled={connectDisabled}
+                className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:w-auto ${
+                  connectDisabled
+                    ? 'cursor-not-allowed border border-gray-700 bg-[#232428] text-gray-500 opacity-60'
+                    : 'bg-blue-600 text-white hover:bg-blue-500'
+                }`}
               >
                 <svg
                   className="h-4 w-4"
@@ -243,9 +251,13 @@ function ServerCard({
                     d="M13 10V3L4 14h7v7l9-11h-7z"
                   />
                 </svg>
-                连接启动器
+                {connectDisabled ? '连接启动器（状态未知）' : '连接启动器'}
               </button>
-              <span className="text-[11px] text-gray-500">需要已安装 RCTMP 启动器</span>
+              <span className="text-[11px] text-gray-500">
+                {connectDisabled
+                  ? '服务器状态未知，暂时无法连接，请稍后再试'
+                  : '需要已安装 RCTMP 启动器'}
+              </span>
             </div>
           </div>
 
@@ -443,9 +455,9 @@ function OfflineServerCard({ id, error }: { id: string; error: string }) {
       </div>
 
       <p className="mt-3 text-sm text-red-300">{describeError(error)}</p>
-      <p className="mt-1 break-all font-mono text-[11px] text-gray-500">error: {error}</p>
+      <p className="mt-1 break-all font-mono text-[11px] text-gray-500">错误码：{error}</p>
       <p className="mt-3 text-xs text-gray-500">
-        该服务器本轮状态抓取失败；其它服务器不受影响，页面会每 5 秒自动重试。
+        该服务器本轮状态刷新失败；其它服务器不受影响，页面会每 5 秒自动重试。
       </p>
 
       <button
@@ -487,20 +499,11 @@ function UnconfiguredState() {
           />
         </svg>
       </div>
-      <h2 className="mt-4 text-lg font-bold text-white">
-        尚未配置游戏服务器（RCTMP_API_BASE_URL）
-      </h2>
+      <h2 className="mt-4 text-lg font-bold text-white">服务器即将开放，敬请期待</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-gray-500">
-        请在部署环境为 Next.js 服务端配置{' '}
-        <code className="rounded bg-[#232428] px-1.5 py-0.5 font-mono text-xs text-blue-300">
-          RCTMP_API_BASE_URL
-        </code>
-        ，或使用{' '}
-        <code className="rounded bg-[#232428] px-1.5 py-0.5 font-mono text-xs text-blue-300">
-          RCTMP_SERVERS
-        </code>{' '}
-        配置多台服务器。配置完成后刷新本页即可。
+        游戏服务端正在测试中。开放后这里会展示各服务器的实时状态、在线玩家与启动器连接入口。
       </p>
+      <p className="mt-3 text-xs text-gray-600">请稍后再来看看，感谢你的耐心等待。</p>
     </div>
   );
 }
@@ -536,9 +539,9 @@ function ErrorState({
 function EmptyState() {
   return (
     <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-8 text-center md:p-10">
-      <p className="text-base font-bold text-white">当前没有可显示的服务器状态</p>
+      <p className="text-base font-bold text-white">当前暂无在线服务器</p>
       <p className="mt-2 text-sm text-gray-500">
-        请检查服务器注册表配置（RCTMP_API_BASE_URL / RCTMP_SERVERS），或稍后重试。
+        服务器可能正在维护或尚未开放，请稍后再来看看。
       </p>
     </div>
   );
@@ -565,12 +568,12 @@ export default function ServersPage() {
         });
 
         if (!response.ok) {
-          throw new Error(`代理返回 HTTP ${response.status}`);
+          throw new Error(`服务暂时不可用（HTTP ${response.status}）`);
         }
 
         const data: unknown = await response.json();
         if (!isServersStatusPayload(data)) {
-          throw new Error('代理响应格式不正确');
+          throw new Error('服务器状态数据异常');
         }
         if (cancelled) return;
 
@@ -709,7 +712,7 @@ export default function ServersPage() {
               <div className="mb-5 rounded-lg border border-red-900/60 bg-red-950/20 px-4 py-3 text-sm text-red-300">
                 <span className="font-bold">所有服务器当前均离线。</span>
                 <span className="ml-1 text-red-200/70">
-                  代理无法从游戏服务器获取 /status，详情见下方错误。
+                  暂时无法获取实时状态，详情见下方提示。
                 </span>
               </div>
             ) : null}
@@ -744,8 +747,7 @@ export default function ServersPage() {
             {isEmpty ? <EmptyState /> : null}
 
             <p className="mt-6 text-center text-[11px] leading-5 text-gray-600">
-              状态由本站服务端代理抓取，游戏服务器不直接向浏览器开放 CORS。
-              数据仅供参考，实际连接以启动器校验结果为准。
+              数据由本站服务端定时获取，仅供参考；实际连接以启动器校验结果为准。
             </p>
           </>
         )}
