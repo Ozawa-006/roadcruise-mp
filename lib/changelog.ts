@@ -21,10 +21,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.39v',
+    date: '2026-11-01',
+    title: '审核权限与历史申请职位同步',
+    highlight: true,
+    items: [
+      {
+        kind: 'security',
+        text: '招募审核权限收紧：只有该职位对应部门经理及以上可「通过/转正/同步职位」（社区线需社区经理及以上；Lv.90 高级经理与 Lv.100 开发者可跨部门），RPC 内强制执行',
+      },
+      {
+        kind: 'feature',
+        text: '后台已通过申请新增「同步职位」按钮，用于补同步历史申请；已对已通过的 CC 申请补同步为「活动策划 (Event Planner) Lv.60」',
+      },
+      {
+        kind: 'feature',
+        text: '新增独立职级「活动策划 (Event Planner) Lv.60」，使资料页职位名与申请职位一致',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `supabase/recruitment-permissions.sql` 与一次性 `recruitment-backfill.sql`',
+      },
+    ],
+  },
+  {
     version: '0.0.38v',
     date: '2026-11-01',
     title: '招募转正同步与团队变更',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

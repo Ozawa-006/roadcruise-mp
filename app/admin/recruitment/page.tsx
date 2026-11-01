@@ -15,7 +15,12 @@
 //   · profiles：id / display_name / custom_id / steam_verified（申请人、处理人展示）。
 //   · roles：name / display_name / level / department（匿名可读），用于角色下拉与展示映射。
 //   · RPC：rct_recruitment_accept(p_application_id, p_note) 通过申请并按职位同步角色；
-//     rct_recruitment_promote(p_application_id) 把已通过的实习申请转为正式角色。
+//     rct_recruitment_promote(p_application_id) 把已通过的实习申请转为正式角色；
+//     rct_recruitment_sync_position(p_application_id) 按职位配置补同步 profiles.role/role_level
+//     （用于功能上线前通过、资料职位未同步的历史申请），返回 jsonb { ok, role, role_level }。
+//   · 审核权限：accept / promote / sync_position 三个 RPC 内部都会校验「该职位对应部门经理及以上」
+//     （社区线：社区经理/社区版主经理/媒体经理/翻译经理；活动线：活动经理；游戏线：游戏管理经理；
+//     支持线：支持经理；Lv.90+ 可跨部门），权限不足抛 42501 + 中文提示，前端原样展示。
 //
 // 本页做四件事：① 总开关；② 招募文案（title/intro/requirements）；
 // ③ 职位与每职位题库管理；④ 按状态/职位筛选的申请审核。
@@ -39,6 +44,8 @@ const ANSWER_PREVIEW_ITEMS = 2;
 const ANSWER_PREVIEW_CHARS = 160;
 const COPY_TITLE_MAX_LENGTH = 120;
 const COPY_TEXT_MAX_LENGTH = 3000;
+// 审核权限静态提示：实际校验在 RPC 内（该职位对应部门经理及以上）。
+const REVIEW_PERMISSION_HINT = '仅该职位对应部门经理及以上可审核（社区线需社区经理及以上）';
 
 type RecruitmentStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected';
 type StatusFilter = 'all' | RecruitmentStatus;
@@ -648,6 +655,10 @@ export default function AdminRecruitmentPage() {
   const [profiles, setProfiles] = useState<Record<string, ProfileInfo>>({});
   const [expandedAnswers, setExpandedAnswers] = useState<Record<string, boolean>>({});
   const [busyApplicationId, setBusyApplicationId] = useState<string | null>(null);
+  // 同步职位是独立操作：单独 busy 标记，避免与审核/转正的按钮文案互相干扰。
+  const [syncingApplicationId, setSyncingApplicationId] = useState<string | null>(null);
+  // 每张申请卡片自己的同步结果提示（成功绿字 / 失败 error.message 红字）。
+  const [syncNotices, setSyncNotices] = useState<Record<string, Notice>>({});
   const [decision, setDecision] = useState<Decision | null>(null);
   const [listNotice, setListNotice] = useState<Notice | null>(null);
 
@@ -1611,6 +1622,48 @@ export default function AdminRecruitmentPage() {
     }
   };
 
+  // 12.3 同步职位：已通过的历史申请可能未同步 profiles 角色，这里调 RPC 按职位配置补齐。
+  //      成功提示「已同步职位：<role>」并刷新当前页；失败原样展示 error.message
+  //      （42501 的中文权限提示不能被通用文案覆盖）。
+  const syncApplicationPosition = async (application: ApplicationRow) => {
+    if (!userId || syncingApplicationId !== null || busyApplicationId !== null) return;
+
+    setSyncingApplicationId(application.id);
+    setSyncNotices((current) => {
+      const next = { ...current };
+      delete next[application.id];
+      return next;
+    });
+
+    try {
+      const { data, error } = await supabase.rpc('rct_recruitment_sync_position', {
+        p_application_id: application.id,
+      });
+
+      if (error) {
+        setSyncNotices((current) => ({
+          ...current,
+          [application.id]: { kind: 'error', text: error.message },
+        }));
+        return;
+      }
+
+      const role = rpcRole(data);
+      setSyncNotices((current) => ({
+        ...current,
+        [application.id]: { kind: 'success', text: `已同步职位：${role ?? '未知角色'}` },
+      }));
+      reloadApplications();
+    } catch (error) {
+      setSyncNotices((current) => ({
+        ...current,
+        [application.id]: { kind: 'error', text: errorMessage(error) },
+      }));
+    } finally {
+      setSyncingApplicationId(null);
+    }
+  };
+
   const submitDecision = async (application: ApplicationRow) => {
     if (!decision || decision.applicationId !== application.id) return;
     if (decision.next === 'accepted') {
@@ -2511,6 +2564,8 @@ export default function AdminRecruitmentPage() {
                 {applications.map((application) => {
                   const meta = STATUS_META[application.status];
                   const busy = busyApplicationId === application.id;
+                  const syncing = syncingApplicationId === application.id;
+                  const syncNotice = syncNotices[application.id] ?? null;
                   const applicant = profiles[application.user_id] ?? null;
                   const position =
                     application.position_id !== null
@@ -2740,26 +2795,48 @@ export default function AdminRecruitmentPage() {
                               </button>
                             </div>
                           )}
+                          <p className="mt-2 text-xs text-gray-500">{REVIEW_PERMISSION_HINT}</p>
                         </div>
                       ) : null}
 
-                      {application.status === 'accepted' &&
-                  position?.is_trainee === true &&
-                  !application.promoted_at && (
+                      {application.status === 'accepted' && (
                         <div className="mt-4 border-t border-gray-700/60 pt-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => void promoteApplication(application)}
-                              disabled={busyApplicationId !== null}
-                              className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => void syncApplicationPosition(application)}
+                              disabled={syncing || busyApplicationId !== null}
+                              className="rounded border border-gray-600 bg-[#232428] px-4 py-2 text-sm font-bold text-gray-200 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {busy ? '转正中...' : '转正'}
+                              {syncing ? '同步中...' : '同步职位'}
                             </button>
-                            <span className="text-xs text-gray-500">
-                              该职位为实习岗位，转正后授予职位配置的正式角色。
-                            </span>
+                            {position?.is_trainee === true && !application.promoted_at && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void promoteApplication(application)}
+                                  disabled={busyApplicationId !== null || syncing}
+                                  className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {busy ? '转正中...' : '转正'}
+                                </button>
+                                <span className="text-xs text-gray-500">
+                                  该职位为实习岗位，转正后授予职位配置的正式角色。
+                                </span>
+                              </>
+                            )}
                           </div>
+                          <p className="mt-2 text-xs text-gray-500">{REVIEW_PERMISSION_HINT}</p>
+                          {syncNotice && (
+                            <p
+                              role={syncNotice.kind === 'error' ? 'alert' : 'status'}
+                              className={`mt-2 break-all text-sm ${
+                                syncNotice.kind === 'success' ? 'text-green-300' : 'text-red-300'
+                              }`}
+                            >
+                              {syncNotice.text}
+                            </p>
+                          )}
                         </div>
                       )}
                     </li>
