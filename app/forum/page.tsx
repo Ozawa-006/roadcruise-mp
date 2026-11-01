@@ -11,11 +11,73 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+/** team_changes 公开行，profiles 为 user_id 外键的单条嵌入（删除用户时可能为 null）。 */
+interface TeamChangeRow {
+  id: number;
+  old_role: string | null;
+  new_role: string | null;
+  change_type: string | null;
+  created_at: string;
+  profiles: { display_name: string | null } | { display_name: string | null }[] | null;
+}
+
+interface RoleNameRow {
+  name: string;
+  display_name: string | null;
+}
+
+interface ChangeTypeMeta {
+  label: string;
+  className: string;
+}
+
+/** 变更类型徽章：join=加入/绿、promotion=晋升/蓝、demotion=降职/橙、trainee=实习/紫、role_change=职位变更/灰。 */
+const CHANGE_TYPE_META: Record<string, ChangeTypeMeta | undefined> = {
+  join: { label: '加入', className: 'border-green-500/40 bg-green-500/10 text-green-300' },
+  promotion: { label: '晋升', className: 'border-blue-500/40 bg-blue-500/10 text-blue-300' },
+  demotion: { label: '降职', className: 'border-orange-500/40 bg-orange-500/10 text-orange-300' },
+  trainee: { label: '实习', className: 'border-purple-500/40 bg-purple-500/10 text-purple-300' },
+  role_change: { label: '职位变更', className: 'border-gray-600 bg-gray-500/10 text-gray-300' },
+};
+
+const DEFAULT_CHANGE_TYPE_META: ChangeTypeMeta = {
+  label: '职位变更',
+  className: 'border-gray-600 bg-gray-500/10 text-gray-300',
+};
+
+function changeTypeMetaOf(changeType: string | null): ChangeTypeMeta {
+  return (changeType ? CHANGE_TYPE_META[changeType] : undefined) ?? DEFAULT_CHANGE_TYPE_META;
+}
+
+function teamMemberNameOf(change: TeamChangeRow): string {
+  const embedded = change.profiles;
+  const profile = Array.isArray(embedded) ? embedded[0] : embedded;
+  const name = profile?.display_name?.trim();
+  return name || '未知成员';
+}
+
+/** roles.name -> roles.display_name；职位为空显示「—」，映射不到时退回原始 name。 */
+function roleLabelOf(role: string | null, roleNames: Record<string, string>): string {
+  const name = role?.trim();
+  if (!name) return '—';
+  return roleNames[name]?.trim() || name;
+}
+
+function formatChangeTime(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('zh-CN');
+}
+
 export default function ForumHome() {
   const [categories, setCategories] = useState<any[]>([]);
   const [latestTopics, setLatestTopics] = useState<any[]>([]);
   const [hotTopics, setHotTopics] = useState<any[]>([]);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
+  const [teamChanges, setTeamChanges] = useState<TeamChangeRow[]>([]);
+  const [roleNames, setRoleNames] = useState<Record<string, string>>({});
+  const [teamChangesLoading, setTeamChangesLoading] = useState(true);
+  const [teamChangesFailed, setTeamChangesFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,6 +119,56 @@ export default function ForumHome() {
       setLoading(false);
     };
     fetchForumData();
+  }, []);
+
+  // 团队职位变更：独立加载，失败只影响本卡片，不阻断整页。
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchTeamChanges = async () => {
+      try {
+        const [changesResult, rolesResult] = await Promise.all([
+          supabase
+            .from('team_changes')
+            .select('id, old_role, new_role, change_type, created_at, profiles!user_id(display_name)')
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .limit(8),
+          supabase.from('roles').select('name, display_name'),
+        ]);
+
+        if (cancelled) return;
+
+        if (changesResult.error) {
+          setTeamChanges([]);
+          setTeamChangesFailed(true);
+          return;
+        }
+
+        setTeamChanges((changesResult.data ?? []) as unknown as TeamChangeRow[]);
+
+        if (!rolesResult.error && rolesResult.data) {
+          const nextRoleNames: Record<string, string> = {};
+          for (const role of rolesResult.data as unknown as RoleNameRow[]) {
+            if (role.name && role.display_name) nextRoleNames[role.name] = role.display_name;
+          }
+          setRoleNames(nextRoleNames);
+        }
+      } catch {
+        if (!cancelled) {
+          setTeamChanges([]);
+          setTeamChangesFailed(true);
+        }
+      } finally {
+        if (!cancelled) setTeamChangesLoading(false);
+      }
+    };
+
+    void fetchTeamChanges();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载论坛数据中...</div>;
@@ -194,6 +306,54 @@ export default function ForumHome() {
                       </p>
                     </Link>
                   ))
+                )}
+              </div>
+            </div>
+
+            {/* 团队职位变更 */}
+            <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
+              <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center justify-between gap-2 rounded-t-md">
+                <div className="flex min-w-0 items-center gap-2">
+                  <svg className="w-4 h-4 shrink-0 text-purple-400" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
+                  <span className="text-xs font-bold leading-snug text-gray-400">
+                    团队职位变更 <span className="text-gray-600">/ Team Changes</span>
+                  </span>
+                </div>
+                <Link href="/team" className="shrink-0 text-[11px] font-bold text-blue-400 hover:text-blue-300 transition">
+                  查看团队 →
+                </Link>
+              </div>
+              <div className="p-2">
+                {teamChangesLoading ? (
+                  <p className="text-center text-xs text-gray-500 py-4">加载中…</p>
+                ) : teamChangesFailed ? (
+                  <p className="text-center text-xs text-gray-500 py-4">职位变更加载失败，请稍后重试</p>
+                ) : teamChanges.length === 0 ? (
+                  <p className="text-center text-xs text-gray-500 py-4">暂无职位变更记录</p>
+                ) : (
+                  <ul>
+                    {teamChanges.map((change) => {
+                      const badge = changeTypeMetaOf(change.change_type);
+                      const oldRoleLabel = roleLabelOf(change.old_role, roleNames);
+                      const newRoleLabel = roleLabelOf(change.new_role, roleNames);
+                      return (
+                        <li key={change.id} className="p-2 border-b border-gray-700/50 last:border-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate text-xs font-bold text-white">{teamMemberNameOf(change)}</span>
+                            <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}>{badge.label}</span>
+                          </div>
+                          <p className="mt-1 flex items-center gap-1 text-[11px]">
+                            <span className="min-w-0 truncate text-gray-500" title={oldRoleLabel}>{oldRoleLabel}</span>
+                            <span className="shrink-0 text-gray-600">→</span>
+                            <span className="min-w-0 truncate font-bold text-gray-300" title={newRoleLabel}>{newRoleLabel}</span>
+                          </p>
+                          <time dateTime={change.created_at} className="mt-1 block text-[10px] text-gray-500">
+                            {formatChangeTime(change.created_at)}
+                          </time>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </div>
             </div>

@@ -21,10 +21,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.38v',
+    date: '2026-11-01',
+    title: '招募转正同步与团队变更',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '招募通过时自动同步申请人职位：后台可为每个职位配置「通过后授予角色」，正式岗位直接授职，实习岗位先授予实习角色',
+      },
+      {
+        kind: 'feature',
+        text: '新增实习体系：实习社区版主 / 实习游戏管理员 / 实习支持员 / 实习翻译 / 实习活动执行；后台对已通过的实习申请可一键「转正」为正式职位',
+      },
+      {
+        kind: 'feature',
+        text: '论坛首页新增「团队职位变更」卡片：自动展示最近加入/晋升/降职/实习/职位变更记录',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `team_changes` 表与 profiles 角色变更触发器；新增 RPC `rct_recruitment_accept` / `rct_recruitment_promote`',
+      },
+    ],
+  },
+  {
     version: '0.0.37v',
     date: '2026-11-01',
     title: '招募文案编辑与申请通知',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

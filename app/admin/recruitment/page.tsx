@@ -7,11 +7,15 @@
 //     positions（旧文本，本页忽略）/ updated_by / updated_at；匿名可读，Lv.40+ 可 UPDATE。
 //   · recruitment_positions：每个职位独立 is_open、部门、说明、questions jsonb、sort_order。
 //     questions 是数组：[{ id, label, type: 'text'|'textarea'|'select', required, options? }]。
+//     assign_role（通过后授予的正式角色）、is_trainee（是否实习岗位）、trainee_role（实习角色）。
 //     匿名可读，Lv.40+ 可 INSERT/UPDATE/DELETE。
 //   · recruitment_applications：position_id 关联职位（on delete set null）、answers jsonb、
 //     status ∈ pending|reviewing|accepted|rejected；Lv.40+ 可 SELECT 全部、UPDATE。
 //     状态变化由数据库触发器自动通知申请人；同一用户同一职位只能有一条待处理申请。
 //   · profiles：id / display_name / custom_id / steam_verified（申请人、处理人展示）。
+//   · roles：name / display_name / level / department（匿名可读），用于角色下拉与展示映射。
+//   · RPC：rct_recruitment_accept(p_application_id, p_note) 通过申请并按职位同步角色；
+//     rct_recruitment_promote(p_application_id) 把已通过的实习申请转为正式角色。
 //
 // 本页做四件事：① 总开关；② 招募文案（title/intro/requirements）；
 // ③ 职位与每职位题库管理；④ 按状态/职位筛选的申请审核。
@@ -73,7 +77,18 @@ interface PositionRow {
   questions: Question[];
   is_open: boolean;
   sort_order: number;
+  assign_role: string | null;
+  is_trainee: boolean;
+  trainee_role: string | null;
   updated_at: string | null;
+}
+
+/** roles 表的公开只读字段：用于职位配置下拉与 display_name 展示映射。 */
+interface RoleRow {
+  name: string;
+  display_name: string;
+  level: number | null;
+  department: string | null;
 }
 
 interface ApplicationRow {
@@ -134,6 +149,11 @@ interface PositionDraft {
   name: string;
   department: string;
   description: string;
+  /** 空串表示不授予角色（保存时写 null）。 */
+  assign_role: string;
+  is_trainee: boolean;
+  /** 空串表示不授予实习角色（非实习或留空时保存为 null）。 */
+  trainee_role: string;
   questions: QuestionDraft[];
 }
 
@@ -315,6 +335,15 @@ function toPositionRow(raw: unknown): PositionRow | null {
     questions: toQuestions(raw.questions),
     is_open: raw.is_open === true,
     sort_order: asNumber(raw.sort_order) ?? 0,
+    assign_role:
+      typeof raw.assign_role === 'string' && raw.assign_role.trim() !== ''
+        ? raw.assign_role.trim()
+        : null,
+    is_trainee: raw.is_trainee === true,
+    trainee_role:
+      typeof raw.trainee_role === 'string' && raw.trainee_role.trim() !== ''
+        ? raw.trainee_role.trim()
+        : null,
     updated_at: asText(raw.updated_at),
   };
 }
@@ -322,6 +351,39 @@ function toPositionRow(raw: unknown): PositionRow | null {
 function toPositionRows(data: unknown): PositionRow[] {
   if (!Array.isArray(data)) return [];
   return data.map(toPositionRow).filter((row): row is PositionRow => row !== null);
+}
+
+function toRoleRows(data: unknown): RoleRow[] {
+  if (!Array.isArray(data)) return [];
+  const rows: RoleRow[] = [];
+
+  for (const item of data) {
+    if (!isRecord(item)) continue;
+    const name = asText(item.name);
+    if (!name) continue;
+    rows.push({
+      name,
+      display_name:
+        typeof item.display_name === 'string' && item.display_name.trim() !== ''
+          ? item.display_name.trim()
+          : name,
+      level: asNumber(item.level),
+      department: typeof item.department === 'string' ? item.department : null,
+    });
+  }
+
+  return rows;
+}
+
+/** 下拉选项文案：display_name [Lv.x]（level 缺失时只显示名称）。 */
+function formatRoleOption(role: RoleRow): string {
+  return role.level === null ? role.display_name : `${role.display_name} [Lv.${role.level}]`;
+}
+
+/** RPC 返回 jsonb { ok, role, role_level?, trainee? }，这里只取 role。 */
+function rpcRole(data: unknown): string | null {
+  if (!isRecord(data)) return null;
+  return typeof data.role === 'string' && data.role.trim() !== '' ? data.role : null;
 }
 
 function toApplicationRow(raw: unknown): ApplicationRow | null {
@@ -551,6 +613,10 @@ export default function AdminRecruitmentPage() {
   const [positionsReloadToken, setPositionsReloadToken] = useState(0);
   const [positionBusyId, setPositionBusyId] = useState<number | null>(null);
 
+  // —— 角色字典：roles 匿名可读，登录后一次性加载，供职位配置与展示映射使用 ——
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+
   // 新增职位
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState<AddPositionForm>({
@@ -727,7 +793,9 @@ export default function AdminRecruitmentPage() {
       try {
         const { data, error } = await supabase
           .from('recruitment_positions')
-          .select('*')
+          .select(
+            'id,name,department,description,questions,is_open,sort_order,assign_role,is_trainee,trainee_role,updated_at'
+          )
           .order('sort_order', { ascending: true })
           .order('id', { ascending: true });
         if (cancelled) return;
@@ -751,6 +819,43 @@ export default function AdminRecruitmentPage() {
       cancelled = true;
     };
   }, [checking, userId, positionsReloadToken]);
+
+  // 3.5 角色字典：roles 匿名可读，登录后一次性加载，供职位配置下拉与 display_name 映射。
+  useEffect(() => {
+    if (checking || !userId) return;
+
+    let cancelled = false;
+
+    const loadRoles = async () => {
+      setRolesLoading(true);
+
+      try {
+        const { data, error } = await supabase
+          .from('roles')
+          .select('name,display_name,level,department')
+          .order('level', { ascending: false })
+          .order('name', { ascending: true });
+        if (cancelled) return;
+
+        if (error) {
+          console.error('加载角色列表失败:', error.message);
+          return;
+        }
+
+        setRoles(toRoleRows(data));
+      } catch (error) {
+        if (!cancelled) console.error('加载角色列表失败:', errorMessage(error));
+      } finally {
+        if (!cancelled) setRolesLoading(false);
+      }
+    };
+
+    void loadRoles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checking, userId]);
 
   // 4. 申请列表：服务端分页，只取当前页（筛选条件同时作用于 count 与 range）；
   //    再按当前页的 user_id / handled_by 分块二次查询 profiles。
@@ -831,6 +936,27 @@ export default function AdminRecruitmentPage() {
     for (const position of sortedPositions) map.set(position.id, position);
     return map;
   }, [sortedPositions]);
+
+  const roleByName = useMemo(() => {
+    const map = new Map<string, RoleRow>();
+    for (const role of roles) map.set(role.name, role);
+    return map;
+  }, [roles]);
+
+  // 实习角色：name 含 _trainee 或 display_name 含「实习」。
+  const traineeRoles = useMemo(
+    () =>
+      roles.filter(
+        (role) => role.name.includes('_trainee') || role.display_name.includes('实习')
+      ),
+    [roles]
+  );
+
+  /** 角色展示文案：优先 roles.display_name，查不到时回退原始 name。 */
+  const roleLabel = (name: string | null): string => {
+    if (!name) return '未配置角色';
+    return roleByName.get(name)?.display_name ?? name;
+  };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -1182,6 +1308,9 @@ export default function AdminRecruitmentPage() {
       name: position.name,
       department: position.department,
       description: position.description,
+      assign_role: position.assign_role ?? '',
+      is_trainee: position.is_trainee,
+      trainee_role: position.trainee_role ?? '',
       questions: toQuestionDrafts(position.questions),
     });
     setEditorError(null);
@@ -1275,6 +1404,12 @@ export default function AdminRecruitmentPage() {
           department: editing.department.trim(),
           description: editing.description.trim(),
           questions: normalized.questions,
+          assign_role: editing.assign_role.trim() === '' ? null : editing.assign_role.trim(),
+          is_trainee: editing.is_trainee,
+          trainee_role:
+            editing.is_trainee && editing.trainee_role.trim() !== ''
+              ? editing.trainee_role.trim()
+              : null,
         })
         .eq('id', editing.id)
         .select('id')
@@ -1414,8 +1549,72 @@ export default function AdminRecruitmentPage() {
     }
   };
 
+  // 12.1 通过申请：调用 RPC 按职位同步正式角色或实习角色，成功后刷新当前页。
+  const acceptApplication = async (application: ApplicationRow, note: string) => {
+    if (!userId || busyApplicationId !== null) return;
+
+    setBusyApplicationId(application.id);
+    setListNotice(null);
+
+    try {
+      const trimmedNote = note.trim();
+      const { data, error } = await supabase.rpc('rct_recruitment_accept', {
+        p_application_id: application.id,
+        p_note: trimmedNote === '' ? null : trimmedNote,
+      });
+
+      if (error) {
+        setListNotice({ kind: 'error', text: `通过失败：${error.message}` });
+        return;
+      }
+
+      const role = rpcRole(data);
+      setDecision(null);
+      setListNotice({
+        kind: 'success',
+        text: `已通过并同步职位：${role ?? '未配置角色'}`,
+      });
+      reloadApplications();
+    } catch (error) {
+      setListNotice({ kind: 'error', text: `通过失败：${errorMessage(error)}` });
+    } finally {
+      setBusyApplicationId(null);
+    }
+  };
+
+  // 12.2 实习转正：已通过的实习申请改为授予职位配置的正式角色。
+  const promoteApplication = async (application: ApplicationRow) => {
+    if (!userId || busyApplicationId !== null) return;
+
+    setBusyApplicationId(application.id);
+    setListNotice(null);
+
+    try {
+      const { data, error } = await supabase.rpc('rct_recruitment_promote', {
+        p_application_id: application.id,
+      });
+
+      if (error) {
+        setListNotice({ kind: 'error', text: `转正失败：${error.message}` });
+        return;
+      }
+
+      const role = rpcRole(data);
+      setListNotice({ kind: 'success', text: `已转正为 ${role ?? '未知角色'}` });
+      reloadApplications();
+    } catch (error) {
+      setListNotice({ kind: 'error', text: `转正失败：${errorMessage(error)}` });
+    } finally {
+      setBusyApplicationId(null);
+    }
+  };
+
   const submitDecision = async (application: ApplicationRow) => {
     if (!decision || decision.applicationId !== application.id) return;
+    if (decision.next === 'accepted') {
+      await acceptApplication(application, decision.note);
+      return;
+    }
     await applyUpdate(application, decision.next, decision.note);
   };
 
@@ -1785,6 +1984,14 @@ export default function AdminRecruitmentPage() {
                         >
                           {position.is_open ? '申请开放' : '申请关闭'}
                         </span>
+                        <span className="rounded border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-xs text-indigo-300">
+                          授予角色：{roleLabel(position.assign_role)}
+                        </span>
+                        {position.is_trainee && (
+                          <span className="rounded border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-xs text-purple-300">
+                            实习岗位
+                          </span>
+                        )}
                         <span className="text-xs text-gray-500">排序 {position.sort_order}</span>
                         <span className="text-xs text-gray-500">
                           {position.questions.length} 个问题
@@ -1900,6 +2107,91 @@ export default function AdminRecruitmentPage() {
                             className={`${inputClass} resize-y`}
                           />
                         </div>
+                        <div>
+                          <label htmlFor={`edit-assign-role-${editing.id}`} className={labelClass}>
+                            通过后授予角色
+                          </label>
+                          <select
+                            id={`edit-assign-role-${editing.id}`}
+                            value={editing.assign_role}
+                            onChange={(event) => updateEditor({ assign_role: event.target.value })}
+                            disabled={editorBusy}
+                            className={inputClass}
+                          >
+                            <option value="">不授予角色</option>
+                            {editing.assign_role !== '' &&
+                              !roleByName.has(editing.assign_role) && (
+                                <option value={editing.assign_role}>
+                                  {editing.assign_role}（角色表中不存在）
+                                </option>
+                              )}
+                            {roles.map((role) => (
+                              <option key={role.name} value={role.name}>
+                                {formatRoleOption(role)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-gray-500">
+                            通过申请时授予；留空表示不自动授予角色。
+                            {rolesLoading ? ' 角色加载中...' : ''}
+                          </p>
+                        </div>
+                        <div>
+                          <span className={labelClass}>实习岗位</span>
+                          <label className="flex items-center gap-2 pb-2.5 text-sm text-gray-300">
+                            <input
+                              id={`edit-is-trainee-${editing.id}`}
+                              type="checkbox"
+                              checked={editing.is_trainee}
+                              onChange={(event) =>
+                                updateEditor({ is_trainee: event.target.checked })
+                              }
+                              disabled={editorBusy}
+                              className="h-4 w-4"
+                            />
+                            该职位为实习岗位
+                          </label>
+                          <p className="mt-1 text-xs text-gray-500">
+                            勾选后通过申请授予实习角色，转正时改为授予「通过后授予角色」。
+                          </p>
+                        </div>
+                        {editing.is_trainee && (
+                          <div className="md:col-span-2">
+                            <label
+                              htmlFor={`edit-trainee-role-${editing.id}`}
+                              className={labelClass}
+                            >
+                              实习角色
+                            </label>
+                            <select
+                              id={`edit-trainee-role-${editing.id}`}
+                              value={editing.trainee_role}
+                              onChange={(event) =>
+                                updateEditor({ trainee_role: event.target.value })
+                              }
+                              disabled={editorBusy}
+                              className={inputClass}
+                            >
+                              <option value="">不授予实习角色</option>
+                              {editing.trainee_role !== '' &&
+                                !traineeRoles.some(
+                                  (role) => role.name === editing.trainee_role
+                                ) && (
+                                  <option value={editing.trainee_role}>
+                                    {roleLabel(editing.trainee_role)}
+                                  </option>
+                                )}
+                              {traineeRoles.map((role) => (
+                                <option key={role.name} value={role.name}>
+                                  {formatRoleOption(role)}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="mt-1 text-xs text-gray-500">
+                              仅列出 roles 中 name 含 _trainee 或名称含「实习」的角色。
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4">
@@ -2448,6 +2740,24 @@ export default function AdminRecruitmentPage() {
                           )}
                         </div>
                       ) : null}
+
+                      {application.status === 'accepted' && position?.is_trainee === true && (
+                        <div className="mt-4 border-t border-gray-700/60 pt-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void promoteApplication(application)}
+                              disabled={busyApplicationId !== null}
+                              className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {busy ? '转正中...' : '转正'}
+                            </button>
+                            <span className="text-xs text-gray-500">
+                              该职位为实习岗位，转正后授予职位配置的正式角色。
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </li>
                   );
                 })}
