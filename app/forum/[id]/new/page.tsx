@@ -7,13 +7,55 @@ import Navbar from '../../../../components/Navbar';
 import RichTextEditor from '@/components/RichTextEditor';
 import Link from 'next/link';
 import { canPostOfficialTopic, levelOf } from '../../../../lib/permissions';
+import { useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+/**
+ * 英文文案表（中文原文为 key）：只覆盖静态 UI 与系统提示。
+ * 主题分类选项、版块名等作为数据写入数据库，保持原样不翻译。
+ */
+const EN: Record<string, string> = {
+  // ---- 页头 ----
+  '← 返回版块': '← Back to board',
+  '发布新主题': 'New Topic',
+
+  // ---- 权限提示 ----
+  '正在检查发帖权限...': 'Checking posting permission...',
+  '返回版块': 'Back to board',
+  '请先登录再发帖。': 'Please sign in before posting.',
+  '您的账号尚未完成 Steam 正版验证，请先到「账号设置」绑定 Steam 后再发帖。':
+    'Your account has not completed Steam verification. Please link Steam in Account Settings before posting.',
+  '官方公告版块仅限经理 (Lv.70) 及以上发布，您当前没有该版块的发帖权限。':
+    'The official announcements board is restricted to Manager (Lv.70) and above. You do not have permission to post in this board.',
+
+  // ---- 表单 ----
+  '主题分类': 'Topic category',
+  '帖子标题': 'Topic title',
+  '一句话概括你的主题内容...': 'Summarize your topic in one sentence...',
+  '正文内容': 'Content',
+  '在这里输入详细内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题':
+    'Enter the details here... supports **bold**, *italic*, `code`, [link](https://...), ![image](https://...), > quote, - list, ## heading',
+  '添加配图链接 (选填)': 'Image URL (optional)',
+  'https://i.imgur.com/xxxxx.jpg (推荐图床直链)':
+    'https://i.imgur.com/xxxxx.jpg (direct image link recommended)',
+
+  // ---- 提交 ----
+  '发布中...': 'Publishing...',
+  '发布帖子': 'Publish post',
+
+  // ---- 提交错误提示 ----
+  '请先登录再发帖！': 'Please sign in before posting!',
+  '❌ 官方公告版块仅限经理 (Lv.70) 及以上发布。':
+    '❌ The official announcements board is restricted to Manager (Lv.70) and above.',
+  '发帖失败: {msg}': 'Failed to post: {msg}',
+};
+
 export default function NewTopicPage() {
+  const tr = useTr(EN);
   const { id } = useParams();
   const router = useRouter();
   
@@ -25,6 +67,7 @@ export default function NewTopicPage() {
   const [msg, setMsg] = useState('');
   // null = 权限检查中；false = 无权发帖；true = 可以发帖
   const [canPost, setCanPost] = useState<boolean | null>(null);
+  // 存中文文案 key，渲染时再过 tr()，切换语言后提示也会跟着变。
   const [blockReason, setBlockReason] = useState('');
 
   // 页面级兜底：列表页隐藏按钮不等于拦截，必须在本页也校验一次（最终仍由数据库 RLS 兜底）
@@ -80,7 +123,7 @@ export default function NewTopicPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setMsg('请先登录再发帖！');
+      setMsg(tr('请先登录再发帖！'));
       setLoading(false);
       return;
     }
@@ -93,7 +136,7 @@ export default function NewTopicPage() {
         .eq('id', user.id)
         .single();
       if (!canPostOfficialTopic(levelOf(profile?.role_level))) {
-        setMsg('❌ 官方公告版块仅限经理 (Lv.70) 及以上发布。');
+        setMsg(tr('❌ 官方公告版块仅限经理 (Lv.70) 及以上发布。'));
         setLoading(false);
         return;
       }
@@ -112,7 +155,7 @@ export default function NewTopicPage() {
     });
 
     if (error) {
-      setMsg(`发帖失败: ${error.message}`);
+      setMsg(tr('发帖失败: {msg}', { msg: error.message }));
       setLoading(false);
     } else {
       router.push(`/forum/${id}`);
@@ -132,10 +175,10 @@ export default function NewTopicPage() {
         <div className="absolute inset-0 bg-black/50"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-4xl mx-auto w-full px-4 md:px-8">
           <Link href={`/forum/${id}`} className="text-blue-300 hover:text-white transition text-sm mb-2 inline-block w-max font-bold">
-            ← 返回版块
+            {tr('← 返回版块')}
           </Link>
           <h1 className="text-3xl md:text-4xl font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
-            发布新主题
+            {tr('发布新主题')}
           </h1>
         </div>
       </div>
@@ -144,13 +187,13 @@ export default function NewTopicPage() {
       <div className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-8 -mt-6 relative z-10">
         {canPost === null ? (
           <div className="bg-[#2c2d31] border border-gray-700 p-8 rounded-lg text-center text-gray-400">
-            正在检查发帖权限...
+            {tr('正在检查发帖权限...')}
           </div>
         ) : canPost === false ? (
           <div className="bg-[#2c2d31] border border-red-900/50 p-8 rounded-lg text-center space-y-4">
-            <p className="text-red-400 font-bold">{blockReason}</p>
+            <p className="text-red-400 font-bold">{tr(blockReason)}</p>
             <Link href={`/forum/${id}`} className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition">
-              返回版块
+              {tr('返回版块')}
             </Link>
           </div>
         ) : (
@@ -159,7 +202,7 @@ export default function NewTopicPage() {
           {/* 🌟 优化：只有非官方公告版块 (ID不为1) 才显示分类下拉框 */}
           {id !== '1' && (
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">主题分类</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">{tr('主题分类')}</label>
               <select 
                 value={tag} 
                 onChange={(e) => setTag(e.target.value)}
@@ -175,36 +218,36 @@ export default function NewTopicPage() {
           )}
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">帖子标题</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">{tr('帖子标题')}</label>
             <input 
               type="text" 
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
-              placeholder="一句话概括你的主题内容..."
+              placeholder={tr('一句话概括你的主题内容...')}
               required
             />
           </div>
 
           <div>
             <RichTextEditor
-              label="正文内容"
+              label={tr('正文内容')}
               value={content}
               onChange={setContent}
-              placeholder="在这里输入详细内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题"
+              placeholder={tr('在这里输入详细内容... 支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题')}
               rows={8}
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">添加配图链接 (选填)</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">{tr('添加配图链接 (选填)')}</label>
             <input 
               type="url" 
               value={imageUrl} 
               onChange={(e) => setImageUrl(e.target.value)} 
               className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500" 
-              placeholder="https://i.imgur.com/xxxxx.jpg (推荐图床直链)" 
+              placeholder={tr('https://i.imgur.com/xxxxx.jpg (推荐图床直链)')} 
             />
           </div>
 
@@ -215,7 +258,7 @@ export default function NewTopicPage() {
               disabled={loading}
               className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded font-bold transition shadow-lg ml-auto disabled:opacity-50"
             >
-              {loading ? '发布中...' : '发布帖子'}
+              {loading ? tr('发布中...') : tr('发布帖子')}
             </button>
           </div>
         </form>

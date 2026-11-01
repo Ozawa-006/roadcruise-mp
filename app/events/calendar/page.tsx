@@ -4,6 +4,75 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '@/components/Navbar';
+import { useTr } from '@/components/I18nProvider';
+
+// 英文文案：键为中文原文，缺失时回退中文。
+const EN: Record<string, string> = {
+  // —— 页面头部 ——
+  '活动日历': 'Event calendar',
+  '/ Calendar': '',
+  '← 活动列表': '← Events',
+  '按月份浏览 RCT MP 官方活动，点击有活动的日期即可查看当天全部安排。':
+    'Browse official Road Cruise Transport MP events by month. Click a date with events to see the full schedule for that day.',
+  '共 {count} 个已发布活动 · 当月 {monthCount} 个':
+    '{count} published events · {monthCount} this month',
+  '月历': 'Month',
+  '列表': 'List',
+  // —— 加载 / 错误 / 空状态 ——
+  '正在获取活动日历…': 'Loading event calendar…',
+  '加载失败，请稍后重试': 'Failed to load. Please try again later.',
+  '暂时无法获取活动日历，请检查网络后重试。':
+    'Unable to load the event calendar. Check your connection and try again.',
+  '重新加载': 'Reload',
+  '暂无已发布的活动': 'No published events yet',
+  '官方发布新活动后，这里会自动显示对应的日期与活动安排。':
+    'New official events will appear here with their dates and schedule.',
+  '返回活动列表': 'Back to events',
+  // —— 日历导航 ——
+  '{year}年{month}': '{month} {year}',
+  '‹ 上一月': '‹ Prev',
+  '今天': 'Today',
+  '下一月 ›': 'Next ›',
+  // —— 星期 ——
+  '一': 'Mon',
+  '二': 'Tue',
+  '三': 'Wed',
+  '四': 'Thu',
+  '五': 'Fri',
+  '六': 'Sat',
+  '日': 'Sun',
+  // —— 月份 ——
+  '1月': 'January',
+  '2月': 'February',
+  '3月': 'March',
+  '4月': 'April',
+  '5月': 'May',
+  '6月': 'June',
+  '7月': 'July',
+  '8月': 'August',
+  '9月': 'September',
+  '10月': 'October',
+  '11月': 'November',
+  '12月': 'December',
+  // —— 图例 / 当日面板 / 列表 ——
+  '活动月历': 'Event calendar',
+  '有活动': 'Has events',
+  '每日最多显示 2 个活动，点击日期查看全部':
+    'Up to 2 events per day. Click a date to see all.',
+  '当月暂无活动，可以切换月份查看。': 'No events this month. Try another month.',
+  '当月活动': 'This month',
+  '当日活动列表': 'Events on the selected day',
+  '{month}{day}日 活动': 'Events on {month} {day}',
+  '{month}{day}日，{count} 个活动，查看当日列表':
+    '{month} {day}, {count} events. View the day list.',
+  '查看{month}{day}日全部{count}个活动': 'View all {count} events on {month} {day}',
+  '{count} 个': '{count} events',
+  '收起': 'Collapse',
+  '详情 →': 'Details →',
+  '时间待定': 'Time TBD',
+  '未命名活动': 'Untitled event',
+  '地点待定': 'Location TBD',
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -77,18 +146,18 @@ function parseDate(value: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function formatDateTime(value: string | null): string {
+function formatDateTime(value: string | null, tr: (zh: string) => string): string {
   const date = parseDate(value);
-  if (!date) return '时间待定';
+  if (!date) return tr('时间待定');
   return date.toLocaleString('zh-CN');
 }
 
-function titleOf(event: EventRow): string {
-  return event.title?.trim() || '未命名活动';
+function titleOf(event: EventRow, tr: (zh: string) => string): string {
+  return event.title?.trim() || tr('未命名活动');
 }
 
-function locationOf(event: EventRow): string {
-  return event.location?.trim() || '地点待定';
+function locationOf(event: EventRow, tr: (zh: string) => string): string {
+  return event.location?.trim() || tr('地点待定');
 }
 
 /** 按本地日期把活动分桶，键与月历格子保持一致。 */
@@ -134,54 +203,60 @@ function buildCalendarCells(
 }
 
 function LoadingState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-2xl border border-gray-700 bg-[#2c2d31] p-10 text-center">
       <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500" />
-      <p className="mt-4 text-sm text-gray-400">正在获取活动日历…</p>
+      <p className="mt-4 text-sm text-gray-400">{tr('正在获取活动日历…')}</p>
     </div>
   );
 }
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
+  const tr = useTr(EN);
   return (
     <div className="rounded-2xl border border-red-900/60 bg-[#2c2d31] p-8 text-center md:p-10">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 font-mono text-lg font-bold text-red-300">
         !
       </div>
-      <p className="mt-4 text-lg font-bold text-white">加载失败，请稍后重试</p>
-      <p className="mt-2 text-sm text-gray-500">暂时无法获取活动日历，请检查网络后重试。</p>
+      <p className="mt-4 text-lg font-bold text-white">{tr('加载失败，请稍后重试')}</p>
+      <p className="mt-2 text-sm text-gray-500">
+        {tr('暂时无法获取活动日历，请检查网络后重试。')}
+      </p>
       <button
         type="button"
         onClick={onRetry}
         className="mt-5 inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
       >
-        重新加载
+        {tr('重新加载')}
       </button>
     </div>
   );
 }
 
 function EmptyState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-2xl border border-dashed border-gray-700 bg-[#2c2d31]/60 p-10 text-center md:p-14">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gray-700 bg-[#232428] text-2xl">
         📅
       </div>
-      <p className="mt-4 text-lg font-bold text-white">暂无已发布的活动</p>
+      <p className="mt-4 text-lg font-bold text-white">{tr('暂无已发布的活动')}</p>
       <p className="mt-2 text-sm text-gray-500">
-        官方发布新活动后，这里会自动显示对应的日期与活动安排。
+        {tr('官方发布新活动后，这里会自动显示对应的日期与活动安排。')}
       </p>
       <Link
         href="/events"
         className="mt-5 inline-flex items-center justify-center rounded-lg border border-gray-600 px-4 py-2 text-sm font-bold text-gray-300 transition hover:border-blue-500 hover:text-white"
       >
-        返回活动列表
+        {tr('返回活动列表')}
       </Link>
     </div>
   );
 }
 
 function CalendarEventLink({ event }: { event: EventRow }) {
+  const tr = useTr(EN);
   const server = event.server_id?.trim();
 
   return (
@@ -191,16 +266,16 @@ function CalendarEventLink({ event }: { event: EventRow }) {
     >
       <div className="flex items-start justify-between gap-3">
         <p className="line-clamp-2 min-w-0 break-words font-bold text-white">
-          {titleOf(event)}
+          {titleOf(event, tr)}
         </p>
-        <span className="shrink-0 text-xs font-bold text-blue-400">详情 →</span>
+        <span className="shrink-0 text-xs font-bold text-blue-400">{tr('详情 →')}</span>
       </div>
-      <p className="mt-1 text-xs text-gray-400">🕒 {formatDateTime(event.start_at)}</p>
+      <p className="mt-1 text-xs text-gray-400">🕒 {formatDateTime(event.start_at, tr)}</p>
       {event.end_at ? (
-        <p className="mt-0.5 text-xs text-gray-500">🏁 {formatDateTime(event.end_at)}</p>
+        <p className="mt-0.5 text-xs text-gray-500">🏁 {formatDateTime(event.end_at, tr)}</p>
       ) : null}
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
-        <span>📍 {locationOf(event)}</span>
+        <span>📍 {locationOf(event, tr)}</span>
         {server ? <span>🖥️ {server}</span> : null}
       </div>
     </Link>
@@ -218,6 +293,7 @@ function CalendarDayCell({
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }) {
+  const tr = useTr(EN);
   const isToday = cell.inMonth && cell.key === todayKey;
   const isSelected = cell.inMonth && cell.key === selectedKey;
   const showsEvents = cell.inMonth && cell.events.length > 0;
@@ -270,7 +346,11 @@ function CalendarDayCell({
               onSelect(cell.key);
             }}
             aria-expanded={isSelected}
-            aria-label={`${cell.date.getMonth() + 1}月${cell.date.getDate()}日，${cell.events.length} 个活动，查看当日列表`}
+            aria-label={tr('{month}{day}日，{count} 个活动，查看当日列表', {
+              month: tr(`${cell.date.getMonth() + 1}月`),
+              day: cell.date.getDate(),
+              count: cell.events.length,
+            })}
             className={`${dateClassName} transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
               isToday
                 ? 'hover:bg-blue-500'
@@ -292,11 +372,11 @@ function CalendarDayCell({
               <Link
                 key={event.id}
                 href={`/events/${event.id}`}
-                title={titleOf(event)}
+                title={titleOf(event, tr)}
                 onClick={(clickEvent) => clickEvent.stopPropagation()}
                 className="truncate rounded bg-[#18191c]/80 px-1.5 py-0.5 text-[11px] font-medium text-blue-200 transition hover:bg-blue-500/25 hover:text-white"
               >
-                {titleOf(event)}
+                {titleOf(event, tr)}
               </Link>
             ))
           : null}
@@ -307,7 +387,11 @@ function CalendarDayCell({
               event.stopPropagation();
               onSelect(cell.key);
             }}
-            aria-label={`查看${cell.date.getMonth() + 1}月${cell.date.getDate()}日全部${cell.events.length}个活动`}
+            aria-label={tr('查看{month}{day}日全部{count}个活动', {
+              month: tr(`${cell.date.getMonth() + 1}月`),
+              day: cell.date.getDate(),
+              count: cell.events.length,
+            })}
             className="mt-0.5 self-start rounded px-1 text-[11px] font-bold text-orange-300 transition hover:text-orange-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
           >
             +{hiddenCount}
@@ -335,22 +419,26 @@ function CalendarDayCell({
 }
 
 function DayPanel({ cell, onClose }: { cell: CalendarCell; onClose: () => void }) {
+  const tr = useTr(EN);
+  const month = tr(`${cell.date.getMonth() + 1}月`);
   return (
     <section
-      aria-label="当日活动列表"
+      aria-label={tr('当日活动列表')}
       className="mt-4 rounded-2xl border border-orange-500/40 bg-[#2c2d31] p-4 shadow-xl shadow-black/20 sm:p-5"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-bold text-white">
-          {cell.date.getMonth() + 1}月{cell.date.getDate()}日 活动
-          <span className="ml-2 text-xs font-normal text-gray-500">{cell.events.length} 个</span>
+          {tr('{month}{day}日 活动', { month, day: cell.date.getDate() })}
+          <span className="ml-2 text-xs font-normal text-gray-500">
+            {tr('{count} 个', { count: cell.events.length })}
+          </span>
         </h2>
         <button
           type="button"
           onClick={onClose}
           className="rounded-lg border border-gray-600 px-3 py-1 text-xs font-bold text-gray-300 transition hover:border-orange-400 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
         >
-          收起
+          {tr('收起')}
         </button>
       </div>
       <ul className="mt-3 space-y-2">
@@ -365,6 +453,7 @@ function DayPanel({ cell, onClose }: { cell: CalendarCell; onClose: () => void }
 }
 
 export default function EventCalendarPage() {
+  const tr = useTr(EN);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [viewOverride, setViewOverride] = useState<MonthCursor | null>(null);
@@ -465,18 +554,25 @@ export default function EventCalendarPage() {
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-gray-700 pb-5 md:mb-8">
           <div>
             <Link href="/events" className="text-sm text-blue-400 transition hover:text-blue-300">
-              ← 活动列表
+              {tr('← 活动列表')}
             </Link>
             <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">活动日历</h1>
-              <span className="text-lg font-bold text-gray-500 md:text-xl">/ Calendar</span>
+              <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">
+                {tr('活动日历')}
+              </h1>
+              <span className="text-lg font-bold text-gray-500 md:text-xl">
+                {tr('/ Calendar')}
+              </span>
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-              按月份浏览 RCT MP 官方活动，点击有活动的日期即可查看当天全部安排。
+              {tr('按月份浏览 RCT MP 官方活动，点击有活动的日期即可查看当天全部安排。')}
             </p>
             {status === 'ready' && view && events.length > 0 ? (
               <p className="mt-2 text-xs text-gray-600">
-                共 {events.length} 个已发布活动 · 当月 {monthEvents.length} 个
+                {tr('共 {count} 个已发布活动 · 当月 {monthCount} 个', {
+                  count: events.length,
+                  monthCount: monthEvents.length,
+                })}
               </p>
             ) : null}
           </div>
@@ -486,13 +582,13 @@ export default function EventCalendarPage() {
               aria-current="page"
               className="rounded-md bg-blue-600 px-3 py-1.5 text-white"
             >
-              月历
+              {tr('月历')}
             </span>
             <Link
               href="/events"
               className="rounded-md px-3 py-1.5 text-gray-400 transition hover:text-white"
             >
-              列表
+              {tr('列表')}
             </Link>
           </div>
         </div>
@@ -508,12 +604,15 @@ export default function EventCalendarPage() {
         ) : (
           <>
             <section
-              aria-label="活动月历"
+              aria-label={tr('活动月历')}
               className="rounded-2xl border border-gray-700 bg-[#2c2d31] p-3 shadow-xl shadow-black/20 sm:p-5"
             >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-black text-white md:text-2xl">
-                  {view.year}年{view.month + 1}月
+                  {tr('{year}年{month}', {
+                    year: view.year,
+                    month: tr(`${view.month + 1}月`),
+                  })}
                 </h2>
                 <div className="flex items-center gap-1.5 text-xs font-bold sm:gap-2">
                   <button
@@ -521,21 +620,21 @@ export default function EventCalendarPage() {
                     onClick={() => shiftMonth(-1)}
                     className="rounded-lg border border-gray-600 px-2.5 py-1.5 text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:px-3"
                   >
-                    ‹ 上一月
+                    {tr('‹ 上一月')}
                   </button>
                   <button
                     type="button"
                     onClick={goToday}
                     className="rounded-lg border border-blue-500/50 bg-blue-500/10 px-2.5 py-1.5 text-blue-300 transition hover:border-blue-400 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:px-3"
                   >
-                    今天
+                    {tr('今天')}
                   </button>
                   <button
                     type="button"
                     onClick={() => shiftMonth(1)}
                     className="rounded-lg border border-gray-600 px-2.5 py-1.5 text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 sm:px-3"
                   >
-                    下一月 ›
+                    {tr('下一月 ›')}
                   </button>
                 </div>
               </div>
@@ -543,7 +642,7 @@ export default function EventCalendarPage() {
               <div className="grid grid-cols-7 gap-1 border-b border-gray-700 pb-1.5 text-center text-xs font-bold text-gray-500 sm:gap-1.5">
                 {WEEKDAYS.map((day, index) => (
                   <span key={day} className={index >= 5 ? 'text-orange-300/80' : undefined}>
-                    {day}
+                    {tr(day)}
                   </span>
                 ))}
               </div>
@@ -563,19 +662,19 @@ export default function EventCalendarPage() {
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-500">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
-                  今天
+                  {tr('今天')}
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-orange-400" aria-hidden="true" />
-                  有活动
+                  {tr('有活动')}
                 </span>
-                <span>每日最多显示 2 个活动，点击日期查看全部</span>
+                <span>{tr('每日最多显示 2 个活动，点击日期查看全部')}</span>
               </div>
             </section>
 
             {monthEvents.length === 0 ? (
               <p className="mt-3 hidden rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/60 px-4 py-3 text-center text-sm text-gray-500 sm:block">
-                当月暂无活动，可以切换月份查看。
+                {tr('当月暂无活动，可以切换月份查看。')}
               </p>
             ) : null}
 
@@ -586,13 +685,15 @@ export default function EventCalendarPage() {
             <section aria-labelledby="calendar-month-events" className="mt-4 sm:hidden">
               <div className="mb-2 flex items-baseline justify-between">
                 <h2 id="calendar-month-events" className="text-lg font-bold text-white">
-                  当月活动
+                  {tr('当月活动')}
                 </h2>
-                <span className="text-xs text-gray-500">{monthEvents.length} 个</span>
+                <span className="text-xs text-gray-500">
+                  {tr('{count} 个', { count: monthEvents.length })}
+                </span>
               </div>
               {monthEvents.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/60 p-5 text-center text-sm text-gray-500">
-                  当月暂无活动，可以切换月份查看。
+                  {tr('当月暂无活动，可以切换月份查看。')}
                 </p>
               ) : (
                 <ul className="space-y-2">

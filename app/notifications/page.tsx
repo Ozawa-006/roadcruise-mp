@@ -5,6 +5,7 @@ import { createClient, type User } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Navbar from '../../components/Navbar';
+import { useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,6 +30,39 @@ interface BadgeStyle {
   label: string;
   className: string;
 }
+
+/** 页面文案：中文原文为 key，英文缺失时回退中文。 */
+const EN: Record<string, string> = {
+  // 标题与统计
+  '通知中心': 'Notifications',
+  '/ Notifications': '',
+  '共 {total} 条通知，其中': '{total} notifications total, of which',
+  '条未读（最多展示最近 {limit} 条）。': 'unread (showing the latest {limit}).',
+  '处理中...': 'Processing...',
+  '全部标为已读': 'Mark all as read',
+
+  // 登录状态
+  '登录状态确认中...': 'Checking sign-in status...',
+  '请先登录': 'Please sign in',
+  '登录后即可查看你的论坛回复与车队通知。':
+    'Sign in to view your forum reply and VTC notifications.',
+  '前往登录 →': 'Sign in →',
+
+  // 列表、筛选与分页
+  '只看未读': 'Unread only',
+  '第 {page} / {total} 页': 'Page {page} / {total}',
+  '通知加载中...': 'Loading notifications...',
+  '暂无通知': 'No notifications',
+  '未读': 'Unread',
+  '（无内容）': '(No content)',
+  '上一页': 'Previous',
+  '下一页': 'Next',
+
+  // 通知类型徽章
+  '回复': 'Reply',
+  '车队': 'VTC',
+  '其它': 'Other',
+};
 
 /** 通知类型徽章：reply=回复/蓝，vtc=车队/橙，其它=灰。 */
 function badgeOf(type: string | null): BadgeStyle {
@@ -65,6 +99,7 @@ function StatusCard({ children }: { children: ReactNode }) {
 
 export default function NotificationsPage() {
   const router = useRouter();
+  const tr = useTr(EN);
 
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -189,12 +224,14 @@ export default function NotificationsPage() {
         <div className="mb-6 flex flex-col gap-4 border-b border-gray-700 pb-4 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">
-              通知中心 <span className="text-base font-normal text-gray-500">/ Notifications</span>
+              {tr('通知中心')}{' '}
+              <span className="text-base font-normal text-gray-500">{tr('/ Notifications')}</span>
             </h1>
             {user && (
               <p className="mt-2 text-xs text-gray-500">
-                共 {notifications.length} 条通知，其中 <span className="text-blue-400">{unreadCount}</span> 条未读（最多展示最近
-                {FETCH_LIMIT} 条）。
+                {tr('共 {total} 条通知，其中', { total: notifications.length })}{' '}
+                <span className="text-blue-400">{unreadCount}</span>{' '}
+                {tr('条未读（最多展示最近 {limit} 条）。', { limit: FETCH_LIMIT })}
               </p>
             )}
           </div>
@@ -206,24 +243,24 @@ export default function NotificationsPage() {
               disabled={markingAll || unreadCount === 0}
               className="self-start rounded border border-blue-500/50 bg-blue-500/10 px-4 py-2 text-xs font-bold text-blue-400 transition hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:border-gray-700 disabled:bg-transparent disabled:text-gray-600 md:self-auto"
             >
-              {markingAll ? '处理中...' : '全部标为已读'}
+              {markingAll ? tr('处理中...') : tr('全部标为已读')}
             </button>
           )}
         </div>
 
-        {authLoading && <StatusCard>登录状态确认中...</StatusCard>}
+        {authLoading && <StatusCard>{tr('登录状态确认中...')}</StatusCard>}
 
         {/* 未登录 */}
         {!authLoading && !user && (
           <div className="rounded-lg border border-gray-700 bg-[#2c2d31] px-6 py-12 text-center">
             <p className="text-4xl mb-4">🔔</p>
-            <p className="text-sm text-gray-300">请先登录</p>
-            <p className="mt-2 text-xs text-gray-500">登录后即可查看你的论坛回复与车队通知。</p>
+            <p className="text-sm text-gray-300">{tr('请先登录')}</p>
+            <p className="mt-2 text-xs text-gray-500">{tr('登录后即可查看你的论坛回复与车队通知。')}</p>
             <Link
               href="/login"
               className="mt-5 inline-block rounded border border-blue-500/50 bg-blue-500/10 px-5 py-2 text-xs font-bold text-blue-400 transition hover:bg-blue-500/20"
             >
-              前往登录 →
+              {tr('前往登录 →')}
             </Link>
           </div>
         )}
@@ -242,10 +279,10 @@ export default function NotificationsPage() {
                   }}
                   className="h-3.5 w-3.5 accent-blue-500"
                 />
-                只看未读
+                {tr('只看未读')}
               </label>
               <span className="text-[11px] text-gray-500">
-                第 {currentPage} / {totalPages} 页
+                {tr('第 {page} / {total} 页', { page: currentPage, total: totalPages })}
               </span>
             </div>
 
@@ -256,9 +293,9 @@ export default function NotificationsPage() {
             )}
 
             {loading ? (
-              <StatusCard>通知加载中...</StatusCard>
+              <StatusCard>{tr('通知加载中...')}</StatusCard>
             ) : pageItems.length === 0 ? (
-              <StatusCard>暂无通知</StatusCard>
+              <StatusCard>{tr('暂无通知')}</StatusCard>
             ) : (
               <ul className="space-y-2">
                 {pageItems.map((n) => {
@@ -278,16 +315,16 @@ export default function NotificationsPage() {
                           <div className="min-w-0 flex-1">
                             <div className="mb-1.5 flex items-center gap-2">
                               {!n.is_read && (
-                                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-label="未读" />
+                                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-label={tr('未读')} />
                               )}
                               <span
                                 className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}
                               >
-                                {badge.label}
+                                {tr(badge.label)}
                               </span>
                             </div>
                             <p className={`text-sm leading-relaxed ${n.is_read ? 'text-gray-400' : 'text-gray-100'}`}>
-                              {n.content || '（无内容）'}
+                              {n.content || tr('（无内容）')}
                             </p>
                           </div>
                           <time
@@ -312,7 +349,7 @@ export default function NotificationsPage() {
                   disabled={currentPage <= 1}
                   className="rounded border border-gray-700 bg-[#2c2d31] px-3 py-1.5 text-xs text-gray-300 transition hover:border-gray-600 hover:text-white disabled:cursor-not-allowed disabled:text-gray-600"
                 >
-                  上一页
+                  {tr('上一页')}
                 </button>
                 <span className="text-xs text-gray-400">
                   {currentPage} / {totalPages}
@@ -323,7 +360,7 @@ export default function NotificationsPage() {
                   disabled={currentPage >= totalPages}
                   className="rounded border border-gray-700 bg-[#2c2d31] px-3 py-1.5 text-xs text-gray-300 transition hover:border-gray-600 hover:text-white disabled:cursor-not-allowed disabled:text-gray-600"
                 >
-                  下一页
+                  {tr('下一页')}
                 </button>
               </div>
             )}

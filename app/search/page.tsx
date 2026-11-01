@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../../components/Navbar';
+import { useTr } from '@/components/I18nProvider';
 import { roleLabel } from '@/lib/permissions';
 
 const supabase = createClient(
@@ -15,6 +16,75 @@ const supabase = createClient(
 const RESULT_LIMIT = 20;
 const MEMBER_LIMIT = 10;
 const SECTION_LIMIT = 5;
+
+/** 页面文案：中文原文为 key，英文缺失时回退中文。 */
+const EN: Record<string, string> = {
+  // 类型筛选
+  '全部': 'All',
+  '帖子': 'Topics',
+  '玩家': 'Members',
+  '活动': 'Events',
+  '新闻': 'News',
+  '车队': 'VTCs',
+
+  // 页面标题与搜索说明
+  '全站搜索': 'Site Search',
+  '搜索结果：': 'Search results: ',
+  '范围：{scope} | 找到 {summary}': 'Scope: {scope} | Found {summary}',
+  '支持搜索帖子、玩家、活动、新闻与车队。': 'Search topics, members, events, news and VTCs.',
+  '搜索帖子、玩家、活动、新闻、车队…': 'Search topics, members, events, news, VTCs…',
+  '搜索关键词': 'Search keyword',
+  '搜索': 'Search',
+  '输入关键词开始搜索：帖子和新闻按标题/正文匹配，玩家支持昵称与专属 ID。':
+    'Enter a keyword to search: topics and news match title/content, members match display name or custom ID.',
+  '没有找到与 "{query}" 相关的内容，请尝试其他关键词或 ID。':
+    'No results found for "{query}". Try different keywords or IDs.',
+  '搜索中…': 'Searching…',
+  '重试': 'Retry',
+  '搜索请求失败，请稍后重试。': 'Search request failed, please try again later.',
+  '关键词只包含无效字符（% _ , ( )），请换一个关键词。':
+    'The keyword only contains invalid characters (% _ , ( )). Please try another keyword.',
+
+  // 结果统计与分区
+  '共 {total} 条': '{total} results',
+  '查看更多 →': 'View more →',
+  '相关帖子': 'Related Topics',
+  '相关玩家': 'Related Members',
+  '相关活动': 'Related Events',
+  '相关新闻': 'Related News',
+  '相关车队': 'Related VTCs',
+  '帖子 {count}': 'Topics {count}',
+  '玩家 {count}': 'Members {count}',
+  '活动 {count}': 'Events {count}',
+  '新闻 {count}': 'News {count}',
+  '车队 {count}': 'VTCs {count}',
+  '帖子：{message}': 'Topics: {message}',
+  '玩家：{message}': 'Members: {message}',
+  '活动：{message}': 'Events: {message}',
+  '新闻：{message}': 'News: {message}',
+  '车队：{message}': 'VTCs: {message}',
+  '；': '; ',
+
+  // 帖子结果
+  '（无标题）': '(Untitled)',
+  '版块 #{id}': 'Category #{id}',
+  '作者：{name}': 'Author: {name}',
+  '未知': 'Unknown',
+
+  // 玩家结果
+  '玩家头像': 'Member avatar',
+  '未命名玩家': 'Unnamed member',
+  '无': 'None',
+
+  // 活动 / 新闻 / 车队结果
+  '（无标题活动）': '(Untitled event)',
+  '报名 {registered}': 'Registered {registered}',
+  ' 人': ' people',
+  '（无标题公告）': '(Untitled announcement)',
+  '未命名车队': 'Unnamed VTC',
+  '招募中': 'Recruiting',
+  '暂停招募': 'Recruitment paused',
+};
 
 const TYPE_OPTIONS = [
   { value: 'all', label: '全部' },
@@ -148,18 +218,20 @@ function SectionHeading({
   total: number;
   moreHref?: string;
 }) {
+  const tr = useTr(EN);
+
   return (
     <div className={`mb-4 flex flex-wrap items-center gap-2 border-l-4 pl-3 ${accent}`}>
       <h2 className="text-lg font-bold text-gray-300">
         {icon} {title}
       </h2>
-      <span className="text-xs text-gray-500">共 {total} 条</span>
+      <span className="text-xs text-gray-500">{tr('共 {total} 条', { total })}</span>
       {moreHref ? (
         <Link
           href={moreHref}
           className="ml-auto text-xs font-bold text-blue-400 transition hover:text-white"
         >
-          查看更多 →
+          {tr('查看更多 →')}
         </Link>
       ) : null}
     </div>
@@ -169,6 +241,7 @@ function SectionHeading({
 function SearchResults() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const tr = useTr(EN);
 
   const query = searchParams.get('q') || '';
   const type = normalizeType(searchParams.get('type'));
@@ -206,7 +279,7 @@ function SearchResults() {
         setEvents([]);
         setNews([]);
         setVtcs([]);
-        setError('关键词只包含无效字符（% _ , ( )），请换一个关键词。');
+        setError(tr('关键词只包含无效字符（% _ , ( )），请换一个关键词。'));
         setLoading(false);
         return;
       }
@@ -292,11 +365,16 @@ function SearchResults() {
         if (cancelled) return;
 
         const errors: string[] = [];
-        if (topicsResponse?.error) errors.push(`帖子：${topicsResponse.error.message}`);
-        if (membersResponse?.error) errors.push(`玩家：${membersResponse.error.message}`);
-        if (eventsResponse?.error) errors.push(`活动：${eventsResponse.error.message}`);
-        if (newsResponse?.error) errors.push(`新闻：${newsResponse.error.message}`);
-        if (vtcsResponse?.error) errors.push(`车队：${vtcsResponse.error.message}`);
+        if (topicsResponse?.error)
+          errors.push(tr('帖子：{message}', { message: topicsResponse.error.message }));
+        if (membersResponse?.error)
+          errors.push(tr('玩家：{message}', { message: membersResponse.error.message }));
+        if (eventsResponse?.error)
+          errors.push(tr('活动：{message}', { message: eventsResponse.error.message }));
+        if (newsResponse?.error)
+          errors.push(tr('新闻：{message}', { message: newsResponse.error.message }));
+        if (vtcsResponse?.error)
+          errors.push(tr('车队：{message}', { message: vtcsResponse.error.message }));
 
         const topicRows = (topicsResponse?.data ?? []) as TopicRow[];
         const memberRows = (membersResponse?.data ?? []) as MemberRow[];
@@ -326,7 +404,7 @@ function SearchResults() {
         );
         setNews(newsRows);
         setVtcs(vtcRows);
-        setError(errors.length > 0 ? errors.join('；') : null);
+        setError(errors.length > 0 ? errors.join(tr('；')) : null);
         setLoading(false);
       } catch (err) {
         if (cancelled) return;
@@ -336,7 +414,7 @@ function SearchResults() {
         setEvents([]);
         setNews([]);
         setVtcs([]);
-        setError(err instanceof Error ? err.message : '搜索请求失败，请稍后重试。');
+        setError(err instanceof Error ? err.message : tr('搜索请求失败，请稍后重试。'));
         setLoading(false);
       }
     };
@@ -346,6 +424,8 @@ function SearchResults() {
     return () => {
       cancelled = true;
     };
+    // tr 每次渲染都是新函数，加入依赖会让搜索请求反复触发，这里刻意不列入。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, type, reloadToken]);
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
@@ -367,11 +447,11 @@ function SearchResults() {
   const showVtcs = type === 'all' || type === 'vtcs';
 
   const summary: string[] = [];
-  if (showTopics) summary.push(`帖子 ${topics.length}`);
-  if (showMembers) summary.push(`玩家 ${members.length}`);
-  if (showEvents) summary.push(`活动 ${events.length}`);
-  if (showNews) summary.push(`新闻 ${news.length}`);
-  if (showVtcs) summary.push(`车队 ${vtcs.length}`);
+  if (showTopics) summary.push(tr('帖子 {count}', { count: topics.length }));
+  if (showMembers) summary.push(tr('玩家 {count}', { count: members.length }));
+  if (showEvents) summary.push(tr('活动 {count}', { count: events.length }));
+  if (showNews) summary.push(tr('新闻 {count}', { count: news.length }));
+  if (showVtcs) summary.push(tr('车队 {count}', { count: vtcs.length }));
   const total = topics.length + members.length + events.length + news.length + vtcs.length;
 
   const visibleTopics = type === 'all' ? topics.slice(0, SECTION_LIMIT) : topics;
@@ -386,16 +466,20 @@ function SearchResults() {
         <h1 className="text-2xl font-bold text-white">
           {hasQuery ? (
             <>
-              搜索结果：<span className="text-blue-400">&quot;{query.trim()}&quot;</span>
+              {tr('搜索结果：')}
+              <span className="text-blue-400">&quot;{query.trim()}&quot;</span>
             </>
           ) : (
-            '全站搜索'
+            tr('全站搜索')
           )}
         </h1>
         <p className="text-xs text-gray-500 mt-2">
           {hasQuery
-            ? `范围：${labelOf(type)} | 找到 ${summary.join(' · ')}`
-            : '支持搜索帖子、玩家、活动、新闻与车队。'}
+            ? tr('范围：{scope} | 找到 {summary}', {
+                scope: tr(labelOf(type)),
+                summary: summary.join(' · '),
+              })
+            : tr('支持搜索帖子、玩家、活动、新闻与车队。')}
         </p>
       </div>
 
@@ -408,16 +492,16 @@ function SearchResults() {
             type="search"
             name="keyword"
             defaultValue={query}
-            placeholder="搜索帖子、玩家、活动、新闻、车队…"
+            placeholder={tr('搜索帖子、玩家、活动、新闻、车队…')}
             className="h-full w-full bg-transparent px-2 text-sm text-white outline-none placeholder:text-gray-500"
-            aria-label="搜索关键词"
+            aria-label={tr('搜索关键词')}
           />
         </div>
         <button
           type="submit"
           className="rounded-full bg-blue-600 px-6 py-2 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
-          搜索
+          {tr('搜索')}
         </button>
       </form>
 
@@ -436,7 +520,7 @@ function SearchResults() {
                   : 'border-gray-700 bg-[#232428] text-gray-400 hover:border-gray-500 hover:text-white'
               }`}
             >
-              {option.label}
+              {tr(option.label)}
             </Link>
           );
         })}
@@ -445,12 +529,12 @@ function SearchResults() {
       {!hasQuery ? (
         <div className="text-center py-20 bg-[#2c2d31] border border-gray-700 rounded-lg">
           <p className="text-4xl mb-4">🔍</p>
-          <p className="text-gray-400">输入关键词开始搜索：帖子和新闻按标题/正文匹配，玩家支持昵称与专属 ID。</p>
+          <p className="text-gray-400">{tr('输入关键词开始搜索：帖子和新闻按标题/正文匹配，玩家支持昵称与专属 ID。')}</p>
         </div>
       ) : loading ? (
         <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-10 text-center">
           <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500" />
-          <p className="mt-4 text-sm text-gray-400">搜索中…</p>
+          <p className="mt-4 text-sm text-gray-400">{tr('搜索中…')}</p>
         </div>
       ) : (
         <>
@@ -462,7 +546,7 @@ function SearchResults() {
                 onClick={() => setReloadToken((value) => value + 1)}
                 className="ml-auto rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-bold text-gray-300 transition hover:border-blue-500 hover:text-white"
               >
-                重试
+                {tr('重试')}
               </button>
             </div>
           ) : null}
@@ -472,7 +556,7 @@ function SearchResults() {
             <div className="mb-10">
               <SectionHeading
                 icon="📝"
-                title="相关帖子"
+                title={tr('相关帖子')}
                 accent="border-blue-500"
                 total={topics.length}
                 moreHref={type === 'all' ? typeHref(query, 'topics') : undefined}
@@ -489,11 +573,12 @@ function SearchResults() {
                     className="block bg-[#2c2d31] border border-gray-700 p-4 rounded-lg hover:border-blue-500 transition group"
                   >
                     <h3 className="text-white font-bold text-base group-hover:text-blue-400 transition">
-                      {topic.title || '（无标题）'}
+                      {topic.title || tr('（无标题）')}
                     </h3>
                     <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-gray-500">
                       <span>
-                        版块 #{topic.category_id ?? '未知'} · 作者：{authorName(topic.profiles)}
+                        {tr('版块 #{id}', { id: topic.category_id ?? tr('未知') })} ·{' '}
+                        {tr('作者：{name}', { name: tr(authorName(topic.profiles)) })}
                       </span>
                       <span>{formatDate(topic.created_at)}</span>
                     </div>
@@ -508,7 +593,7 @@ function SearchResults() {
             <div className="mb-10">
               <SectionHeading
                 icon="👥"
-                title="相关玩家"
+                title={tr('相关玩家')}
                 accent="border-green-500"
                 total={members.length}
                 moreHref={type === 'all' ? typeHref(query, 'members') : undefined}
@@ -524,7 +609,7 @@ function SearchResults() {
                       {member.avatar_url ? (
                         <img
                           src={member.avatar_url}
-                          alt={member.display_name || '玩家头像'}
+                          alt={member.display_name || tr('玩家头像')}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -535,10 +620,10 @@ function SearchResults() {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-white font-bold group-hover:text-green-400 transition">
-                        {member.display_name || '未命名玩家'}
+                        {member.display_name || tr('未命名玩家')}
                       </p>
                       <p className="text-xs text-blue-400">
-                        ID: {member.custom_id || member.random_id || '无'}
+                        ID: {member.custom_id || member.random_id || tr('无')}
                       </p>
                       {member.role ? (
                         <p className="mt-1 inline-flex rounded border border-gray-600 bg-[#232428] px-1.5 py-0.5 text-[11px] text-gray-400">
@@ -557,7 +642,7 @@ function SearchResults() {
             <div className="mb-10">
               <SectionHeading
                 icon="🗓️"
-                title="相关活动"
+                title={tr('相关活动')}
                 accent="border-orange-500"
                 total={events.length}
                 moreHref={type === 'all' ? typeHref(query, 'events') : undefined}
@@ -570,13 +655,13 @@ function SearchResults() {
                     className="block bg-[#2c2d31] border border-gray-700 p-4 rounded-lg hover:border-orange-500 transition group"
                   >
                     <h3 className="text-white font-bold text-base group-hover:text-orange-400 transition">
-                      {event.title || '（无标题活动）'}
+                      {event.title || tr('（无标题活动）')}
                     </h3>
                     <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-gray-500">
                       <span>🕒 {formatDateTime(event.start_at)}</span>
                       <span className="font-mono text-blue-300">
-                        报名 {event.registered}
-                        {event.capacity !== null ? ` / ${event.capacity}` : ' 人'}
+                        {tr('报名 {registered}', { registered: event.registered })}
+                        {event.capacity !== null ? ` / ${event.capacity}` : tr(' 人')}
                       </span>
                     </div>
                   </Link>
@@ -590,7 +675,7 @@ function SearchResults() {
             <div className="mb-10">
               <SectionHeading
                 icon="📢"
-                title="相关新闻"
+                title={tr('相关新闻')}
                 accent="border-yellow-500"
                 total={news.length}
                 moreHref={type === 'all' ? typeHref(query, 'news') : undefined}
@@ -609,7 +694,7 @@ function SearchResults() {
                         </span>
                       ) : null}
                       <h3 className="min-w-0 flex-1 truncate text-white font-bold text-base group-hover:text-yellow-400 transition">
-                        {item.title || '（无标题公告）'}
+                        {item.title || tr('（无标题公告）')}
                       </h3>
                     </div>
                     <p className="mt-2 text-right text-xs text-gray-500">
@@ -626,7 +711,7 @@ function SearchResults() {
             <div className="mb-10">
               <SectionHeading
                 icon="🚚"
-                title="相关车队"
+                title={tr('相关车队')}
                 accent="border-purple-500"
                 total={vtcs.length}
                 moreHref={type === 'all' ? typeHref(query, 'vtcs') : undefined}
@@ -640,7 +725,7 @@ function SearchResults() {
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate text-white font-bold group-hover:text-purple-400 transition">
-                        {vtc.name || '未命名车队'}
+                        {vtc.name || tr('未命名车队')}
                       </span>
                       {vtc.tag ? (
                         <span className="rounded border border-gray-600 bg-[#232428] px-1.5 py-0.5 text-[11px] text-gray-400">
@@ -654,7 +739,7 @@ function SearchResults() {
                             : 'border-gray-600 bg-[#232428] text-gray-400'
                         }`}
                       >
-                        {vtc.is_recruiting ? '招募中' : '暂停招募'}
+                        {vtc.is_recruiting ? tr('招募中') : tr('暂停招募')}
                       </span>
                     </div>
                     {vtc.description ? (
@@ -671,7 +756,9 @@ function SearchResults() {
             <div className="text-center py-20 bg-[#2c2d31] border border-gray-700 rounded-lg">
               <p className="text-4xl mb-4">🔍</p>
               <p className="text-gray-400">
-                没有找到与 &quot;{query.trim()}&quot; 相关的内容，请尝试其他关键词或 ID。
+                {tr('没有找到与 "{query}" 相关的内容，请尝试其他关键词或 ID。', {
+                  query: query.trim(),
+                })}
               </p>
             </div>
           ) : null}
@@ -682,10 +769,12 @@ function SearchResults() {
 }
 
 export default function SearchPage() {
+  const tr = useTr(EN);
+
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
-      <Suspense fallback={<div className="text-center text-white mt-20">加载中...</div>}>
+      <Suspense fallback={<div className="text-center text-white mt-20">{tr('加载中...')}</div>}>
         <SearchResults />
       </Suspense>
     </main>

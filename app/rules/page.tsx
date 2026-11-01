@@ -6,6 +6,40 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
 import { canEditRules, levelOf } from '@/lib/permissions';
+import { useTr } from '@/components/I18nProvider';
+
+// ---------------------------------------------------------------------------
+// 英文文案：key 为中文原文，value 为英文译文；英文缺失时自动回退中文。
+// 规则章节名 / 条款正文来自数据库，不在翻译范围内。
+// ---------------------------------------------------------------------------
+const EN: Record<string, string> = {
+  // 加载 / 空状态
+  '加载规则中...': 'Loading rules…',
+  '暂时没有发布任何规则。': 'No rules have been published yet.',
+
+  // 页面头部
+  '社区规则': 'Community Rules',
+  '编辑规则': 'Edit rules',
+  '最后更新时间：{time}': 'Last updated: {time}',
+  '暂无更新': 'No updates yet',
+
+  // 侧边目录
+  '目录索引': 'Index',
+
+  // 条款处罚标签
+  '⚠️ 处罚：{penalty}': '⚠️ Penalty: {penalty}',
+};
+
+/** rules_articles 表中本页用到的字段（仅做类型标注，数据读取逻辑不变）。 */
+type RuleArticle = {
+  id: string | number;
+  section: string;
+  article_number: string | number;
+  title: string;
+  content: string;
+  penalty: string | null;
+  updated_at: string;
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,7 +47,8 @@ const supabase = createClient(
 );
 
 export default function RulesPage() {
-  const [articles, setArticles] = useState<any[]>([]);
+  const tr = useTr(EN);
+  const [articles, setArticles] = useState<RuleArticle[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 🌟 新增：用于存储当前用户的权限等级
@@ -42,14 +77,18 @@ export default function RulesPage() {
     fetchRules();
   }, []);
 
-  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载规则中...</div>;
+  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('加载规则中...')}</div>;
 
   // 按章节 (section) 将条款分组
-  const groupedArticles = articles.reduce((acc: Record<string, any[]>, article: any) => {
+  const groupedArticles = articles.reduce<Record<string, RuleArticle[]>>((acc, article) => {
     if (!acc[article.section]) acc[article.section] = [];
     acc[article.section].push(article);
     return acc;
   }, {});
+
+  // 最后更新时间来自数据库；未取到任何条款时展示占位文案。
+  const updatedLabel =
+    articles.length > 0 ? new Date(articles[0].updated_at).toLocaleString() : tr('暂无更新');
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -59,9 +98,9 @@ export default function RulesPage() {
         {/* 页面头部 */}
         <div className="mb-8 border-b border-gray-700 pb-4 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">社区规则</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">{tr('社区规则')}</h1>
             <p className="text-gray-500 text-sm">
-              最后更新时间：{articles.length > 0 ? new Date(articles[0].updated_at).toLocaleString() : '暂无更新'}
+              {tr('最后更新时间：{time}', { time: updatedLabel })}
             </p>
           </div>
           
@@ -72,7 +111,7 @@ export default function RulesPage() {
               className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center gap-2 text-sm whitespace-nowrap"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-              编辑规则
+              {tr('编辑规则')}
             </Link>
           )}
         </div>
@@ -81,7 +120,7 @@ export default function RulesPage() {
           {/* 左侧目录导航 (仅在桌面端显示) */}
           <div className="lg:col-span-1 hidden lg:block">
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-4 sticky top-8 shadow-lg">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">目录索引</h3>
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">{tr('目录索引')}</h3>
               <ul className="space-y-2 text-sm">
                 {Object.keys(groupedArticles).map(section => (
                   <li key={section}>
@@ -99,7 +138,7 @@ export default function RulesPage() {
 
           {/* 右侧具体规则内容 */}
           <div className="lg:col-span-3 space-y-8">
-            {Object.entries(groupedArticles).map(([section, sectionArticles]: [string, any[]]) => (
+            {Object.entries(groupedArticles).map(([section, sectionArticles]) => (
               <div 
                 key={section} 
                 id={section.replace(/\s+/g, '-')} 
@@ -112,7 +151,7 @@ export default function RulesPage() {
                 
                 {/* 章节内的具体条款 */}
                 <div className="p-6 space-y-6">
-                  {sectionArticles.map((article: any) => (
+                  {sectionArticles.map((article) => (
                     <div key={article.id} className="border-b border-gray-700/50 pb-5 last:border-0 last:pb-0">
                       <h3 className="text-lg font-bold text-blue-400 mb-2">
                         {article.article_number} - {article.title}
@@ -123,7 +162,7 @@ export default function RulesPage() {
                       {/* 如果有处罚说明，则显示红色标签 */}
                       {article.penalty && (
                         <div className="bg-red-900/20 border border-red-900/50 text-red-400 text-xs px-3 py-1.5 rounded inline-block font-bold">
-                          ⚠️ 处罚：{article.penalty}
+                          {tr('⚠️ 处罚：{penalty}', { penalty: article.penalty })}
                         </div>
                       )}
                     </div>
@@ -135,7 +174,7 @@ export default function RulesPage() {
             {/* 如果没有任何规则 */}
             {articles.length === 0 && (
               <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-10 text-center shadow-lg">
-                <p className="text-gray-500">暂时没有发布任何规则。</p>
+                <p className="text-gray-500">{tr('暂时没有发布任何规则。')}</p>
               </div>
             )}
           </div>

@@ -3,6 +3,119 @@
 import { useEffect, useState } from 'react';
 import Navbar from '../../components/Navbar';
 import type { ServerStatus, ServersStatusPayload } from '../../lib/server-status';
+import { formatMessage, tr as translateFor, type Locale } from '@/lib/i18n';
+import { useLocale, useTr } from '@/components/I18nProvider';
+
+// ---------------------------------------------------------------------------
+// 英文文案：key 为中文原文，value 为英文译文；英文缺失时自动回退中文。
+// 服务器名称 / ID / 地址 / 地区 / 版本号 / 协议号来自接口数据，不在翻译范围内。
+// ---------------------------------------------------------------------------
+const EN: Record<string, string> = {
+  // 页面头部
+  '服务器列表': 'Game servers',
+  '查看 RCTMP 游戏服务器实时状态、在线玩家与连接入口。数据由本站服务端代理抓取，每 5 秒自动刷新，页面隐藏时暂停。':
+    'Live status, online players and launcher entry points for RCTMP game servers. Data is proxied by our server, refreshes every 5 seconds, and pauses while the page is hidden.',
+  '自动刷新异常，正在重试': 'Auto-refresh failed, retrying',
+  '正在获取服务器状态': 'Fetching server status',
+  '数据已更新': 'Data updated',
+  '最后更新': 'Last updated',
+  '立即刷新': 'Refresh now',
+
+  // 服务器状态标签
+  '在线': 'Online',
+  '离线': 'Offline',
+  '未知': 'Unknown',
+
+  // 服务器卡片
+  '版本': 'Version',
+  '协议': 'Protocol',
+  '连接启动器（状态未知）': 'Launch launcher (status unknown)',
+  '连接启动器': 'Launch launcher',
+  '服务器状态未知，暂时无法连接，请稍后再试':
+    'Server status is unknown, so connecting is unavailable. Please try again later.',
+  '需要已安装 RCTMP 启动器': 'Requires the RCTMP launcher',
+  '在线玩家': 'Online players',
+  '容量未知': 'Capacity unknown',
+  '{name} 在线人数': '{name} online players',
+  '运行时长': 'Uptime',
+  '平均邻居': 'Avg. neighbors',
+  'Tick 延迟': 'Tick latency',
+  '地址': 'Address',
+  '{count} 人': '{count} players',
+  '{snapshots} 条快照 / 在线 {online} 人': '{snapshots} snapshots / {online} online',
+  '收起': 'Collapse',
+  '展开全部（{count}）': 'Show all ({count})',
+  '暂无可见的在线玩家': 'No visible online players',
+  '名称': 'Name',
+  '在线时长': 'Session time',
+  '速度': 'Speed',
+  '服务端返回了 {shown} 条玩家明细，少于在线人数 {online}。':
+    'The server returned {shown} player records, fewer than the {online} players online.',
+
+  // 服务器错误提示
+  '抓取失败（{code}）': 'Fetch failed ({code})',
+  '服务器鉴权未通过，请稍后再试或联系管理员。':
+    'Server authentication failed. Please try again later or contact an administrator.',
+  '服务器响应超时，请稍后再试。': 'The server timed out. Please try again later.',
+  '服务器返回的数据异常，请稍后再试。':
+    'The server returned unexpected data. Please try again later.',
+  '暂时无法连接游戏服务器，请稍后再试。':
+    'Cannot reach the game server right now. Please try again later.',
+  '未找到该服务器。': 'Server not found.',
+  '错误码：{code}': 'Error code: {code}',
+  '该服务器本轮状态刷新失败；其它服务器不受影响，页面会每 5 秒自动重试。':
+    'This server failed its status refresh; other servers are unaffected. The page retries every 5 seconds.',
+  '连接启动器（离线）': 'Launch launcher (offline)',
+
+  // 加载 / 未开放 / 空 / 错误状态
+  '正在获取服务器状态…': 'Fetching server status…',
+  '服务器即将开放，敬请期待': 'Servers are opening soon',
+  '游戏服务端正在测试中。开放后这里会展示各服务器的实时状态、在线玩家与启动器连接入口。':
+    'The game servers are still in testing. Once open, this page will show each server’s live status, online players and launcher entry point.',
+  '请稍后再来看看，感谢你的耐心等待。':
+    'Please check back later, and thanks for your patience.',
+  '暂时无法获取服务器状态': 'Unable to fetch server status',
+  '页面会每 5 秒自动重试；也可以点击下方按钮立即重试。':
+    'The page retries every 5 seconds; you can also retry right now with the button below.',
+  '立即重试': 'Retry now',
+  '当前暂无在线服务器': 'No servers online right now',
+  '服务器可能正在维护或尚未开放，请稍后再来看看。':
+    'Servers may be under maintenance or not open yet. Please check back later.',
+  '自动刷新失败': 'Auto-refresh failed',
+  '当前显示的是上次成功获取的数据，页面会每 5 秒继续重试。':
+    'Showing the last data fetched successfully; the page keeps retrying every 5 seconds.',
+  '所有服务器当前均离线。': 'All servers are currently offline.',
+  '暂时无法获取实时状态，详情见下方提示。':
+    'Live status is unavailable right now. See the details below.',
+  '数据由本站服务端定时获取，仅供参考；实际连接以启动器校验结果为准。':
+    'Data is fetched periodically by our server and is for reference only; the launcher validation result is authoritative.',
+
+  // 时长单位（实时长文案在浏览器端拼接，用模板占位）
+  '{count} 秒': '{count}s',
+  '{days} 天 {hours} 小时': '{days}d {hours}h',
+  '{hours} 小时 {minutes} 分': '{hours}h {minutes}m',
+  '{minutes} 分 {seconds} 秒': '{minutes}m {seconds}s',
+
+  // 请求失败文案（在 effect 内按 locale 构造）
+  '服务暂时不可用（HTTP {status}）': 'Service unavailable (HTTP {status})',
+  '服务器状态数据异常': 'Unexpected server status data',
+  '未知错误': 'Unknown error',
+};
+
+/** useTr 返回的翻译函数类型，供模块级工具函数复用。 */
+type Translate = (zh: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * effect / 事件回调里构造文案：tr 每次渲染都会重新创建，不适合放进依赖数组，
+ * 这里直接按当前 locale 翻译。
+ */
+function translateNow(
+  locale: Locale,
+  zh: string,
+  vars?: Record<string, string | number>
+): string {
+  return formatMessage(translateFor(locale, EN, zh), vars);
+}
 
 const REFRESH_INTERVAL_MS = 5000;
 const PLAYER_PREVIEW_LIMIT = 20;
@@ -52,6 +165,7 @@ function isServersStatusPayload(value: unknown): value is ServersStatusPayload {
 }
 
 function StatusDot({ state }: { state: ServerState }) {
+  const tr = useTr(EN);
   const meta = STATUS_META[state];
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${meta.text}`}>
@@ -60,7 +174,7 @@ function StatusDot({ state }: { state: ServerState }) {
           meta.pulse ? 'animate-pulse' : ''
         }`}
       />
-      {meta.label}
+      {tr(meta.label)}
     </span>
   );
 }
@@ -110,17 +224,20 @@ function formatSpeed(value: number | null | undefined): string {
   return `${Math.round(value)} km/h`;
 }
 
-function humanizeDuration(value: number | null | undefined): string {
+function humanizeDuration(
+  value: number | null | undefined,
+  tr: Translate
+): string {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '—';
   const total = Math.floor(value);
-  if (total < 60) return `${total} 秒`;
+  if (total < 60) return tr('{count} 秒', { count: total });
   const days = Math.floor(total / 86400);
   const hours = Math.floor((total % 86400) / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
-  if (days > 0) return `${days} 天 ${hours} 小时`;
-  if (hours > 0) return `${hours} 小时 ${minutes} 分`;
-  return `${minutes} 分 ${seconds} 秒`;
+  if (days > 0) return tr('{days} 天 {hours} 小时', { days, hours });
+  if (hours > 0) return tr('{hours} 小时 {minutes} 分', { hours, minutes });
+  return tr('{minutes} 分 {seconds} 秒', { minutes, seconds });
 }
 
 function pingColor(value: number | null | undefined): string {
@@ -156,8 +273,9 @@ function formatAddress(status: ServerStatus): string {
     : host;
 }
 
-function describeError(code: string): string {
-  return ERROR_LABELS[code] ?? `抓取失败（${code}）`;
+function describeError(code: string, tr: Translate): string {
+  const label = ERROR_LABELS[code];
+  return label ? tr(label) : tr('抓取失败（{code}）', { code });
 }
 
 function launchServer(serverId: string): void {
@@ -176,6 +294,7 @@ function ServerCard({
   stale: boolean;
   onTogglePlayers: () => void;
 }) {
+  const tr = useTr(EN);
   const capacity = status.capacity > 0 ? status.capacity : 0;
   const online = status.online > 0 ? status.online : 0;
   const percent = capacity > 0 ? Math.min(100, (online / capacity) * 100) : 0;
@@ -211,12 +330,12 @@ function ServerCard({
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
               <span>
-                版本{' '}
+                {tr('版本')}{' '}
                 <span className="font-mono text-gray-300">{status.version ?? '—'}</span>
               </span>
               <span className="text-gray-700">·</span>
               <span>
-                协议{' '}
+                {tr('协议')}{' '}
                 <span className="font-mono text-gray-300">
                   {status.protocolVersion === null ? '—' : `v${status.protocolVersion}`}
                 </span>
@@ -251,21 +370,21 @@ function ServerCard({
                     d="M13 10V3L4 14h7v7l9-11h-7z"
                   />
                 </svg>
-                {connectDisabled ? '连接启动器（状态未知）' : '连接启动器'}
+                {connectDisabled ? tr('连接启动器（状态未知）') : tr('连接启动器')}
               </button>
               <span className="text-[11px] text-gray-500">
                 {connectDisabled
-                  ? '服务器状态未知，暂时无法连接，请稍后再试'
-                  : '需要已安装 RCTMP 启动器'}
+                  ? tr('服务器状态未知，暂时无法连接，请稍后再试')
+                  : tr('需要已安装 RCTMP 启动器')}
               </span>
             </div>
           </div>
 
           <div className="w-full shrink-0 lg:w-72">
             <div className="flex items-baseline justify-between">
-              <span className="text-xs text-gray-500">在线玩家</span>
+              <span className="text-xs text-gray-500">{tr('在线玩家')}</span>
               <span className="text-[11px] text-gray-500">
-                {capacity > 0 ? `${percent.toFixed(0)}%` : '容量未知'}
+                {capacity > 0 ? `${percent.toFixed(0)}%` : tr('容量未知')}
               </span>
             </div>
             <div className="mt-1 flex items-baseline gap-1.5">
@@ -277,7 +396,7 @@ function ServerCard({
             <div
               className="mt-2 h-2 w-full overflow-hidden rounded-full border border-gray-700/70 bg-[#18191c]"
               role="progressbar"
-              aria-label={`${status.name} 在线人数`}
+              aria-label={tr('{name} 在线人数', { name: status.name })}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(percent)}
@@ -291,33 +410,36 @@ function ServerCard({
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Stat label="运行时长" value={humanizeDuration(status.uptimeSec)} />
+          <Stat label={tr('运行时长')} value={humanizeDuration(status.uptimeSec, tr)} />
           <Stat
-            label="平均邻居"
+            label={tr('平均邻居')}
             value={
               status.avgNeighbors === null
                 ? '—'
-                : `${formatNumber(status.avgNeighbors, 1)} 人`
+                : tr('{count} 人', { count: formatNumber(status.avgNeighbors, 1) })
             }
           />
           <Stat
-            label="Tick 延迟"
+            label={tr('Tick 延迟')}
             value={
               status.lastTickMs === null
                 ? '—'
                 : `${formatNumber(status.lastTickMs, 1)} ms`
             }
           />
-          <Stat label="地址" value={formatAddress(status)} mono />
+          <Stat label={tr('地址')} value={formatAddress(status)} mono />
         </div>
       </div>
 
       <div className="p-5 md:p-6">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-bold text-gray-200">
-            在线玩家
+            {tr('在线玩家')}
             <span className="ml-2 font-normal text-gray-500">
-              {status.players.length} 条快照 / 在线 {status.online} 人
+              {tr('{snapshots} 条快照 / 在线 {online} 人', {
+                snapshots: status.players.length,
+                online: status.online,
+              })}
             </span>
           </h3>
           {canExpand ? (
@@ -326,14 +448,16 @@ function ServerCard({
               onClick={onTogglePlayers}
               className="rounded border border-gray-600 px-3 py-1 text-[11px] text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
-              {expanded ? '收起' : `展开全部（${status.players.length}）`}
+              {expanded
+                ? tr('收起')
+                : tr('展开全部（{count}）', { count: status.players.length })}
             </button>
           ) : null}
         </div>
 
         {status.players.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-700 bg-[#232428] px-4 py-8 text-center text-sm text-gray-500">
-            暂无可见的在线玩家
+            {tr('暂无可见的在线玩家')}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -344,7 +468,7 @@ function ServerCard({
                     ID
                   </th>
                   <th scope="col" className="px-2 py-2 font-medium">
-                    名称
+                    {tr('名称')}
                   </th>
                   <th scope="col" className="px-2 py-2 font-medium">
                     Tag
@@ -353,10 +477,10 @@ function ServerCard({
                     Ping
                   </th>
                   <th scope="col" className="px-2 py-2 font-medium">
-                    在线时长
+                    {tr('在线时长')}
                   </th>
                   <th scope="col" className="px-2 py-2 text-right font-medium">
-                    速度
+                    {tr('速度')}
                   </th>
                 </tr>
               </thead>
@@ -420,7 +544,7 @@ function ServerCard({
                         {formatPing(player.ping)}
                       </td>
                       <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs text-gray-400">
-                        {humanizeDuration(player.connectedSec)}
+                        {humanizeDuration(player.connectedSec, tr)}
                       </td>
                       <td className="whitespace-nowrap px-2 py-2.5 text-right font-mono text-xs text-gray-300">
                         {formatSpeed(player.pos?.kmh)}
@@ -435,7 +559,10 @@ function ServerCard({
 
         {status.online > status.players.length ? (
           <p className="mt-2 text-[11px] text-gray-500">
-            服务端返回了 {status.players.length} 条玩家明细，少于在线人数 {status.online}。
+            {tr('服务端返回了 {shown} 条玩家明细，少于在线人数 {online}。', {
+              shown: status.players.length,
+              online: status.online,
+            })}
           </p>
         ) : null}
       </div>
@@ -444,6 +571,7 @@ function ServerCard({
 }
 
 function OfflineServerCard({ id, error }: { id: string; error: string }) {
+  const tr = useTr(EN);
   return (
     <article className="rounded-xl border border-red-900/50 bg-[#2c2d31] p-5 md:p-6">
       <div className="flex flex-wrap items-center gap-2.5">
@@ -454,10 +582,12 @@ function OfflineServerCard({ id, error }: { id: string; error: string }) {
         </span>
       </div>
 
-      <p className="mt-3 text-sm text-red-300">{describeError(error)}</p>
-      <p className="mt-1 break-all font-mono text-[11px] text-gray-500">错误码：{error}</p>
+      <p className="mt-3 text-sm text-red-300">{describeError(error, tr)}</p>
+      <p className="mt-1 break-all font-mono text-[11px] text-gray-500">
+        {tr('错误码：{code}', { code: error })}
+      </p>
       <p className="mt-3 text-xs text-gray-500">
-        该服务器本轮状态刷新失败；其它服务器不受影响，页面会每 5 秒自动重试。
+        {tr('该服务器本轮状态刷新失败；其它服务器不受影响，页面会每 5 秒自动重试。')}
       </p>
 
       <button
@@ -465,22 +595,24 @@ function OfflineServerCard({ id, error }: { id: string; error: string }) {
         disabled
         className="mt-4 inline-flex cursor-not-allowed items-center justify-center rounded-lg border border-gray-700 bg-[#232428] px-4 py-2 text-sm font-bold text-gray-500 opacity-60"
       >
-        连接启动器（离线）
+        {tr('连接启动器（离线）')}
       </button>
     </article>
   );
 }
 
 function LoadingState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-10 text-center">
       <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500" />
-      <p className="mt-4 text-sm text-gray-400">正在获取服务器状态…</p>
+      <p className="mt-4 text-sm text-gray-400">{tr('正在获取服务器状态…')}</p>
     </div>
   );
 }
 
 function UnconfiguredState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-8 text-center md:p-12">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gray-700 bg-[#232428]">
@@ -499,11 +631,11 @@ function UnconfiguredState() {
           />
         </svg>
       </div>
-      <h2 className="mt-4 text-lg font-bold text-white">服务器即将开放，敬请期待</h2>
+      <h2 className="mt-4 text-lg font-bold text-white">{tr('服务器即将开放，敬请期待')}</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-gray-500">
-        游戏服务端正在测试中。开放后这里会展示各服务器的实时状态、在线玩家与启动器连接入口。
+        {tr('游戏服务端正在测试中。开放后这里会展示各服务器的实时状态、在线玩家与启动器连接入口。')}
       </p>
-      <p className="mt-3 text-xs text-gray-600">请稍后再来看看，感谢你的耐心等待。</p>
+      <p className="mt-3 text-xs text-gray-600">{tr('请稍后再来看看，感谢你的耐心等待。')}</p>
     </div>
   );
 }
@@ -515,39 +647,43 @@ function ErrorState({
   message: string;
   onRetry: () => void;
 }) {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-red-900/60 bg-[#2c2d31] p-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 font-mono text-lg font-bold text-red-300">
         !
       </div>
-      <h2 className="mt-4 text-lg font-bold text-white">暂时无法获取服务器状态</h2>
+      <h2 className="mt-4 text-lg font-bold text-white">{tr('暂时无法获取服务器状态')}</h2>
       <p className="mt-2 break-all text-sm text-gray-400">{message}</p>
       <p className="mt-2 text-xs text-gray-500">
-        页面会每 5 秒自动重试；也可以点击下方按钮立即重试。
+        {tr('页面会每 5 秒自动重试；也可以点击下方按钮立即重试。')}
       </p>
       <button
         type="button"
         onClick={onRetry}
         className="mt-5 inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
       >
-        立即重试
+        {tr('立即重试')}
       </button>
     </div>
   );
 }
 
 function EmptyState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-8 text-center md:p-10">
-      <p className="text-base font-bold text-white">当前暂无在线服务器</p>
+      <p className="text-base font-bold text-white">{tr('当前暂无在线服务器')}</p>
       <p className="mt-2 text-sm text-gray-500">
-        服务器可能正在维护或尚未开放，请稍后再来看看。
+        {tr('服务器可能正在维护或尚未开放，请稍后再来看看。')}
       </p>
     </div>
   );
 }
 
 export default function ServersPage() {
+  const tr = useTr(EN);
+  const locale = useLocale();
   const [payload, setPayload] = useState<ServersStatusPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -568,12 +704,14 @@ export default function ServersPage() {
         });
 
         if (!response.ok) {
-          throw new Error(`服务暂时不可用（HTTP ${response.status}）`);
+          throw new Error(
+            translateNow(locale, '服务暂时不可用（HTTP {status}）', { status: response.status })
+          );
         }
 
         const data: unknown = await response.json();
         if (!isServersStatusPayload(data)) {
-          throw new Error('服务器状态数据异常');
+          throw new Error(translateNow(locale, '服务器状态数据异常'));
         }
         if (cancelled) return;
 
@@ -582,7 +720,9 @@ export default function ServersPage() {
         setFetchError(null);
       } catch (error) {
         if (cancelled) return;
-        setFetchError(error instanceof Error ? error.message : '未知错误');
+        setFetchError(
+          error instanceof Error ? error.message : translateNow(locale, '未知错误')
+        );
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -622,7 +762,7 @@ export default function ServersPage() {
       stopTimer();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [reloadToken]);
+  }, [reloadToken, locale]);
 
   const servers = payload?.servers ?? [];
   const errors = payload?.errors ?? [];
@@ -644,15 +784,14 @@ export default function ServersPage() {
           <div>
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">
-                服务器列表
+                {tr('服务器列表')}
               </h1>
               <span className="text-lg font-bold text-gray-500 md:text-xl">
                 / Server List
               </span>
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-              查看 RCTMP 游戏服务器实时状态、在线玩家与连接入口。数据由本站服务端代理抓取，
-              每 5 秒自动刷新，页面隐藏时暂停。
+              {tr('查看 RCTMP 游戏服务器实时状态、在线玩家与连接入口。数据由本站服务端代理抓取，每 5 秒自动刷新，页面隐藏时暂停。')}
             </p>
           </div>
 
@@ -668,14 +807,14 @@ export default function ServersPage() {
                 }`}
               />
               {fetchError
-                ? '自动刷新异常，正在重试'
+                ? tr('自动刷新异常，正在重试')
                 : loading
-                  ? '正在获取服务器状态'
-                  : '数据已更新'}
+                  ? tr('正在获取服务器状态')
+                  : tr('数据已更新')}
             </span>
             <span className="text-gray-700">·</span>
             <span>
-              最后更新{' '}
+              {tr('最后更新')}{' '}
               <span className="font-mono text-gray-300">{formatClock(lastUpdated)}</span>
             </span>
             <button
@@ -683,7 +822,7 @@ export default function ServersPage() {
               onClick={refreshNow}
               className="rounded border border-gray-600 px-2.5 py-1 text-[11px] text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
-              立即刷新
+              {tr('立即刷新')}
             </button>
           </div>
         </div>
@@ -691,16 +830,16 @@ export default function ServersPage() {
         {loading && payload === null ? (
           <LoadingState />
         ) : payload === null ? (
-          <ErrorState message={fetchError ?? '未知错误'} onRetry={refreshNow} />
+          <ErrorState message={fetchError ?? tr('未知错误')} onRetry={refreshNow} />
         ) : payload.configured === false ? (
           <UnconfiguredState />
         ) : (
           <>
             {fetchError ? (
               <div className="mb-5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                <p className="font-bold">自动刷新失败</p>
+                <p className="font-bold">{tr('自动刷新失败')}</p>
                 <p className="mt-1 text-xs text-amber-200/80">
-                  当前显示的是上次成功获取的数据，页面会每 5 秒继续重试。
+                  {tr('当前显示的是上次成功获取的数据，页面会每 5 秒继续重试。')}
                 </p>
                 <p className="mt-1 break-all font-mono text-[11px] text-amber-200/60">
                   {fetchError}
@@ -710,9 +849,9 @@ export default function ServersPage() {
 
             {allOffline ? (
               <div className="mb-5 rounded-lg border border-red-900/60 bg-red-950/20 px-4 py-3 text-sm text-red-300">
-                <span className="font-bold">所有服务器当前均离线。</span>
+                <span className="font-bold">{tr('所有服务器当前均离线。')}</span>
                 <span className="ml-1 text-red-200/70">
-                  暂时无法获取实时状态，详情见下方提示。
+                  {tr('暂时无法获取实时状态，详情见下方提示。')}
                 </span>
               </div>
             ) : null}
@@ -747,7 +886,7 @@ export default function ServersPage() {
             {isEmpty ? <EmptyState /> : null}
 
             <p className="mt-6 text-center text-[11px] leading-5 text-gray-600">
-              数据由本站服务端定时获取，仅供参考；实际连接以启动器校验结果为准。
+              {tr('数据由本站服务端定时获取，仅供参考；实际连接以启动器校验结果为准。')}
             </p>
           </>
         )}

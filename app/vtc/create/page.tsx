@@ -6,6 +6,42 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
+import { useTr } from '@/components/I18nProvider';
+
+// 英文文案：键为中文原文，缺失时回退中文。
+const EN: Record<string, string> = {
+  // —— 提示 ——
+  '🚫 你已经在车队中了，无法重复创建！':
+    '🚫 You are already in a VTC, so you cannot create another one.',
+  '请先登录后再创建车队。': 'Please sign in before creating a VTC.',
+  '创建失败：{error}': 'Creation failed: {error}',
+  '操作失败，请稍后重试': 'Something went wrong. Please try again later.',
+  '🎉 车队创建成功！': '🎉 VTC created successfully!',
+  '检查权限中...': 'Checking permissions...',
+  // —— 页面头部 ——
+  '← 返回车队大厅': '← Back to the VTC lobby',
+  '创建虚拟车队 (VTC)': 'Create a virtual trucking company (VTC)',
+  // —— 表单 ——
+  '车队全名 *': 'VTC full name *',
+  '例如：Road Cruise Transport': 'e.g. Road Cruise Transport',
+  '车队标签 (Tag)': 'VTC tag',
+  '例如：RCT (最多5字)': 'e.g. RCT (max 5 characters)',
+  '车队 Logo 链接 (选填)': 'VTC logo URL (optional)',
+  '建议使用正方形图片（如 256x256）': 'A square image (e.g. 256x256) works best.',
+  '加入方式 *': 'Join mode *',
+  '开放加入（玩家点击立即加入）': 'Open (players join instantly)',
+  '需要申请（队长/副队长审核）': 'Approval required (owner / vice owner review)',
+  '仅邀请加入（只能由管理层邀请）': 'Invite only (management invites players)',
+  '默认需要申请；创建后也可以在车队详情里修改。':
+    'Defaults to approval required. You can change this later on the VTC page.',
+  '车队简介 *': 'VTC description *',
+  '向大家介绍一下你们的车队吧...': 'Tell everyone about your VTC...',
+  '招募要求 (选填)': 'Recruitment requirements (optional)',
+  '例如：需要拥有正版游戏、有麦克风、每月至少参与一次联运等...':
+    'e.g. a legitimate copy of the game, a microphone, at least one convoy per month...',
+  '正在建立...': 'Creating...',
+  '提交并创建车队': 'Submit and create VTC',
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,6 +49,7 @@ const supabase = createClient(
 );
 
 export default function CreateVTCPage() {
+  const tr = useTr(EN);
   const router = useRouter();
   const [user, setUser] = useState<{ id: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,7 +76,7 @@ export default function CreateVTCPage() {
       // 检查用户是否已经有车队了
       const { data: profile } = await supabase.from('profiles').select('vtc_id').eq('id', user.id).single();
       if (profile?.vtc_id) {
-        alert('🚫 你已经在车队中了，无法重复创建！');
+        alert(tr('🚫 你已经在车队中了，无法重复创建！'));
         router.push('/vtc');
         return;
       }
@@ -48,12 +85,14 @@ export default function CreateVTCPage() {
       setLoading(false);
     };
     checkUser();
+    // tr 每次渲染都会重新创建，加入依赖会导致重复鉴权；语言切换由 Provider 刷新页面处理。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
-      setMsg('请先登录后再创建车队。');
+      setMsg(tr('请先登录后再创建车队。'));
       return;
     }
     setSubmitting(true);
@@ -90,7 +129,7 @@ export default function CreateVTCPage() {
       if (profileError) throw profileError;
 
       // 3. 成功，跳转到 VTC 大厅
-      alert('🎉 车队创建成功！');
+      alert(tr('🎉 车队创建成功！'));
       router.push('/vtc');
       router.refresh();
 
@@ -98,13 +137,26 @@ export default function CreateVTCPage() {
       const message = error && typeof error === 'object' && 'message' in error
         ? (error as { message?: unknown }).message
         : null;
-      setMsg(`创建失败：${typeof message === 'string' && message.trim() ? message : '操作失败，请稍后重试'}`);
+      setMsg(
+        tr('创建失败：{error}', {
+          error:
+            typeof message === 'string' && message.trim()
+              ? message
+              : tr('操作失败，请稍后重试'),
+        })
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">检查权限中...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">
+        {tr('检查权限中...')}
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -115,9 +167,11 @@ export default function CreateVTCPage() {
         <div className="absolute inset-0 bg-black/70"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-4xl mx-auto w-full px-4 md:px-8">
           <Link href="/vtc" className="text-blue-300 hover:text-white transition text-sm mb-2 inline-block w-max font-bold">
-            ← 返回车队大厅
+            {tr('← 返回车队大厅')}
           </Link>
-          <h1 className="text-3xl md:text-4xl font-black text-white drop-shadow-lg">创建虚拟车队 (VTC)</h1>
+          <h1 className="text-3xl md:text-4xl font-black text-white drop-shadow-lg">
+            {tr('创建虚拟车队 (VTC)')}
+          </h1>
         </div>
       </div>
 
@@ -126,31 +180,37 @@ export default function CreateVTCPage() {
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-gray-400 mb-2">车队全名 *</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">
+                {tr('车队全名 *')}
+              </label>
               <input 
                 type="text" 
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
-                placeholder="例如：Road Cruise Transport"
+                placeholder={tr('例如：Road Cruise Transport')}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">车队标签 (Tag)</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">
+                {tr('车队标签 (Tag)')}
+              </label>
               <input 
                 type="text" 
                 value={tag}
                 onChange={(e) => setTag(e.target.value)}
                 maxLength={5}
                 className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white uppercase focus:outline-none focus:border-blue-500"
-                placeholder="例如：RCT (最多5字)"
+                placeholder={tr('例如：RCT (最多5字)')}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">车队 Logo 链接 (选填)</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">
+              {tr('车队 Logo 链接 (选填)')}
+            </label>
             <input 
               type="url" 
               value={logoUrl}
@@ -158,11 +218,15 @@ export default function CreateVTCPage() {
               className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
               placeholder="https://i.imgur.com/xxxxx.jpg"
             />
-            <p className="text-xs text-gray-500 mt-1">建议使用正方形图片（如 256x256）</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {tr('建议使用正方形图片（如 256x256）')}
+            </p>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">加入方式 *</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">
+              {tr('加入方式 *')}
+            </label>
             <select
               value={joinMode}
               onChange={(e) => {
@@ -173,31 +237,37 @@ export default function CreateVTCPage() {
               }}
               className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
             >
-              <option value="open">开放加入（玩家点击立即加入）</option>
-              <option value="approval">需要申请（队长/副队长审核）</option>
-              <option value="invite">仅邀请加入（只能由管理层邀请）</option>
+              <option value="open">{tr('开放加入（玩家点击立即加入）')}</option>
+              <option value="approval">{tr('需要申请（队长/副队长审核）')}</option>
+              <option value="invite">{tr('仅邀请加入（只能由管理层邀请）')}</option>
             </select>
-            <p className="text-xs text-gray-500 mt-1">默认需要申请；创建后也可以在车队详情里修改。</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {tr('默认需要申请；创建后也可以在车队详情里修改。')}
+            </p>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">车队简介 *</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">
+              {tr('车队简介 *')}
+            </label>
             <textarea 
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-32 focus:outline-none focus:border-blue-500"
-              placeholder="向大家介绍一下你们的车队吧..."
+              placeholder={tr('向大家介绍一下你们的车队吧...')}
               required
             ></textarea>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">招募要求 (选填)</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">
+              {tr('招募要求 (选填)')}
+            </label>
             <textarea 
               value={requirements}
               onChange={(e) => setRequirements(e.target.value)}
               className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-24 focus:outline-none focus:border-blue-500"
-              placeholder="例如：需要拥有正版游戏、有麦克风、每月至少参与一次联运等..."
+              placeholder={tr('例如：需要拥有正版游戏、有麦克风、每月至少参与一次联运等...')}
             ></textarea>
           </div>
 
@@ -208,7 +278,7 @@ export default function CreateVTCPage() {
               disabled={submitting}
               className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded font-bold transition shadow-lg ml-auto disabled:opacity-50"
             >
-              {submitting ? '正在建立...' : '提交并创建车队'}
+              {submitting ? tr('正在建立...') : tr('提交并创建车队')}
             </button>
           </div>
         </form>

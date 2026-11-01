@@ -5,6 +5,49 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '@/components/Navbar';
 import { canAccessAdmin, levelOf } from '@/lib/permissions';
+import { useTr } from '@/components/I18nProvider';
+
+// 英文文案：键为中文原文，缺失时回退中文。
+const EN: Record<string, string> = {
+  // —— 页面头部 ——
+  '活动': 'Events',
+  '/ Events': '',
+  '📅 日历视图 →': '📅 Calendar view →',
+  '活动管理 →': 'Manage events →',
+  '查看 RCT MP 车队即将开始与已经结束的官方活动，登录并完成 Steam 验证后即可报名。':
+    'Browse upcoming and past official Road Cruise Transport MP events. Sign in and complete Steam verification to register.',
+  '共 {count} 个活动 · 即将开始 {upcoming} 个': '{count} events · {upcoming} upcoming',
+  // —— 分区标题与计数 ——
+  '即将开始': 'Upcoming',
+  '已结束的活动': 'Past events',
+  '{count} 个': '{count} events',
+  // —— 加载 / 错误 / 空状态 ——
+  '正在获取活动列表…': 'Loading events…',
+  '加载失败，请稍后重试': 'Failed to load. Please try again later.',
+  '暂时无法获取活动列表，请检查网络后重试。':
+    'Unable to load the event list. Check your connection and try again.',
+  '重新加载': 'Reload',
+  '暂无活动': 'No events yet',
+  '新的车队活动会在这里发布，请稍后再来查看。':
+    'New fleet events will be posted here. Check back soon.',
+  '暂无即将开始的活动，可以看看下方已结束的活动。':
+    'No upcoming events. Take a look at the past events below.',
+  '暂无已结束的活动。': 'No past events.',
+  '收起已结束活动': 'Hide past events',
+  '展开已结束活动': 'Show past events',
+  '已结束活动已折叠，点击「展开已结束活动」查看。':
+    'Past events are collapsed. Click "Show past events" to view them.',
+  // —— 活动卡片 ——
+  '未命名活动': 'Untitled event',
+  '{title} 封面': '{title} cover',
+  '已结束': 'Ended',
+  '报名中': 'Registration open',
+  '地点待定': 'Location TBD',
+  '未指定服务器': 'Server TBD',
+  '报名': 'Registered',
+  '{count} 人': '{count}',
+  '查看详情 →': 'View details →',
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,8 +90,8 @@ function formatDateTime(value: string | null): string {
   return date.toLocaleString('zh-CN');
 }
 
-function titleOf(event: EventRow): string {
-  return event.title?.trim() || '未命名活动';
+function titleOf(event: EventRow, tr: (zh: string) => string): string {
+  return event.title?.trim() || tr('未命名活动');
 }
 
 function countMapFrom(rows: CountRow[]): Record<number, number> {
@@ -62,41 +105,48 @@ function countMapFrom(rows: CountRow[]): Record<number, number> {
 }
 
 function LoadingState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-10 text-center">
       <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500" />
-      <p className="mt-4 text-sm text-gray-400">正在获取活动列表…</p>
+      <p className="mt-4 text-sm text-gray-400">{tr('正在获取活动列表…')}</p>
     </div>
   );
 }
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-red-900/60 bg-[#2c2d31] p-8 text-center md:p-10">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 font-mono text-lg font-bold text-red-300">
         !
       </div>
-      <p className="mt-4 text-lg font-bold text-white">加载失败，请稍后重试</p>
-      <p className="mt-2 text-sm text-gray-500">暂时无法获取活动列表，请检查网络后重试。</p>
+      <p className="mt-4 text-lg font-bold text-white">{tr('加载失败，请稍后重试')}</p>
+      <p className="mt-2 text-sm text-gray-500">
+        {tr('暂时无法获取活动列表，请检查网络后重试。')}
+      </p>
       <button
         type="button"
         onClick={onRetry}
         className="mt-5 inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
       >
-        重新加载
+        {tr('重新加载')}
       </button>
     </div>
   );
 }
 
 function EmptyState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/60 p-10 text-center md:p-14">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gray-700 bg-[#232428] text-2xl">
         🗓️
       </div>
-      <p className="mt-4 text-base font-bold text-white">暂无活动</p>
-      <p className="mt-2 text-sm text-gray-500">新的车队活动会在这里发布，请稍后再来查看。</p>
+      <p className="mt-4 text-base font-bold text-white">{tr('暂无活动')}</p>
+      <p className="mt-2 text-sm text-gray-500">
+        {tr('新的车队活动会在这里发布，请稍后再来查看。')}
+      </p>
     </div>
   );
 }
@@ -110,9 +160,11 @@ function EventCard({
   registeredCount: number;
   ended: boolean;
 }) {
-  const title = titleOf(event);
+  const tr = useTr(EN);
+  const title = titleOf(event, tr);
   const capacity = event.capacity;
-  const countText = capacity !== null ? `${registeredCount} / ${capacity}` : `${registeredCount} 人`;
+  const countText =
+    capacity !== null ? `${registeredCount} / ${capacity}` : tr('{count} 人', { count: registeredCount });
 
   return (
     <Link
@@ -123,7 +175,7 @@ function EventCard({
         {event.image_url ? (
           <img
             src={event.image_url}
-            alt={`${title} 封面`}
+            alt={tr('{title} 封面', { title })}
             loading="lazy"
             className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
           />
@@ -139,7 +191,7 @@ function EventCard({
               : 'border-green-500/40 bg-green-500/15 text-green-300'
           }`}
         >
-          {ended ? '已结束' : '报名中'}
+          {ended ? tr('已结束') : tr('报名中')}
         </span>
       </div>
 
@@ -155,20 +207,20 @@ function EventCard({
           </div>
           <div className="flex items-start gap-2">
             <dt aria-hidden="true">📍</dt>
-            <dd>{event.location?.trim() || '地点待定'}</dd>
+            <dd>{event.location?.trim() || tr('地点待定')}</dd>
           </div>
           <div className="flex items-start gap-2">
             <dt aria-hidden="true">🖥️</dt>
-            <dd>{event.server_id?.trim() || '未指定服务器'}</dd>
+            <dd>{event.server_id?.trim() || tr('未指定服务器')}</dd>
           </div>
         </dl>
 
         <div className="mt-4 flex items-center justify-between border-t border-gray-700 pt-3">
           <span className="text-sm text-gray-400">
-            报名 <span className="font-mono font-bold text-blue-300">{countText}</span>
+            {tr('报名')} <span className="font-mono font-bold text-blue-300">{countText}</span>
           </span>
           <span className="text-xs font-bold text-blue-400 transition group-hover:text-blue-300">
-            查看详情 →
+            {tr('查看详情 →')}
           </span>
         </div>
       </div>
@@ -177,6 +229,7 @@ function EventCard({
 }
 
 export default function EventsListPage() {
+  const tr = useTr(EN);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
@@ -280,30 +333,35 @@ export default function EventsListPage() {
         <div className="mb-6 border-b border-gray-700 pb-5 md:mb-8">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">活动</h1>
-              <span className="text-lg font-bold text-gray-500 md:text-xl">/ Events</span>
+              <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">
+                {tr('活动')}
+              </h1>
+              <span className="text-lg font-bold text-gray-500 md:text-xl">{tr('/ Events')}</span>
             </div>
             <Link
               href="/events/calendar"
               className="inline-flex items-center rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 text-xs font-bold text-orange-300 transition hover:border-orange-400 hover:text-white"
             >
-              📅 日历视图 →
+              {tr('📅 日历视图 →')}
             </Link>
             {canManage ? (
               <Link
                 href="/admin/events"
                 className="inline-flex items-center rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-300 transition hover:border-blue-400 hover:text-white"
               >
-                活动管理 →
+                {tr('活动管理 →')}
               </Link>
             ) : null}
           </div>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-            查看 RCT MP 车队即将开始与已经结束的官方活动，登录并完成 Steam 验证后即可报名。
+            {tr('查看 RCT MP 车队即将开始与已经结束的官方活动，登录并完成 Steam 验证后即可报名。')}
           </p>
           {!loading && !failed && events.length > 0 ? (
             <p className="mt-2 text-xs text-gray-600">
-              共 {events.length} 个活动 · 即将开始 {upcoming.length} 个
+              {tr('共 {count} 个活动 · 即将开始 {upcoming} 个', {
+                count: events.length,
+                upcoming: upcoming.length,
+              })}
             </p>
           ) : null}
         </div>
@@ -322,13 +380,15 @@ export default function EventsListPage() {
                   id="events-upcoming-heading"
                   className="text-xl font-bold text-white md:text-2xl"
                 >
-                  即将开始
+                  {tr('即将开始')}
                 </h2>
-                <span className="text-sm text-gray-500">{upcoming.length} 个</span>
+                <span className="text-sm text-gray-500">
+                  {tr('{count} 个', { count: upcoming.length })}
+                </span>
               </div>
               {upcoming.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/50 p-6 text-center text-sm text-gray-500">
-                  暂无即将开始的活动，可以看看下方已结束的活动。
+                  {tr('暂无即将开始的活动，可以看看下方已结束的活动。')}
                 </p>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -348,9 +408,11 @@ export default function EventsListPage() {
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-baseline gap-3">
                   <h2 id="events-past-heading" className="text-xl font-bold text-white md:text-2xl">
-                    已结束
+                    {tr('已结束的活动')}
                   </h2>
-                  <span className="text-sm text-gray-500">{past.length} 个</span>
+                  <span className="text-sm text-gray-500">
+                    {tr('{count} 个', { count: past.length })}
+                  </span>
                 </div>
                 {past.length > 0 ? (
                   <button
@@ -359,13 +421,13 @@ export default function EventsListPage() {
                     aria-expanded={showPast}
                     className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-bold text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                   >
-                    {showPast ? '收起已结束活动' : '展开已结束活动'}
+                    {showPast ? tr('收起已结束活动') : tr('展开已结束活动')}
                   </button>
                 ) : null}
               </div>
               {past.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/50 p-6 text-center text-sm text-gray-500">
-                  暂无已结束的活动。
+                  {tr('暂无已结束的活动。')}
                 </p>
               ) : showPast ? (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -380,7 +442,7 @@ export default function EventsListPage() {
                 </div>
               ) : (
                 <p className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/50 p-6 text-center text-sm text-gray-500">
-                  已结束活动已折叠，点击「展开已结束活动」查看。
+                  {tr('已结束活动已折叠，点击「展开已结束活动」查看。')}
                 </p>
               )}
             </section>

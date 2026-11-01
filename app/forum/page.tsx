@@ -5,11 +5,65 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
+import { useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+/**
+ * 英文文案表（以中文原文为 key）：只覆盖静态 UI 文案。
+ * 版块名 / 版块简介 / 昵称 / 职位名来自数据库，保持原样不翻译。
+ */
+const EN: Record<string, string> = {
+  // ---- 页面状态 ----
+  '加载论坛数据中...': 'Loading forum data...',
+
+  // ---- 左侧导航栏 ----
+  '导航': 'Navigation',
+  '论坛首页': 'Forum Home',
+  '实时地图': 'Live Map',
+  '社区规则': 'Community Rules',
+  '招募 (Recruitment)': 'Recruitment',
+  'VTC 车队系统': 'VTC System',
+
+  // ---- 页头 ----
+  'CRT MP 论坛': 'CRT MP Forum',
+  '加入讨论，分享你的卡车生活。': 'Join the discussion and share your trucking life.',
+  '发布新帖': 'New Post',
+
+  // ---- 当前在线成员 ----
+  '当前在线成员': 'Online Now',
+
+  // ---- 最新动态 ----
+  '最新动态': 'Latest Activity',
+  '暂无动态': 'No activity yet',
+  '未知': 'Unknown',
+
+  // ---- 团队职位变更 ----
+  '团队职位变更': 'Team Role Changes',
+  // 中文标题后自带英文副标题，英文界面下标题已含 Team，副标题留空避免重复。
+  '/ Team Changes': '',
+  '查看团队 →': 'View team →',
+  '加载中…': 'Loading…',
+  '职位变更加载失败，请稍后重试': 'Failed to load role changes. Please try again later.',
+  '暂无职位变更记录': 'No role changes yet',
+  '未知成员': 'Unknown member',
+  '加入': 'Joined',
+  '晋升': 'Promoted',
+  '降职': 'Demoted',
+  '实习': 'Trainee',
+  '职位变更': 'Role change',
+
+  // ---- 热门主题 ----
+  '热门主题': 'Hot Topics',
+  '暂无热门': 'Nothing trending yet',
+  '{n} 回复': '{n} replies',
+
+  // ---- 最近注册成员 ----
+  '最近注册成员': 'Newest Members',
+};
 
 /** team_changes 公开行，profiles 为 user_id 外键的单条嵌入（删除用户时可能为 null）。 */
 interface TeamChangeRow {
@@ -45,15 +99,57 @@ const DEFAULT_CHANGE_TYPE_META: ChangeTypeMeta = {
   className: 'border-gray-600 bg-gray-500/10 text-gray-300',
 };
 
+/** 版块行（forum_categories） */
+interface ForumCategoryRow {
+  id: number;
+  name: string | null;
+  description: string | null;
+  icon: string | null;
+}
+
+/** 侧栏帖子摘要行（PostgREST 多对一嵌入既可能返回对象也可能返回数组）。 */
+type TopicProfiles = { display_name: string | null } | { display_name: string | null }[] | null;
+
+interface LatestTopicRow {
+  id: number;
+  title: string;
+  created_at: string;
+  category_id: number;
+  profiles?: TopicProfiles;
+}
+
+interface HotTopicRow {
+  id: number;
+  title: string;
+  replies_count: number | null;
+  category_id: number;
+  profiles?: TopicProfiles;
+}
+
+/** 统一取嵌入作者昵称：数组取第一条，缺失返回 null。 */
+function authorNameOf(profiles: TopicProfiles | undefined): string | null {
+  if (!profiles) return null;
+  const profile = Array.isArray(profiles) ? profiles[0] : profiles;
+  return profile?.display_name ?? null;
+}
+
+/** 在线成员行（profiles） */
+interface ProfileRow {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  role: string | null;
+}
+
 function changeTypeMetaOf(changeType: string | null): ChangeTypeMeta {
   return (changeType ? CHANGE_TYPE_META[changeType] : undefined) ?? DEFAULT_CHANGE_TYPE_META;
 }
 
-function teamMemberNameOf(change: TeamChangeRow): string {
+function teamMemberNameOf(change: TeamChangeRow, fallback: string): string {
   const embedded = change.profiles;
   const profile = Array.isArray(embedded) ? embedded[0] : embedded;
   const name = profile?.display_name?.trim();
-  return name || '未知成员';
+  return name || fallback;
 }
 
 /** roles.name -> roles.display_name；职位为空显示「—」，映射不到时退回原始 name。 */
@@ -70,10 +166,11 @@ function formatChangeTime(createdAt: string): string {
 }
 
 export default function ForumHome() {
-  const [categories, setCategories] = useState<any[]>([]);
-  const [latestTopics, setLatestTopics] = useState<any[]>([]);
-  const [hotTopics, setHotTopics] = useState<any[]>([]);
-  const [recentUsers, setRecentUsers] = useState<any[]>([]);
+  const tr = useTr(EN);
+  const [categories, setCategories] = useState<ForumCategoryRow[]>([]);
+  const [latestTopics, setLatestTopics] = useState<LatestTopicRow[]>([]);
+  const [hotTopics, setHotTopics] = useState<HotTopicRow[]>([]);
+  const [recentUsers, setRecentUsers] = useState<ProfileRow[]>([]);
   const [teamChanges, setTeamChanges] = useState<TeamChangeRow[]>([]);
   const [roleNames, setRoleNames] = useState<Record<string, string>>({});
   const [teamChangesLoading, setTeamChangesLoading] = useState(true);
@@ -171,7 +268,7 @@ export default function ForumHome() {
     };
   }, []);
 
-  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载论坛数据中...</div>;
+  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('加载论坛数据中...')}</div>;
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -183,36 +280,36 @@ export default function ForumHome() {
           {/* ================= 左侧栏 (导航) ================= */}
           <div className="lg:col-span-2 space-y-6 hidden lg:block">
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-2 shadow-lg">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider px-3 mb-2 mt-1">导航</h3>
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider px-3 mb-2 mt-1">{tr('导航')}</h3>
               <ul className="text-sm space-y-1">
                 <li>
                   <Link href="/forum" className="flex items-center text-green-500 bg-[#3a3b40] px-3 py-2 rounded-md font-bold">
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>
-                    论坛首页
+                    {tr('论坛首页')}
                   </Link>
                 </li>
                 <li>
                   <Link href="/map" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12 1.586l-4 4v12.828l4-4V1.586zM3.707 3.293A1 1 0 002 4v10a1 1 0 00.293.707L6 18.414V5.586L3.707 3.293zM17.707 5.293L14 1.586v12.828l2.293 2.293A1 1 0 0018 16V6a1 1 0 00-.293-.707z" clipRule="evenodd" /></svg>
-                    实时地图
+                    {tr('实时地图')}
                   </Link>
                 </li>
                 <li>
                   <Link href="/rules" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
-                    社区规则
+                    {tr('社区规则')}
                   </Link>
                 </li>
                 <li>
                   <Link href="/recruitment" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
-                    招募 (Recruitment)
+                    {tr('招募 (Recruitment)')}
                   </Link>
                 </li>
                 <li>
                   <Link href="/vtc" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" /></svg>
-                    VTC 车队系统
+                    {tr('VTC 车队系统')}
                   </Link>
                 </li>
               </ul>
@@ -226,11 +323,11 @@ export default function ForumHome() {
             <div>
               <div className="flex justify-between items-end mb-4">
                 <div>
-                  <h1 className="text-2xl font-bold text-white mb-1">CRT MP 论坛</h1>
-                  <p className="text-gray-500 text-xs">加入讨论，分享你的卡车生活。</p>
+                  <h1 className="text-2xl font-bold text-white mb-1">{tr('CRT MP 论坛')}</h1>
+                  <p className="text-gray-500 text-xs">{tr('加入讨论，分享你的卡车生活。')}</p>
                 </div>
                 <Link href="/forum/1/new" className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded text-sm font-bold transition shadow-lg flex items-center gap-2">
-                  <span>+</span> 发布新帖
+                  <span>+</span> {tr('发布新帖')}
                 </Link>
               </div>
 
@@ -259,7 +356,7 @@ export default function ForumHome() {
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <span className="text-sm font-bold text-gray-400">当前在线成员</span>
+                <span className="text-sm font-bold text-gray-400">{tr('当前在线成员')}</span>
               </div>
               {/* 🌟 优化排版：手机上 4 列，平板 6 列，大屏 8 列；增加上下行间距 */}
               <div className="p-4 grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-y-6 gap-x-4">
@@ -291,17 +388,17 @@ export default function ForumHome() {
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
                 <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
-                <span className="text-sm font-bold text-gray-400">最新动态</span>
+                <span className="text-sm font-bold text-gray-400">{tr('最新动态')}</span>
               </div>
               <div className="p-2">
                 {latestTopics.length === 0 ? (
-                  <p className="text-center text-xs text-gray-500 py-4">暂无动态</p>
+                  <p className="text-center text-xs text-gray-500 py-4">{tr('暂无动态')}</p>
                 ) : (
                   latestTopics.map(topic => (
                     <Link key={topic.id} href={`/forum/${topic.category_id}/${topic.id}`} className="block p-2 hover:bg-[#3a3b40] rounded transition border-b border-gray-700/50 last:border-0 group">
                       <p className="text-xs text-white group-hover:text-blue-400 font-bold truncate">{topic.title}</p>
                       <p className="text-[10px] text-gray-500 mt-1 flex justify-between">
-                        <span>{topic.profiles?.display_name || '未知'}</span>
+                        <span>{authorNameOf(topic.profiles) || tr('未知')}</span>
                         <span>{new Date(topic.created_at).toLocaleDateString()}</span>
                       </p>
                     </Link>
@@ -316,20 +413,20 @@ export default function ForumHome() {
                 <div className="flex min-w-0 items-center gap-2">
                   <svg className="w-4 h-4 shrink-0 text-purple-400" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
                   <span className="text-xs font-bold leading-snug text-gray-400">
-                    团队职位变更 <span className="text-gray-600">/ Team Changes</span>
+                    {tr('团队职位变更')} <span className="text-gray-600">{tr('/ Team Changes')}</span>
                   </span>
                 </div>
                 <Link href="/team" className="shrink-0 text-[11px] font-bold text-blue-400 hover:text-blue-300 transition">
-                  查看团队 →
+                  {tr('查看团队 →')}
                 </Link>
               </div>
               <div className="p-2">
                 {teamChangesLoading ? (
-                  <p className="text-center text-xs text-gray-500 py-4">加载中…</p>
+                  <p className="text-center text-xs text-gray-500 py-4">{tr('加载中…')}</p>
                 ) : teamChangesFailed ? (
-                  <p className="text-center text-xs text-gray-500 py-4">职位变更加载失败，请稍后重试</p>
+                  <p className="text-center text-xs text-gray-500 py-4">{tr('职位变更加载失败，请稍后重试')}</p>
                 ) : teamChanges.length === 0 ? (
-                  <p className="text-center text-xs text-gray-500 py-4">暂无职位变更记录</p>
+                  <p className="text-center text-xs text-gray-500 py-4">{tr('暂无职位变更记录')}</p>
                 ) : (
                   <ul>
                     {teamChanges.map((change) => {
@@ -339,8 +436,8 @@ export default function ForumHome() {
                       return (
                         <li key={change.id} className="p-2 border-b border-gray-700/50 last:border-0">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="min-w-0 truncate text-xs font-bold text-white">{teamMemberNameOf(change)}</span>
-                            <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}>{badge.label}</span>
+                            <span className="min-w-0 truncate text-xs font-bold text-white">{teamMemberNameOf(change, tr('未知成员'))}</span>
+                            <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}>{tr(badge.label)}</span>
                           </div>
                           <p className="mt-1 flex items-center gap-1 text-[11px]">
                             <span className="min-w-0 truncate text-gray-500" title={oldRoleLabel}>{oldRoleLabel}</span>
@@ -362,11 +459,11 @@ export default function ForumHome() {
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
                 <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" /></svg>
-                <span className="text-sm font-bold text-gray-400">热门主题</span>
+                <span className="text-sm font-bold text-gray-400">{tr('热门主题')}</span>
               </div>
               <div className="p-2">
                 {hotTopics.length === 0 ? (
-                  <p className="text-center text-xs text-gray-500 py-4">暂无热门</p>
+                  <p className="text-center text-xs text-gray-500 py-4">{tr('暂无热门')}</p>
                 ) : (
                   hotTopics.map((topic, index) => (
                     <Link key={topic.id} href={`/forum/${topic.category_id}/${topic.id}`} className="flex items-start gap-3 p-2 hover:bg-[#3a3b40] rounded transition border-b border-gray-700/50 last:border-0 group">
@@ -376,8 +473,8 @@ export default function ForumHome() {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-white group-hover:text-blue-400 font-bold truncate">{topic.title}</p>
                         <p className="text-[10px] text-gray-500 mt-1 flex justify-between">
-                          <span>{topic.profiles?.display_name || '未知'}</span>
-                          <span>{topic.replies_count || 0} 回复</span>
+                          <span>{authorNameOf(topic.profiles) || tr('未知')}</span>
+                          <span>{tr('{n} 回复', { n: topic.replies_count || 0 })}</span>
                         </p>
                       </div>
                     </Link>
@@ -390,7 +487,7 @@ export default function ForumHome() {
             <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg">
               <div className="bg-[#232428] px-4 py-2 border-b border-gray-700 flex items-center gap-2 rounded-t-md">
                 <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" /></svg>
-                <span className="text-sm font-bold text-gray-400">最近注册成员</span>
+                <span className="text-sm font-bold text-gray-400">{tr('最近注册成员')}</span>
               </div>
               <div className="p-2">
                 {recentUsers.slice(0, 5).map(u => (

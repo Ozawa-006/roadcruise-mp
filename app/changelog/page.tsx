@@ -5,6 +5,49 @@ import { useMemo, useState } from 'react';
 import Navbar from '../../components/Navbar';
 import { CHANGELOG } from '../../lib/changelog';
 import type { ChangeKind, ChangelogEntry } from '../../lib/changelog';
+import { useTr } from '@/components/I18nProvider';
+
+// ---------------------------------------------------------------------------
+// 英文文案：key 为中文原文，value 为英文译文；英文缺失时自动回退中文。
+// 版本号 / 日期 / 变更条目内容来自 lib/changelog.ts，不在翻译范围内。
+// ---------------------------------------------------------------------------
+const EN: Record<string, string> = {
+  // 标题区
+  '更新日志': 'Version history',
+  '记录 RCT MP 网站的每一次更新': 'Every update to the RCT MP site, in one place.',
+  '共 {versions} 个版本 · {changes} 条变更，按版本从新到旧排列':
+    '{versions} versions · {changes} changes, newest first',
+
+  // 变更类型与筛选栏
+  '全部': 'All',
+  '新功能': 'New features',
+  '修复': 'Fixes',
+  '安全': 'Security',
+  '其他': 'Other',
+  '按变更类型筛选': 'Filter by change type',
+  '当前：{filter} · {versions} 个版本 · {changes} 条变更':
+    'Showing: {filter} · {versions} versions · {changes} changes',
+
+  // 空状态
+  '暂无更新记录': 'No entries yet',
+  '没有「{filter}」相关的更新': 'No updates in “{filter}”',
+  '新的版本记录会在这里发布，请稍后再来查看。':
+    'New releases will be published here — please check back later.',
+  '试试切换到「全部」，或选择其它变更类型。':
+    'Try “All”, or pick a different change type.',
+  '查看全部更新': 'Show all updates',
+
+  // 版本条目
+  '最新': 'Latest',
+  '变更条目': 'Changes',
+  '{count} 条': '{count} items',
+  '查看提交': 'View commit',
+
+  // 底部说明
+  '更早的版本（0.0.08–0.0.19）以 VTC 功能迭代为主，完整记录见 GitHub 提交历史。':
+    'Earlier versions (0.0.08–0.0.19) were mostly VTC feature iterations; see the GitHub commit history for the full record.',
+  '在 GitHub 查看提交历史': 'View commit history on GitHub',
+};
 
 /** 变更类型 → 中文徽章文案与配色。 */
 const KIND_META: Record<ChangeKind, { label: string; badge: string }> = {
@@ -44,6 +87,7 @@ type VisibleEntry = {
 };
 
 export default function ChangelogPage() {
+  const tr = useTr(EN);
   const [filter, setFilter] = useState<FilterKind>('all');
 
   const totalChanges = CHANGELOG.reduce(
@@ -68,7 +112,7 @@ export default function ChangelogPage() {
     0
   );
 
-  const filterLabel = filter === 'all' ? '全部' : KIND_META[filter].label;
+  const filterLabel = filter === 'all' ? tr('全部') : tr(KIND_META[filter].label);
 
   return (
     <main className="flex min-h-screen flex-col bg-[#18191c] font-sans text-gray-300">
@@ -82,17 +126,20 @@ export default function ChangelogPage() {
           </p>
           <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">
-              更新日志
+              {tr('更新日志')}
             </h1>
             <span className="text-lg font-bold text-gray-500 md:text-xl">
               / Changelog
             </span>
           </div>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-            记录 RCT MP 网站的每一次更新
+            {tr('记录 RCT MP 网站的每一次更新')}
           </p>
           <p className="mt-1 text-xs text-gray-600">
-            共 {CHANGELOG.length} 个版本 · {totalChanges} 条变更，按版本从新到旧排列
+            {tr('共 {versions} 个版本 · {changes} 条变更，按版本从新到旧排列', {
+              versions: CHANGELOG.length,
+              changes: totalChanges,
+            })}
           </p>
         </header>
 
@@ -101,7 +148,7 @@ export default function ChangelogPage() {
           <div
             className="flex flex-wrap items-center gap-2"
             role="group"
-            aria-label="按变更类型筛选"
+            aria-label={tr('按变更类型筛选')}
           >
             {FILTERS.map(({ value, label }) => {
               const active = filter === value;
@@ -117,14 +164,17 @@ export default function ChangelogPage() {
                       : 'border-gray-600 bg-[#232428] text-gray-300 hover:border-blue-500/60 hover:text-white'
                   }`}
                 >
-                  {label}
+                  {tr(label)}
                 </button>
               );
             })}
           </div>
           <p className="text-xs text-gray-500" aria-live="polite">
-            当前：{filterLabel} · {visibleEntries.length} 个版本 ·{' '}
-            {visibleChanges} 条变更
+            {tr('当前：{filter} · {versions} 个版本 · {changes} 条变更', {
+              filter: filterLabel,
+              versions: visibleEntries.length,
+              changes: visibleChanges,
+            })}
           </p>
         </div>
 
@@ -148,12 +198,14 @@ export default function ChangelogPage() {
               </svg>
             </div>
             <p className="mt-4 text-base font-bold text-white">
-              {filter === 'all' ? '暂无更新记录' : `没有「${filterLabel}」相关的更新`}
+              {filter === 'all'
+                ? tr('暂无更新记录')
+                : tr('没有「{filter}」相关的更新', { filter: filterLabel })}
             </p>
             <p className="mt-2 text-sm text-gray-500">
               {filter === 'all'
-                ? '新的版本记录会在这里发布，请稍后再来查看。'
-                : '试试切换到「全部」，或选择其它变更类型。'}
+                ? tr('新的版本记录会在这里发布，请稍后再来查看。')
+                : tr('试试切换到「全部」，或选择其它变更类型。')}
             </p>
             {filter !== 'all' ? (
               <button
@@ -161,7 +213,7 @@ export default function ChangelogPage() {
                 onClick={() => setFilter('all')}
                 className="mt-5 inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
-                查看全部更新
+                {tr('查看全部更新')}
               </button>
             ) : null}
           </div>
@@ -198,7 +250,7 @@ export default function ChangelogPage() {
                         </span>
                         {highlighted ? (
                           <span className="inline-flex items-center rounded bg-orange-500 px-2 py-0.5 text-[11px] font-bold text-white">
-                            最新
+                            {tr('最新')}
                           </span>
                         ) : null}
                       </div>
@@ -223,10 +275,10 @@ export default function ChangelogPage() {
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700/70 pb-3">
                         <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
-                          变更条目
+                          {tr('变更条目')}
                         </p>
                         <span className="text-xs text-gray-500">
-                          {items.length} 条
+                          {tr('{count} 条', { count: items.length })}
                         </span>
                       </div>
 
@@ -247,7 +299,7 @@ export default function ChangelogPage() {
                               <span
                                 className={`mt-0.5 inline-flex h-5 shrink-0 items-center rounded border px-2 text-[11px] font-bold ${meta.badge}`}
                               >
-                                {meta.label}
+                                {tr(meta.label)}
                               </span>
                               <p className="min-w-0 text-sm leading-6 text-gray-300">
                                 {item.text}
@@ -265,7 +317,7 @@ export default function ChangelogPage() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1.5 rounded text-xs font-bold text-blue-400 transition hover:text-blue-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                           >
-                            查看提交
+                            {tr('查看提交')}
                             <span className="font-mono text-gray-500">
                               {entry.commit}
                             </span>
@@ -284,8 +336,7 @@ export default function ChangelogPage() {
         {/* 底部说明 */}
         <div className="mt-10 flex flex-col items-center gap-3 rounded-xl border border-gray-700 bg-[#111111] p-6 text-center">
           <p className="max-w-2xl text-sm leading-6 text-gray-400">
-            更早的版本（0.0.08–0.0.19）以 VTC 功能迭代为主，完整记录见 GitHub
-            提交历史。
+            {tr('更早的版本（0.0.08–0.0.19）以 VTC 功能迭代为主，完整记录见 GitHub 提交历史。')}
           </p>
           <a
             href={`${REPO_URL}/commits/main`}
@@ -293,7 +344,7 @@ export default function ChangelogPage() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-[#2c2d31] px-4 py-2 text-sm font-bold text-gray-200 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
-            在 GitHub 查看提交历史
+            {tr('在 GitHub 查看提交历史')}
             <span aria-hidden="true">↗</span>
           </a>
         </div>

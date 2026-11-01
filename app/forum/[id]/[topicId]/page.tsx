@@ -8,6 +8,7 @@ import RichText from '@/components/RichText';
 import RichTextEditor from '@/components/RichTextEditor';
 import Link from 'next/link';
 import { ROLE_LEVEL, levelOf } from '@/lib/permissions';
+import { useTr } from '@/components/I18nProvider';
 
 interface TopicAuthorProfile {
   display_name: string | null;
@@ -61,7 +62,92 @@ const REPLY_SELECT = `
   profiles:author_id (display_name, avatar_url, role)
 `;
 
+/**
+ * 英文文案表（中文原文为 key）：只覆盖静态 UI 与系统提示。
+ * 帖子标题/正文、回复正文、版块名、昵称、角色徽章均来自数据库或用户输入，保持原样。
+ */
+const EN: Record<string, string> = {
+  // ---- 页面状态 ----
+  '加载中...': 'Loading...',
+  '帖子不存在或已被删除': 'This topic does not exist or has been deleted.',
+
+  // ---- 面包屑 / 作者信息 ----
+  '论坛': 'Forum',
+  '版块': 'Board',
+  '看帖': 'Topic',
+  '楼主': 'OP',
+  '未知用户': 'Unknown user',
+  '发表于：': 'Posted: ',
+
+  // ---- 帖子 / 回复操作按钮 ----
+  '编辑': 'Edit',
+  '举报': 'Report',
+  '🗑️ 删除帖子': '🗑️ Delete topic',
+  '取消': 'Cancel',
+  '保存中...': 'Saving...',
+  '保存修改': 'Save changes',
+  '保存': 'Save',
+  '删除中...': 'Deleting...',
+  '删除': 'Delete',
+  '引用回复': 'Quote',
+
+  // ---- 帖子编辑表单 ----
+  '标题': 'Title',
+  '请输入帖子标题（不超过 120 字）': 'Enter a topic title (maximum 120 characters)',
+  '正文': 'Content',
+  '编辑帖子正文...': 'Edit the topic content...',
+  '配图': 'Attached image',
+
+  // ---- 回复列表 ----
+  '全部回复 ({n})': 'All replies ({n})',
+  '还没有回复，来发表你的看法吧。': 'No replies yet. Share your thoughts.',
+  '编辑回复内容...': 'Edit the reply content...',
+
+  // ---- 回复输入区 ----
+  '发表回复': 'Post reply',
+  '正在回复 @{name}：': 'Replying to @{name}:',
+  '写下你的看法...': 'Write your thoughts...',
+  '回复 @{name}...': 'Reply to @{name}...',
+  '发送中...': 'Sending...',
+  '你需要登录后才能参与讨论。': 'You need to sign in to join the discussion.',
+  '去登录': 'Sign in',
+
+  // ---- 分页 ----
+  '回复分页': 'Reply pagination',
+  '上一页': 'Previous',
+  '下一页': 'Next',
+  '第': 'Page',
+  // 英文语序为「Page 3 / 5」，此处不追加尾词。
+  '页': '',
+
+  // ---- 确认 / 错误 / 成功提示 ----
+  '⚠️ 确定要删除这篇帖子吗？此操作不可恢复！':
+    '⚠️ Delete this topic? This action cannot be undone!',
+  '请先登录！': 'Please sign in first!',
+  '回复失败: {msg}': 'Failed to post reply: {msg}',
+  '删除失败：{msg}': 'Delete failed: {msg}',
+  '🗑️ 帖子已删除': '🗑️ Topic deleted',
+  '标题不能为空。': 'Title cannot be empty.',
+  '标题不能超过 120 个字符。': 'Title cannot exceed 120 characters.',
+  '更新帖子失败：{msg}': 'Failed to update topic: {msg}',
+  '更新帖子失败，请稍后重试。': 'Failed to update topic. Please try again later.',
+  '✅ 帖子已更新。': '✅ Topic updated.',
+  '回复内容不能为空。': 'Reply content cannot be empty.',
+  '更新回复失败：{msg}': 'Failed to update reply: {msg}',
+  '更新回复失败，请稍后重试。': 'Failed to update reply. Please try again later.',
+  '✅ 回复已更新。': '✅ Reply updated.',
+  '确定删除这条回复吗？此操作不可恢复。':
+    'Delete this reply? This action cannot be undone.',
+  '删除回复失败：{msg}': 'Failed to delete reply: {msg}',
+  '删除回复失败，请稍后重试。': 'Failed to delete reply. Please try again later.',
+  '回复已删除': 'Reply deleted',
+
+  // ---- 引用模板（随回复正文一起保存） ----
+  '> 引用 @{name} 的发言：': '> Quoting @{name}:',
+};
+
 export default function TopicDetailPage() {
+  const tr = useTr(EN);
   const [quoteUser, setQuoteUser] = useState('');
   const [quoteContent, setQuoteContent] = useState('');
   const { id, topicId } = useParams();
@@ -211,7 +297,7 @@ export default function TopicDetailPage() {
 
   const handleReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return alert('请先登录！');
+    if (!user) return alert(tr('请先登录！'));
     
     let finalContent = replyContent;
     if (quoteUser) {
@@ -220,7 +306,7 @@ export default function TopicDetailPage() {
         .split(/\r?\n/)
         .map((line) => (line.trim() ? `> ${line}` : '>'))
         .join('\n');
-      finalContent = `> 引用 @${quoteUser} 的发言：\n${quotedLines}\n\n${replyContent}`;
+      finalContent = `${tr('> 引用 @{name} 的发言：', { name: quoteUser })}\n${quotedLines}\n\n${replyContent}`;
     }
 
     if (!finalContent.trim()) return;
@@ -248,21 +334,21 @@ export default function TopicDetailPage() {
       const loadedPage = await loadReplyPage(lastPage, total);
       if (loadedPage !== null) scrollToReplies();
     } else {
-      alert('回复失败: ' + error.message);
+      alert(tr('回复失败: {msg}', { msg: error.message }));
     }
     setSubmitting(false);
   };
 
   const handleDeleteTopic = async () => {
-    if (!confirm('⚠️ 确定要删除这篇帖子吗？此操作不可恢复！')) return;
+    if (!confirm(tr('⚠️ 确定要删除这篇帖子吗？此操作不可恢复！'))) return;
     
     await supabase.from('forum_replies').delete().eq('topic_id', topicId);
     const { error } = await supabase.from('forum_topics').delete().eq('id', topicId);
     
     if (error) {
-      alert('删除失败：' + error.message);
+      alert(tr('删除失败：{msg}', { msg: error.message }));
     } else {
-      alert('🗑️ 帖子已删除');
+      alert(tr('🗑️ 帖子已删除'));
       router.push(`/forum/${id}`);
       router.refresh();
     }
@@ -309,7 +395,7 @@ export default function TopicDetailPage() {
         .eq('id', topicId);
 
       if (error) {
-        setTopicSaveError(`更新帖子失败：${error.message}`);
+        setTopicSaveError(tr('更新帖子失败：{msg}', { msg: error.message }));
         return;
       }
 
@@ -320,7 +406,9 @@ export default function TopicDetailPage() {
       setTopicNotice('✅ 帖子已更新。');
     } catch (error: unknown) {
       setTopicSaveError(
-        error instanceof Error ? `更新帖子失败：${error.message}` : '更新帖子失败，请稍后重试。'
+        error instanceof Error
+          ? tr('更新帖子失败：{msg}', { msg: error.message })
+          : tr('更新帖子失败，请稍后重试。')
       );
     } finally {
       setSavingTopic(false);
@@ -361,7 +449,7 @@ export default function TopicDetailPage() {
         .eq('id', reply.id);
 
       if (error) {
-        setReplyError({ id: replyId, message: `更新回复失败：${error.message}` });
+        setReplyError({ id: replyId, message: tr('更新回复失败：{msg}', { msg: error.message }) });
         return;
       }
 
@@ -375,7 +463,9 @@ export default function TopicDetailPage() {
       setReplyError({
         id: replyId,
         message:
-          error instanceof Error ? `更新回复失败：${error.message}` : '更新回复失败，请稍后重试。',
+          error instanceof Error
+            ? tr('更新回复失败：{msg}', { msg: error.message })
+            : tr('更新回复失败，请稍后重试。'),
       });
     } finally {
       setSavingReplyId(null);
@@ -384,7 +474,7 @@ export default function TopicDetailPage() {
 
   const handleDeleteReply = async (reply: ForumReply) => {
     if (deletingReplyId !== null) return;
-    if (!window.confirm('确定删除这条回复吗？此操作不可恢复。')) return;
+    if (!window.confirm(tr('确定删除这条回复吗？此操作不可恢复。'))) return;
 
     const replyId = String(reply.id);
     setDeletingReplyId(replyId);
@@ -395,7 +485,7 @@ export default function TopicDetailPage() {
       const { error } = await supabase.from('forum_replies').delete().eq('id', reply.id);
 
       if (error) {
-        setReplyDeleteError(`删除回复失败：${error.message}`);
+        setReplyDeleteError(tr('删除回复失败：{msg}', { msg: error.message }));
         return;
       }
 
@@ -422,15 +512,17 @@ export default function TopicDetailPage() {
       setReplyDeleteNotice('回复已删除');
     } catch (error: unknown) {
       setReplyDeleteError(
-        error instanceof Error ? `删除回复失败：${error.message}` : '删除回复失败，请稍后重试。'
+        error instanceof Error
+          ? tr('删除回复失败：{msg}', { msg: error.message })
+          : tr('删除回复失败，请稍后重试。')
       );
     } finally {
       setDeletingReplyId(null);
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;
-  if (!topic) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">帖子不存在或已被删除</div>;
+  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('加载中...')}</div>;
+  if (!topic) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('帖子不存在或已被删除')}</div>;
 
   const canEditTopic =
     !!user && (user.id === topic.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
@@ -448,11 +540,11 @@ export default function TopicDetailPage() {
         <div className="absolute inset-0 bg-black/60"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-5xl mx-auto w-full px-4 md:px-8">
           <div className="text-sm text-gray-300 mb-2 flex items-center gap-2">
-            <Link href="/forum" className="hover:text-white transition">论坛</Link>
+            <Link href="/forum" className="hover:text-white transition">{tr('论坛')}</Link>
             <span>/</span>
-            <Link href={`/forum/${id}`} className="hover:text-white transition">{topic.forum_categories?.name || '版块'}</Link>
+            <Link href={`/forum/${id}`} className="hover:text-white transition">{topic.forum_categories?.name || tr('版块')}</Link>
             <span>/</span>
-            <span className="text-gray-400">看帖</span>
+            <span className="text-gray-400">{tr('看帖')}</span>
           </div>
           <h1 className="text-2xl md:text-4xl font-black text-white drop-shadow-md">
             {topic.title}
@@ -468,13 +560,13 @@ export default function TopicDetailPage() {
             <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-3xl font-bold text-white mb-3 overflow-hidden shadow-lg border-2 border-gray-600">
               {topic.profiles?.avatar_url ? <img src={topic.profiles.avatar_url} className="w-full h-full object-cover" /> : topic.profiles?.display_name?.charAt(0).toUpperCase()}
             </div>
-            <h3 className="font-bold text-white text-center break-all">{topic.profiles?.display_name || '未知用户'}</h3>
-            <p className="text-xs text-blue-400 mt-1">楼主</p>
+            <h3 className="font-bold text-white text-center break-all">{topic.profiles?.display_name || tr('未知用户')}</h3>
+            <p className="text-xs text-blue-400 mt-1">{tr('楼主')}</p>
           </div>
           <div className="flex-1 p-6 md:p-8">
             
             <div className="flex flex-wrap justify-between items-center gap-2 text-xs text-gray-500 mb-6 border-b border-gray-700 pb-4">
-              <span>发表于：{new Date(topic.created_at).toLocaleString()}</span>
+              <span>{tr('发表于：')}{new Date(topic.created_at).toLocaleString()}</span>
               <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                 <span>#1</span>
                 {canEditTopic && !editingTopic && (
@@ -484,21 +576,21 @@ export default function TopicDetailPage() {
                     disabled={savingTopic}
                     className="text-xs font-bold text-blue-400 transition hover:text-blue-300 disabled:opacity-50"
                   >
-                    编辑
+                    {tr('编辑')}
                   </button>
                 )}
                 <Link
                   href={reportHref('topic', String(topic.id))}
                   className="text-xs font-bold text-gray-400 transition hover:text-red-400"
                 >
-                  举报
+                  {tr('举报')}
                 </Link>
                 {user && (user.id === topic.author_id || currentLevel >= ROLE_LEVEL.MANAGER) && (
                   <button 
                     onClick={handleDeleteTopic} 
                     className="bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1 rounded transition border border-red-700/50"
                   >
-                    🗑️ 删除帖子
+                    {tr('🗑️ 删除帖子')}
                   </button>
                 )}
               </div>
@@ -506,7 +598,7 @@ export default function TopicDetailPage() {
             
             {topicNotice && (
               <p role="status" className="mb-4 text-sm font-bold text-green-400">
-                {topicNotice}
+                {tr(topicNotice)}
               </p>
             )}
 
@@ -515,7 +607,7 @@ export default function TopicDetailPage() {
                 <div>
                   <div className="mb-1 flex items-center justify-between">
                     <label htmlFor="topic-edit-title" className="text-sm font-bold text-gray-400">
-                      标题
+                      {tr('标题')}
                     </label>
                     <span className="font-mono text-xs text-gray-500">{topicTitle.length} / 120</span>
                   </div>
@@ -526,7 +618,7 @@ export default function TopicDetailPage() {
                     onChange={(event) => setTopicTitle(event.target.value)}
                     maxLength={120}
                     required
-                    placeholder="请输入帖子标题（不超过 120 字）"
+                    placeholder={tr('请输入帖子标题（不超过 120 字）')}
                     className="w-full rounded border border-gray-600 bg-[#18191c] p-3 text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -535,13 +627,13 @@ export default function TopicDetailPage() {
                   value={topicContent}
                   onChange={setTopicContent}
                   rows={8}
-                  label="正文"
-                  placeholder="编辑帖子正文..."
+                  label={tr('正文')}
+                  placeholder={tr('编辑帖子正文...')}
                 />
 
                 {topicSaveError && (
                   <p role="alert" className="text-sm font-bold text-red-400">
-                    {topicSaveError}
+                    {tr(topicSaveError)}
                   </p>
                 )}
 
@@ -552,14 +644,14 @@ export default function TopicDetailPage() {
                     disabled={savingTopic}
                     className="rounded border border-gray-600 bg-[#18191c] px-5 py-2 text-sm font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:opacity-50"
                   >
-                    取消
+                    {tr('取消')}
                   </button>
                   <button
                     type="submit"
                     disabled={savingTopic}
                     className="rounded bg-blue-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {savingTopic ? '保存中...' : '保存修改'}
+                    {savingTopic ? tr('保存中...') : tr('保存修改')}
                   </button>
                 </div>
               </form>
@@ -571,7 +663,7 @@ export default function TopicDetailPage() {
             )}
             {topic.image_url && (
               <div className="mt-6">
-                <img src={topic.image_url} alt="配图" className="max-w-full h-auto rounded-lg border border-gray-700 shadow-md" />
+                <img src={topic.image_url} alt={tr('配图')} className="max-w-full h-auto rounded-lg border border-gray-700 shadow-md" />
               </div>
             )}
           </div>
@@ -584,18 +676,18 @@ export default function TopicDetailPage() {
           aria-busy={repliesLoading || deletingReplyId !== null}
         >
           <h3 className="text-xl font-bold text-white mb-4 pl-2 border-l-4 border-blue-500">
-            全部回复 ({replyTotal})
+            {tr('全部回复 ({n})', { n: replyTotal })}
           </h3>
 
           {replyDeleteNotice && (
             <p role="status" className="mb-2 text-sm font-bold text-green-400">
-              {replyDeleteNotice}
+              {tr(replyDeleteNotice)}
             </p>
           )}
 
           {replyDeleteError && (
             <p role="alert" className="mb-2 text-sm font-bold text-red-400">
-              {replyDeleteError}
+              {tr(replyDeleteError)}
             </p>
           )}
           
@@ -617,7 +709,7 @@ export default function TopicDetailPage() {
                   <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-2xl font-bold text-white mb-2 overflow-hidden shadow-md border-2 border-gray-600">
                     {reply.profiles?.avatar_url ? <img src={reply.profiles.avatar_url} className="w-full h-full object-cover" /> : reply.profiles?.display_name?.charAt(0).toUpperCase()}
                   </div>
-                  <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || '未知用户'}</h4>
+                  <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || tr('未知用户')}</h4>
 
                   {/* 动态徽章 */}
                   <div className="mt-2 text-center">
@@ -632,7 +724,7 @@ export default function TopicDetailPage() {
                 </div>
                 <div className="flex-1 p-6">
                   <div className="flex justify-between items-center text-xs text-gray-500 mb-4 border-b border-gray-700 pb-3">
-                    <span>发表于：{new Date(reply.created_at).toLocaleString()}</span>
+                    <span>{tr('发表于：')}{new Date(reply.created_at).toLocaleString()}</span>
                     <span>#{(replyPage - 1) * REPLY_PAGE_SIZE + index + 2}</span>
                   </div>
 
@@ -648,12 +740,12 @@ export default function TopicDetailPage() {
                         value={replyEditContent}
                         onChange={setReplyEditContent}
                         rows={4}
-                        placeholder="编辑回复内容..."
+                        placeholder={tr('编辑回复内容...')}
                       />
 
                       {replyError?.id === replyId && (
                         <p role="alert" className="text-xs font-bold text-red-400">
-                          {replyError.message}
+                          {tr(replyError.message)}
                         </p>
                       )}
 
@@ -664,14 +756,14 @@ export default function TopicDetailPage() {
                           disabled={replyBusy}
                           className="rounded border border-gray-600 bg-[#18191c] px-4 py-1.5 text-xs font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:opacity-50"
                         >
-                          取消
+                          {tr('取消')}
                         </button>
                         <button
                           type="submit"
                           disabled={replyBusy}
                           className="rounded bg-blue-600 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
                         >
-                          {savingReplyId === replyId ? '保存中...' : '保存'}
+                          {savingReplyId === replyId ? tr('保存中...') : tr('保存')}
                         </button>
                       </div>
                     </form>
@@ -679,7 +771,7 @@ export default function TopicDetailPage() {
                     <>
                       {replyNotice?.id === replyId && (
                         <p role="status" className="mb-2 text-xs font-bold text-green-400">
-                          {replyNotice.message}
+                          {tr(replyNotice.message)}
                         </p>
                       )}
                       <RichText
@@ -697,7 +789,7 @@ export default function TopicDetailPage() {
                         disabled={replyBusy}
                         className="text-xs font-bold text-blue-400 transition hover:text-blue-300 disabled:opacity-50"
                       >
-                        编辑
+                        {tr('编辑')}
                       </button>
                     )}
                     {canDeleteReply && (
@@ -707,25 +799,25 @@ export default function TopicDetailPage() {
                         disabled={deletingReplyId !== null}
                         className="text-xs font-bold text-red-400 transition hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {deletingReplyId === replyId ? '删除中...' : '删除'}
+                        {deletingReplyId === replyId ? tr('删除中...') : tr('删除')}
                       </button>
                     )}
                     <Link
                       href={reportHref('reply', replyId)}
                       className="text-xs font-bold text-gray-400 transition hover:text-red-400"
                     >
-                      举报
+                      {tr('举报')}
                     </Link>
                     {!editingThisReply && (
                       <button
                         onClick={() => {
-                          setQuoteUser(reply.profiles?.display_name || '未知用户');
+                          setQuoteUser(reply.profiles?.display_name || tr('未知用户'));
                           setQuoteContent(reply.content);
                           document.getElementById('reply-box')?.scrollIntoView({ behavior: 'smooth' });
                         }}
                         className="text-xs text-blue-400 hover:text-blue-300 font-bold"
                       >
-                        引用回复
+                        {tr('引用回复')}
                       </button>
                     )}
                   </div>
@@ -736,13 +828,13 @@ export default function TopicDetailPage() {
 
           {replies.length === 0 && (
             <div className="rounded-lg border border-dashed border-gray-700 bg-[#232428]/60 p-8 text-center text-sm text-gray-500">
-              还没有回复，来发表你的看法吧。
+              {tr('还没有回复，来发表你的看法吧。')}
             </div>
           )}
 
           {replyTotalPages > 1 && (
             <nav
-              aria-label="回复分页"
+              aria-label={tr('回复分页')}
               className="flex flex-wrap items-center justify-center gap-3 rounded-lg border border-gray-700 bg-[#232428] px-4 py-3"
             >
               <button
@@ -751,10 +843,10 @@ export default function TopicDetailPage() {
                 disabled={repliesLoading || replyPage <= 1}
                 className="rounded border border-gray-600 bg-[#18191c] px-4 py-1.5 text-sm font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
-                上一页
+                {tr('上一页')}
               </button>
               <span className="text-sm text-gray-400">
-                第 <span className="font-bold text-white">{replyPage}</span> / {replyTotalPages} 页
+                {tr('第')} <span className="font-bold text-white">{replyPage}</span> / {replyTotalPages} {tr('页')}
               </span>
               <button
                 type="button"
@@ -762,7 +854,7 @@ export default function TopicDetailPage() {
                 disabled={repliesLoading || replyPage >= replyTotalPages}
                 className="rounded border border-gray-600 bg-[#18191c] px-4 py-1.5 text-sm font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
-                下一页
+                {tr('下一页')}
               </button>
             </nav>
           )}
@@ -770,12 +862,12 @@ export default function TopicDetailPage() {
 
         {/* 回复输入框 */}
         <div className="bg-[#2c2d31] border border-gray-700 rounded-lg p-6 shadow-lg mt-8">
-          <h3 className="text-lg font-bold text-white mb-4">发表回复</h3>
+          <h3 className="text-lg font-bold text-white mb-4">{tr('发表回复')}</h3>
           {user ? (
             <form onSubmit={handleReply}>
               {quoteUser && (
                 <div className="mb-2 p-3 bg-gray-800 border-l-4 border-blue-500 rounded text-sm text-gray-400 relative">
-                  <span className="font-bold text-blue-400">正在回复 @{quoteUser}：</span>
+                  <span className="font-bold text-blue-400">{tr('正在回复 @{name}：', { name: quoteUser })}</span>
                   <span className="line-clamp-1">{quoteContent}</span>
                   <button 
                     type="button" 
@@ -793,7 +885,7 @@ export default function TopicDetailPage() {
                   onChange={setReplyContent}
                   rows={5}
                   required
-                  placeholder={quoteUser ? `回复 @${quoteUser}...` : '写下你的看法...'}
+                  placeholder={quoteUser ? tr('回复 @{name}...', { name: quoteUser }) : tr('写下你的看法...')}
                 />
               </div>
               <div className="text-right">
@@ -802,14 +894,14 @@ export default function TopicDetailPage() {
                   disabled={submitting}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2 rounded font-bold transition disabled:opacity-50"
                 >
-                  {submitting ? '发送中...' : '发表回复'}
+                  {submitting ? tr('发送中...') : tr('发表回复')}
                 </button>
               </div>
             </form>
           ) : (
             <div className="text-center py-6">
-              <p className="text-gray-400 mb-4">你需要登录后才能参与讨论。</p>
-              <Link href="/login" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition">去登录</Link>
+              <p className="text-gray-400 mb-4">{tr('你需要登录后才能参与讨论。')}</p>
+              <Link href="/login" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition">{tr('去登录')}</Link>
             </div>
           )}
         </div>

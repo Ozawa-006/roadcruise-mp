@@ -6,6 +6,67 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
+import { useTr } from '@/components/I18nProvider';
+
+// 英文文案：键为中文原文，缺失时回退中文。
+const EN: Record<string, string> = {
+  // —— 页面头部 ——
+  'VTC 虚拟车队大厅': 'VTC Virtual Fleet Lobby',
+  '寻找属于你的车队，或者创建你自己的运输帝国。':
+    'Find the fleet that fits you, or build your own transport empire.',
+  '创建车队': 'Create a VTC',
+  '登录以创建车队': 'Sign in to create a VTC',
+  '你已加入车队，前往': 'You are already in a VTC. Go to',
+  '个人中心': 'your profile',
+  '查看我的车队。': 'to view your fleet.',
+  // —— 操作提示 ——
+  '加载车队失败：{error}': 'Failed to load VTCs: {error}',
+  '加入失败：{error}': 'Failed to join: {error}',
+  '申请失败：{error}': 'Failed to apply: {error}',
+  '取消失败：{error}': 'Failed to cancel: {error}',
+  '接受邀请失败：{error}': 'Failed to accept the invitation: {error}',
+  '拒绝邀请失败：{error}': 'Failed to decline the invitation: {error}',
+  '🎉 成功加入车队！': '🎉 Successfully joined the VTC!',
+  '申请已提交，请等待车队审核。':
+    'Application submitted. Please wait for the VTC to review it.',
+  '已取消加入申请。': 'Application cancelled.',
+  '已接受邀请，欢迎加入车队！': 'Invitation accepted. Welcome to the VTC!',
+  '已拒绝该邀请。': 'Invitation declined.',
+  // —— 加载 / 空状态 ——
+  '加载车队数据中...': 'Loading VTC data...',
+  '操作失败，请稍后重试': 'Something went wrong. Please try again later.',
+  '目前还没有车队': 'No VTCs yet',
+  '成为第一个创立车队的先驱者吧！': 'Be the first to create one!',
+  '立即创建': 'Create now',
+  // —— 车队卡片 ——
+  '开放加入': 'Open to join',
+  '需申请': 'Approval required',
+  '仅邀请': 'Invite only',
+  '这个车队还没有填写简介。': 'This VTC has not added a description yet.',
+  '{count} 名成员': '{count} members',
+  '招聘中': 'Recruiting',
+  '已停止招募': 'Recruitment closed',
+  '我的车队': 'My VTC',
+  '进入车队': 'View VTC',
+  '你有邀请': 'You have an invitation',
+  '处理中...': 'Processing...',
+  '接受': 'Accept',
+  '拒绝': 'Decline',
+  '审核中': 'Under review',
+  '取消中...': 'Cancelling...',
+  '取消申请': 'Cancel application',
+  '你已有一条待审核申请': 'You already have a pending application',
+  '申请留言（选填）：介绍一下你的在线时间 / 驾驶经验...':
+    'Application note (optional): tell us about your online hours / driving experience...',
+  '提交中...': 'Submitting...',
+  '提交申请': 'Submit application',
+  '取消': 'Cancel',
+  '加入中...': 'Joining...',
+  '立即加入': 'Join now',
+  '申请加入': 'Apply to join',
+  '仅邀请加入': 'Invite only',
+  '登录后才能加入车队': 'Sign in to join a VTC',
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,15 +118,16 @@ function joinModeOf(mode: string | null | undefined): JoinMode {
 }
 
 // 统一把 Supabase / 未知异常转成中文错误文案
-function rpcErrorText(error: unknown): string {
+function rpcErrorText(error: unknown, tr: (zh: string) => string): string {
   if (error && typeof error === 'object' && 'message' in error) {
     const message = (error as { message?: unknown }).message;
     if (typeof message === 'string' && message.trim()) return message;
   }
-  return '操作失败，请稍后重试';
+  return tr('操作失败，请稍后重试');
 }
 
 export default function VTCHome() {
+  const tr = useTr(EN);
   const router = useRouter();
 
   const [vtcs, setVtcs] = useState<LobbyVtc[]>([]);
@@ -154,10 +216,15 @@ export default function VTCHome() {
       }
       setVtcs((vtcData ?? []) as unknown as LobbyVtc[]);
     } catch (error: unknown) {
-      setActionError({ key: 'load', text: `加载车队失败：${rpcErrorText(error)}` });
+      setActionError({
+        key: 'load',
+        text: tr('加载车队失败：{error}', { error: rpcErrorText(error, tr) }),
+      });
     } finally {
       setLoading(false);
     }
+    // tr 每次渲染都会重新创建，加入依赖会导致重复请求；语言切换由 Provider 刷新页面处理。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -180,10 +247,13 @@ export default function VTCHome() {
     try {
       const { error } = await supabase.rpc('rct_vtc_join_open', { p_vtc_id: vtc.id });
       if (error) throw error;
-      setNotice('🎉 成功加入车队！');
+      setNotice(tr('🎉 成功加入车队！'));
       await loadData(false);
     } catch (error: unknown) {
-      setActionError({ key: `card-${vtc.id}`, text: `加入失败：${rpcErrorText(error)}` });
+      setActionError({
+        key: `card-${vtc.id}`,
+        text: tr('加入失败：{error}', { error: rpcErrorText(error, tr) }),
+      });
     } finally {
       setBusyKey(null);
     }
@@ -216,10 +286,13 @@ export default function VTCHome() {
       if (error) throw error;
       setApplyVtcId(null);
       setApplyMessage('');
-      setNotice('申请已提交，请等待车队审核。');
+      setNotice(tr('申请已提交，请等待车队审核。'));
       await loadData(false);
     } catch (error: unknown) {
-      setActionError({ key: `card-${vtc.id}`, text: `申请失败：${rpcErrorText(error)}` });
+      setActionError({
+        key: `card-${vtc.id}`,
+        text: tr('申请失败：{error}', { error: rpcErrorText(error, tr) }),
+      });
     } finally {
       setBusyKey(null);
     }
@@ -237,10 +310,13 @@ export default function VTCHome() {
         p_id: pendingApp.id,
       });
       if (error) throw error;
-      setNotice('已取消加入申请。');
+      setNotice(tr('已取消加入申请。'));
       await loadData(false);
     } catch (error: unknown) {
-      setActionError({ key: `card-${vtc.id}`, text: `取消失败：${rpcErrorText(error)}` });
+      setActionError({
+        key: `card-${vtc.id}`,
+        text: tr('取消失败：{error}', { error: rpcErrorText(error, tr) }),
+      });
     } finally {
       setBusyKey(null);
     }
@@ -258,19 +334,27 @@ export default function VTCHome() {
         p_accept: accept,
       });
       if (error) throw error;
-      setNotice(accept ? '已接受邀请，欢迎加入车队！' : '已拒绝该邀请。');
+      setNotice(tr(accept ? '已接受邀请，欢迎加入车队！' : '已拒绝该邀请。'));
       await loadData(false);
     } catch (error: unknown) {
       setActionError({
         key: `card-${invite.vtc_id}`,
-        text: `${accept ? '接受' : '拒绝'}邀请失败：${rpcErrorText(error)}`,
+        text: tr(accept ? '接受邀请失败：{error}' : '拒绝邀请失败：{error}', {
+          error: rpcErrorText(error, tr),
+        }),
       });
     } finally {
       setBusyKey(null);
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载车队数据中...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">
+        {tr('加载车队数据中...')}
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -283,9 +367,11 @@ export default function VTCHome() {
           <div>
             <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
               <span className="w-2 h-8 bg-blue-500 inline-block rounded-sm"></span>
-              VTC 虚拟车队大厅
+              {tr('VTC 虚拟车队大厅')}
             </h1>
-            <p className="text-gray-400 text-sm">寻找属于你的车队，或者创建你自己的运输帝国。</p>
+            <p className="text-gray-400 text-sm">
+              {tr('寻找属于你的车队，或者创建你自己的运输帝国。')}
+            </p>
           </div>
 
           {/* 只有没加入车队的用户才能看到创建按钮 */}
@@ -294,7 +380,7 @@ export default function VTCHome() {
               href="/vtc/create"
               className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg flex items-center gap-2"
             >
-              <span className="text-xl">+</span> 创建车队
+              <span className="text-xl">+</span> {tr('创建车队')}
             </Link>
           )}
           {!user && (
@@ -302,16 +388,16 @@ export default function VTCHome() {
               href="/login"
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg"
             >
-              登录以创建车队
+              {tr('登录以创建车队')}
             </Link>
           )}
           {user && userVtcId && (
             <div className="bg-[#2c2d31] px-4 py-2 rounded-lg border border-gray-600 text-sm">
-              你已加入车队，前往
+              {tr('你已加入车队，前往')}{' '}
               <Link href="/profile" className="text-blue-400 hover:text-blue-300 underline underline-offset-2 mx-1">
-                个人中心
-              </Link>
-              查看我的车队。
+                {tr('个人中心')}
+              </Link>{' '}
+              {tr('查看我的车队。')}
             </div>
           )}
         </div>
@@ -336,11 +422,11 @@ export default function VTCHome() {
         {vtcs.length === 0 ? (
           <div className="text-center py-20 bg-[#2c2d31] rounded-lg border border-gray-700 border-dashed">
             <p className="text-4xl mb-4">🚛</p>
-            <h2 className="text-xl text-white font-bold mb-2">目前还没有车队</h2>
-            <p className="text-gray-500 mb-6">成为第一个创立车队的先驱者吧！</p>
+            <h2 className="text-xl text-white font-bold mb-2">{tr('目前还没有车队')}</h2>
+            <p className="text-gray-500 mb-6">{tr('成为第一个创立车队的先驱者吧！')}</p>
             {user && (
               <Link href="/vtc/create" className="bg-blue-600 text-white px-6 py-2 rounded font-bold">
-                立即创建
+                {tr('立即创建')}
               </Link>
             )}
           </div>
@@ -384,7 +470,7 @@ export default function VTCHome() {
                           </span>
                         )}
                         <span className={`text-xs font-bold px-2 py-0.5 rounded ${JOIN_MODE_BADGES[mode]}`}>
-                          {JOIN_MODE_LABELS[mode]}
+                          {tr(JOIN_MODE_LABELS[mode])}
                         </span>
                       </div>
                     </div>
@@ -393,7 +479,7 @@ export default function VTCHome() {
                   {/* 简介 */}
                   <div className="p-6 flex-1">
                     <p className="text-sm text-gray-400 line-clamp-3 leading-relaxed">
-                      {vtc.description || '这个车队还没有填写简介。'}
+                      {vtc.description || tr('这个车队还没有填写简介。')}
                     </p>
                   </div>
 
@@ -401,12 +487,18 @@ export default function VTCHome() {
                   <div className="px-6 py-4 bg-[#232428] border-t border-gray-700/50 flex justify-between items-center text-xs">
                     <div className="flex items-center gap-2">
                       <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
-                      <span className="text-gray-400 font-bold">{memberCount} 名成员</span>
+                      <span className="text-gray-400 font-bold">
+                        {tr('{count} 名成员', { count: memberCount })}
+                      </span>
                     </div>
                     {recruiting ? (
-                      <span className="text-green-500 font-bold bg-green-900/20 px-2 py-1 rounded">招聘中</span>
+                      <span className="text-green-500 font-bold bg-green-900/20 px-2 py-1 rounded">
+                        {tr('招聘中')}
+                      </span>
                     ) : (
-                      <span className="text-red-500 font-bold bg-red-900/20 px-2 py-1 rounded">已停止招募</span>
+                      <span className="text-red-500 font-bold bg-red-900/20 px-2 py-1 rounded">
+                        {tr('已停止招募')}
+                      </span>
                     )}
                   </div>
 
@@ -421,14 +513,14 @@ export default function VTCHome() {
                             : 'bg-[#18191c] border border-gray-600 text-gray-300 hover:text-white hover:border-blue-500'
                         }`}
                       >
-                        {isMyTeam ? '我的车队' : '进入车队'}
+                        {isMyTeam ? tr('我的车队') : tr('进入车队')}
                       </Link>
                     ) : (
                       <>
                         {myInvite && (
                           <div className="flex flex-wrap items-center gap-2 w-full">
                             <span className="text-xs font-bold text-yellow-400 bg-yellow-900/20 border border-yellow-800 px-2 py-1 rounded">
-                              你有邀请
+                              {tr('你有邀请')}
                             </span>
                             <button
                               type="button"
@@ -436,7 +528,7 @@ export default function VTCHome() {
                               disabled={isBusy}
                               className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                             >
-                              {busyKey === `invite-${myInvite.id}` ? '处理中...' : '接受'}
+                              {busyKey === `invite-${myInvite.id}` ? tr('处理中...') : tr('接受')}
                             </button>
                             <button
                               type="button"
@@ -444,7 +536,7 @@ export default function VTCHome() {
                               disabled={isBusy}
                               className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                             >
-                              拒绝
+                              {tr('拒绝')}
                             </button>
                           </div>
                         )}
@@ -452,7 +544,7 @@ export default function VTCHome() {
                         {pendingForThis ? (
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-bold text-yellow-400 bg-yellow-900/20 border border-yellow-800 px-2 py-1.5 rounded">
-                              审核中
+                              {tr('审核中')}
                             </span>
                             <button
                               type="button"
@@ -460,12 +552,12 @@ export default function VTCHome() {
                               disabled={isBusy}
                               className="bg-[#18191c] border border-gray-600 hover:border-red-500 hover:text-red-400 text-gray-300 px-3 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                             >
-                              {busyKey === `cancel-${vtc.id}` ? '取消中...' : '取消申请'}
+                              {busyKey === `cancel-${vtc.id}` ? tr('取消中...') : tr('取消申请')}
                             </button>
                           </div>
                         ) : hasOtherPending ? (
                           <span className="text-xs text-gray-500 font-bold bg-[#18191c] px-3 py-2 rounded border border-gray-700">
-                            你已有一条待审核申请
+                            {tr('你已有一条待审核申请')}
                           </span>
                         ) : applyVtcId === vtc.id ? (
                           <form onSubmit={(e) => handleSubmitApplication(e, vtc)} className="w-full space-y-2">
@@ -474,7 +566,7 @@ export default function VTCHome() {
                               onChange={(e) => setApplyMessage(e.target.value)}
                               maxLength={300}
                               rows={3}
-                              placeholder="申请留言（选填）：介绍一下你的在线时间 / 驾驶经验..."
+                              placeholder={tr('申请留言（选填）：介绍一下你的在线时间 / 驾驶经验...')}
                               className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white focus:outline-none focus:border-blue-500"
                             />
                             <div className="flex items-center gap-2">
@@ -483,7 +575,7 @@ export default function VTCHome() {
                                 disabled={isBusy}
                                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                               >
-                                {busyKey === `apply-${vtc.id}` ? '提交中...' : '提交申请'}
+                                {busyKey === `apply-${vtc.id}` ? tr('提交中...') : tr('提交申请')}
                               </button>
                               <button
                                 type="button"
@@ -491,7 +583,7 @@ export default function VTCHome() {
                                 disabled={isBusy}
                                 className="text-gray-400 hover:text-white text-sm font-bold disabled:opacity-50"
                               >
-                                取消
+                                {tr('取消')}
                               </button>
                             </div>
                           </form>
@@ -502,7 +594,11 @@ export default function VTCHome() {
                             disabled={isBusy || !recruiting}
                             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-bold transition disabled:opacity-50"
                           >
-                            {busyKey === `open-${vtc.id}` ? '加入中...' : recruiting ? '立即加入' : '已停止招募'}
+                            {busyKey === `open-${vtc.id}`
+                              ? tr('加入中...')
+                              : recruiting
+                                ? tr('立即加入')
+                                : tr('已停止招募')}
                           </button>
                         ) : mode === 'approval' ? (
                           <button
@@ -511,7 +607,7 @@ export default function VTCHome() {
                             disabled={isBusy || !recruiting}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold transition disabled:opacity-50"
                           >
-                            {recruiting ? '申请加入' : '已停止招募'}
+                            {recruiting ? tr('申请加入') : tr('已停止招募')}
                           </button>
                         ) : (
                           <button
@@ -519,12 +615,14 @@ export default function VTCHome() {
                             disabled
                             className="bg-[#18191c] border border-gray-700 text-gray-500 px-4 py-2 rounded text-sm font-bold cursor-not-allowed"
                           >
-                            仅邀请加入
+                            {tr('仅邀请加入')}
                           </button>
                         )}
 
                         {!user && (
-                          <span className="text-xs text-gray-500 ml-auto">登录后才能加入车队</span>
+                          <span className="text-xs text-gray-500 ml-auto">
+                            {tr('登录后才能加入车队')}
+                          </span>
                         )}
                       </>
                     )}

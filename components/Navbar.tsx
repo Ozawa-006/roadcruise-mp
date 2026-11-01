@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type User } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { attemptSteamBind } from '../lib/steam-bind-client';
 import { ROLE_LEVEL, levelOf } from '../lib/permissions';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useTr } from './I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,14 +29,66 @@ const MOBILE_NAV_ITEMS = [
   { href: '/support', label: '帮助与支持' },
 ];
 
+/**
+ * 导航栏界面文案（以中文原文为 key，英文缺失时回退中文）。
+ * 只收录 UI 文案：用户名、通知内容、角色名等数据不翻译。
+ */
+const EN = {
+  // 顶栏状态
+  '在线': 'Online',
+  '注册': 'Sign up',
+  '登录': 'Sign in',
+  '通知中心': 'Notifications',
+  '全部已读': 'Mark all as read',
+  '暂无通知': 'No notifications',
+  '查看全部通知 →': 'View all notifications →',
+
+  // 账号下拉
+  '个人中心 (Profile)': 'Profile',
+  '我的车队 (My VTC)': 'My VTC',
+  '账号设置 (Settings)': 'Settings',
+  '帮助与支持 (Support)': 'Support',
+  '退出登录 (Logout)': 'Log out',
+
+  // 主导航 / 活动下拉
+  '论坛 (Forum)': 'Forum',
+  '活动 (Events)': 'Events',
+  '活动列表': 'Event list',
+  '创建活动': 'Create event',
+  '实时地图': 'Live map',
+  '服务器列表': 'Server list',
+  '车队 (VTC)': 'VTC',
+  '团队': 'Team',
+  '社区规则': 'Community rules',
+  '帮助与支持': 'Help & support',
+
+  // 搜索框
+  '全部': 'All',
+  '帖子/新闻': 'Posts / News',
+  '玩家': 'Player',
+  '搜索...': 'Search...',
+
+  // 移动端
+  '打开导航菜单': 'Open navigation menu',
+  '关闭导航菜单': 'Close navigation menu',
+  '移动端主导航': 'Mobile main navigation',
+} satisfies Record<string, string>;
+
+/** 通知下拉渲染所需的最小字段（数据来自 notifications 表，不翻译）。 */
+type NavNotification = {
+  id: number;
+  content: string;
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+};
+
 export default function Navbar() {
-  const [user, setUser] = useState<any>(null);
+  const tr = useTr(EN);
+  const [user, setUser] = useState<User | null>(null);
   const [players, setPlayers] = useState<number | null>(null); 
   const [userLevel, setUserLevel] = useState(0);
   const [displayName, setDisplayName] = useState<string>('玩家');
-  const [mounted, setMounted] = useState(false);
-  const [isLangOpen, setIsLangOpen] = useState(false);
-  const [currentLang, setCurrentLang] = useState('简中');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timeZone, setTimeZone] = useState('');
   
@@ -46,15 +100,24 @@ export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<NavNotification[]>([]);
   
   const menuRef = useRef<HTMLDivElement>(null); 
   const notifRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
+  // 获取通知（必须先于下方 useEffect 中的调用声明）
+  const fetchNotifications = async (userId: string) => {
+    const { data } = await supabase
+      .from('notifications')
+      .select(`*, actor:actor_id (display_name)`)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (data) setNotifications(data);
+  };
+
   useEffect(() => {
-    setMounted(true);
-    
     // 1. 获取用户登录状态
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -179,19 +242,8 @@ export default function Navbar() {
     };
   }, []);
 
-  // 获取通知的函数
-  const fetchNotifications = async (userId: string) => {
-    const { data } = await supabase
-      .from('notifications')
-      .select(`*, actor:actor_id (display_name)`)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    if (data) setNotifications(data);
-  };
-
   // 标记通知为已读
-  const markAsRead = async (id: number, link: string) => {
+  const markAsRead = async (id: number, link: string | null) => {
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     setIsNotifOpen(false);
@@ -213,8 +265,9 @@ export default function Navbar() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
-  // 时间更新
+  // 时间更新：时区只能在客户端读取，首帧同步一次，随后每秒刷新时间。
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 时区依赖浏览器环境，无法在渲染期稳定读取
     setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -258,7 +311,7 @@ export default function Navbar() {
           {players !== null && (
             <span className="hidden md:flex items-center space-x-1.5 border-r border-gray-700 pr-4">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
-              <span>在线 <span className="text-green-400 font-mono">{players}</span></span>
+              <span>{tr('在线')} <span className="text-green-400 font-mono">{players}</span></span>
             </span>
           )}
 
@@ -278,20 +331,20 @@ export default function Navbar() {
                 {isNotifOpen && (
                   <div className="absolute right-0 top-full mt-3 w-72 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 z-50">
                     <div className="px-4 py-2 border-b border-gray-700 flex justify-between items-center">
-                      <p className="text-gray-300 font-bold text-sm">通知中心</p>
+                      <p className="text-gray-300 font-bold text-sm">{tr('通知中心')}</p>
                       {unreadCount > 0 && (
                         <button
                           type="button"
                           onClick={() => void markAllAsRead()}
                           className="text-[10px] text-blue-400 hover:text-blue-300 transition"
                         >
-                          全部已读
+                          {tr('全部已读')}
                         </button>
                       )}
                     </div>
                     <div className="max-h-64 overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <p className="text-center text-xs text-gray-500 py-4">暂无通知</p>
+                        <p className="text-center text-xs text-gray-500 py-4">{tr('暂无通知')}</p>
                       ) : (
                         notifications.map(n => (
                           <div 
@@ -310,7 +363,7 @@ export default function Navbar() {
                       onClick={() => setIsNotifOpen(false)}
                       className="block px-4 py-2 text-center text-xs text-blue-400 hover:text-blue-300 hover:bg-[#333333] border-t border-gray-700 transition"
                     >
-                      查看全部通知 →
+                      {tr('查看全部通知 →')}
                     </Link>
                   </div>
                 )}
@@ -328,12 +381,12 @@ export default function Navbar() {
                       <p className="text-gray-300 font-bold truncate">{displayName}</p>
                       <p className="text-gray-500 text-[10px] truncate">{user.email}</p>
                     </div>
-                    <Link href={`/profile/${user.id}`} className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>个人中心 (Profile)</Link>
-                    <Link href="/profile" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>我的车队 (My VTC)</Link>
-                    <Link href="/settings" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>账号设置 (Settings)</Link>
-                    <Link href="/forum/3" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>帮助与支持 (Support)</Link>
+                    <Link href={`/profile/${user.id}`} className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>{tr('个人中心 (Profile)')}</Link>
+                    <Link href="/profile" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>{tr('我的车队 (My VTC)')}</Link>
+                    <Link href="/settings" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>{tr('账号设置 (Settings)')}</Link>
+                    <Link href="/forum/3" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition" onClick={() => setIsMenuOpen(false)}>{tr('帮助与支持 (Support)')}</Link>
                     <div className="border-t border-gray-700 my-1"></div>
-                    <button onClick={handleLogout} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-[#333333] transition">退出登录 (Logout)</button>
+                    <button onClick={handleLogout} className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-[#333333] transition">{tr('退出登录 (Logout)')}</button>
                   </div>
                 )}
               </div>
@@ -342,9 +395,9 @@ export default function Navbar() {
 
           {!user && (
             <>
-              <Link href="/login" className="hover:text-white transition">注册</Link>
+              <Link href="/login" className="hover:text-white transition">{tr('注册')}</Link>
               <span className="text-gray-600">|</span>
-              <Link href="/login" className="hover:text-white transition">登录</Link>
+              <Link href="/login" className="hover:text-white transition">{tr('登录')}</Link>
             </>
           )}
         </div>
@@ -365,7 +418,7 @@ export default function Navbar() {
           onClick={() => setIsMobileNavOpen((open) => !open)}
           aria-expanded={isMobileNavOpen}
           aria-controls="mobile-nav"
-          aria-label={isMobileNavOpen ? '关闭导航菜单' : '打开导航菜单'}
+          aria-label={isMobileNavOpen ? tr('关闭导航菜单') : tr('打开导航菜单')}
           className="md:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-700 bg-[#232428] text-gray-300 transition hover:border-gray-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
           {isMobileNavOpen ? (
@@ -381,52 +434,35 @@ export default function Navbar() {
 
         <nav className="hidden md:flex items-center space-x-6 text-sm font-medium text-gray-300">
           
-          {/* 语言切换 */}
-          <div className="relative">
-            <button 
-              onClick={() => setIsLangOpen(!isLangOpen)}
-              title="多语言切换开发中"
-              className="flex items-center space-x-1 hover:text-white transition focus:outline-none"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-              </svg>
-              <span className="text-xs ml-1">{currentLang}</span>
-            </button>
-            {isLangOpen && (
-              <div className="absolute right-0 top-full mt-4 w-44 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 z-50">
-                <button onClick={() => { setCurrentLang('简中'); setIsLangOpen(false); }} className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">简体中文（当前）</button>
-                <button disabled title="多语言切换开发中" className="block w-full text-left px-4 py-2 text-sm text-gray-500 cursor-not-allowed opacity-60">English（开发中）</button>
-              </div>
-            )}
-          </div>
+          {/* 语言切换（简体中文 / English） */}
+          <LanguageSwitcher />
 
-          <Link href="/forum" className="hover:text-white transition">论坛 (Forum)</Link>
+          <Link href="/forum" className="hover:text-white transition">{tr('论坛 (Forum)')}</Link>
           
           {/* 活动下拉 */}
           <div className="relative group">
             <button className="flex items-center space-x-1 hover:text-white transition py-2 focus:outline-none">
-              <span>活动 (Events)</span>
+              <span>{tr('活动 (Events)')}</span>
               <svg className="w-3 h-3 text-gray-500 group-hover:text-white transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </button>
             <div className="absolute top-full left-0 mt-1 w-48 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
               <Link href="/events" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">
-                活动列表
+                {tr('活动列表')}
               </Link>
               {user && userLevel >= ROLE_LEVEL.STAFF && (
                 <Link href="/admin/events" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">
-                  创建活动
+                  {tr('创建活动')}
                 </Link>
               )}
             </div>
           </div>
           
-          <Link href="/map" className="hover:text-white transition flex items-center gap-1">实时地图</Link>
-          <Link href="/servers" className="hover:text-white transition">服务器列表</Link>
-          <Link href="/vtc" className="hover:text-white transition">车队 (VTC)</Link>
-          <Link href="/team" className="hover:text-white transition">团队</Link>
-          <Link href="/rules" className="hover:text-white transition">社区规则</Link>
-          <Link href="/support" className="hover:text-white transition">帮助与支持</Link>
+          <Link href="/map" className="hover:text-white transition flex items-center gap-1">{tr('实时地图')}</Link>
+          <Link href="/servers" className="hover:text-white transition">{tr('服务器列表')}</Link>
+          <Link href="/vtc" className="hover:text-white transition">{tr('车队 (VTC)')}</Link>
+          <Link href="/team" className="hover:text-white transition">{tr('团队')}</Link>
+          <Link href="/rules" className="hover:text-white transition">{tr('社区规则')}</Link>
+          <Link href="/support" className="hover:text-white transition">{tr('帮助与支持')}</Link>
 
           {/* 🌟 全局搜索框 (带分类下拉) */}
           <form onSubmit={handleSearch} className="relative ml-4 flex items-center bg-[#232428] border border-gray-700 rounded-full focus-within:border-blue-500 transition-all focus-within:w-80 w-64 h-8">
@@ -435,14 +471,14 @@ export default function Navbar() {
               onChange={(e) => setSearchType(e.target.value)}
               className="bg-transparent text-xs text-gray-400 border-none outline-none pl-3 pr-1 cursor-pointer appearance-none hover:text-white"
             >
-              <option value="all" className="bg-[#232428]">全部</option>
-              <option value="topics" className="bg-[#232428]">帖子/新闻</option>
-              <option value="members" className="bg-[#232428]">玩家</option>
+              <option value="all" className="bg-[#232428]">{tr('全部')}</option>
+              <option value="topics" className="bg-[#232428]">{tr('帖子/新闻')}</option>
+              <option value="members" className="bg-[#232428]">{tr('玩家')}</option>
             </select>
             <div className="h-3 w-px bg-gray-600 mx-1"></div>
             <input 
               type="text" 
-              placeholder="搜索..." 
+              placeholder={tr('搜索...')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-transparent text-xs text-white outline-none w-full h-full px-2"
@@ -458,7 +494,7 @@ export default function Navbar() {
       {isMobileNavOpen && (
         <nav
           id="mobile-nav"
-          aria-label="移动端主导航"
+          aria-label={tr('移动端主导航')}
           className="md:hidden border-t border-gray-800 bg-[#1a1a1a] px-4 py-3"
         >
           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -469,7 +505,7 @@ export default function Navbar() {
                 onClick={() => setIsMobileNavOpen(false)}
                 className="rounded-lg border border-gray-800 bg-[#232428] px-3 py-2.5 text-gray-300 transition hover:border-blue-500/50 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
-                {item.label}
+                {tr(item.label)}
               </Link>
             ))}
           </div>

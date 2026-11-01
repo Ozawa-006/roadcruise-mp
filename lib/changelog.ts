@@ -21,10 +21,30 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.43v',
+    date: '2026-11-02',
+    title: '中英双语语言系统',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新增语言系统：简体中文 / English；导航栏「🌐」切换，Cookie + localStorage 记忆，服务端渲染同步',
+      },
+      {
+        kind: 'feature',
+        text: '首页、导航/页脚、登录注册、论坛、新闻、活动、车队、个人资料、账号设置、通知、搜索、规则、服务器、更新日志、地图等主要页面完成英文翻译',
+      },
+      {
+        kind: 'chore',
+        text: '后台管理页保持中文（工作人员使用）；新增 `lib/i18n.ts`、`lib/i18n-server.ts`、`I18nProvider`、`LanguageSwitcher`',
+      },
+    ],
+  },
+  {
     version: '0.0.42v',
     date: '2026-11-02',
     title: '撤回申请与招募统计',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

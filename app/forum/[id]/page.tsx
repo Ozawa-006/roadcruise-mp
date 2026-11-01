@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
 import { canPostOfficialTopic, levelOf } from '@/lib/permissions';
+import { useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,10 +16,52 @@ const supabase = createClient(
 
 const PAGE_SIZE = 10;
 
+/** 版块行（forum_categories） */
+interface CategoryRow {
+  id: number;
+  name: string | null;
+  description: string | null;
+}
+
+/** 帖子列表行（forum_topics + profiles 嵌入） */
+interface TopicRow {
+  id: number;
+  title: string;
+  created_at: string;
+  replies_count: number | null;
+  profiles?: { display_name: string | null } | null;
+}
+
+/** 英文文案表（中文原文为 key）：只覆盖静态 UI，版块名/简介与昵称不翻译。 */
+const EN: Record<string, string> = {
+  // ---- 页面状态 ----
+  '加载中...': 'Loading...',
+  '版块不存在': 'Board not found',
+
+  // ---- 面包屑与页头 ----
+  'CRT MP 论坛': 'CRT MP Forum',
+  '发布新帖': 'New Post',
+
+  // ---- 空状态 ----
+  '这个版块还没有帖子，快来抢沙发吧！': 'No posts in this board yet. Be the first to post!',
+
+  // ---- 帖子列表 ----
+  '由': 'By',
+  '发表于': 'on',
+  '未知玩家': 'Unknown player',
+  '{n} 回复': '{n} replies',
+
+  // ---- 分页 ----
+  '上一页': 'Previous',
+  '下一页': 'Next',
+  '第 {n} / {total} 页': 'Page {n} / {total}',
+};
+
 export default function CategoryPage() {
+  const tr = useTr(EN);
   const { id } = useParams();
-  const [category, setCategory] = useState<any>(null);
-  const [topics, setTopics] = useState<any[]>([]);
+  const [category, setCategory] = useState<CategoryRow | null>(null);
+  const [topics, setTopics] = useState<TopicRow[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [currentPage, setCurrentPage] = useState(1);
@@ -69,8 +112,8 @@ export default function CategoryPage() {
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
-  if (loading && !category) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;
-  if (!category) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">版块不存在</div>;
+  if (loading && !category) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('加载中...')}</div>;
+  if (!category) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('版块不存在')}</div>;
 
   // 🌟 核心逻辑：判断当前用户是否有权限在这个版块发帖
   // 规则：官方公告版块（category_id 为 1，兼容数字和字符串）需要经理 Lv.70 及以上；其他版块不限制。
@@ -86,7 +129,7 @@ export default function CategoryPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-5xl mx-auto w-full px-4 md:px-8">
           <div className="text-sm text-gray-400 mb-2">
-            <Link href="/forum" className="hover:text-white transition">CRT MP 论坛</Link>
+            <Link href="/forum" className="hover:text-white transition">{tr('CRT MP 论坛')}</Link>
             <span className="mx-2">/</span>
             <span className="text-white font-bold">{category.name}</span>
           </div>
@@ -101,7 +144,7 @@ export default function CategoryPage() {
           {/* 🌟 权限控制：只有 canPost 为 true 时才显示发布按钮 */}
           {canPost && (
             <Link href={`/forum/${id}/new`} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition shadow-lg flex items-center gap-2">
-              <span>+</span> 发布新帖
+              <span>+</span> {tr('发布新帖')}
             </Link>
           )}
         </div>
@@ -109,7 +152,7 @@ export default function CategoryPage() {
         <div className="space-y-2">
           {topics.length === 0 ? (
             <div className="text-center text-gray-500 py-10 bg-[#2c2d31] rounded border border-gray-700">
-              这个版块还没有帖子，快来抢沙发吧！
+              {tr('这个版块还没有帖子，快来抢沙发吧！')}
             </div>
           ) : (
             topics.map((topic) => (
@@ -121,11 +164,11 @@ export default function CategoryPage() {
                 <div>
                   <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{topic.title}</h3>
                   <p className="text-xs text-gray-500 mt-1">
-                    由 <span className="text-gray-300 font-bold">{topic.profiles?.display_name || '未知玩家'}</span> 发表于 {new Date(topic.created_at).toLocaleString()}
+                    {tr('由')} <span className="text-gray-300 font-bold">{topic.profiles?.display_name || tr('未知玩家')}</span> {tr('发表于')} {new Date(topic.created_at).toLocaleString()}
                   </p>
                 </div>
                 <div className="text-right text-sm text-gray-400">
-                  <p>{topic.replies_count || 0} 回复</p>
+                  <p>{tr('{n} 回复', { n: topic.replies_count || 0 })}</p>
                 </div>
               </Link>
             ))
@@ -139,17 +182,17 @@ export default function CategoryPage() {
               disabled={currentPage === 1}
               className="px-4 py-2 bg-[#2c2d31] border border-gray-700 text-white rounded hover:bg-gray-700 disabled:opacity-50 transition"
             >
-              上一页
+              {tr('上一页')}
             </button>
             <span className="text-gray-400 text-sm">
-              第 {currentPage} / {totalPages} 页
+              {tr('第 {n} / {total} 页', { n: currentPage, total: totalPages })}
             </span>
             <button 
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="px-4 py-2 bg-[#2c2d31] border border-gray-700 text-white rounded hover:bg-gray-700 disabled:opacity-50 transition"
             >
-              下一页
+              {tr('下一页')}
             </button>
           </div>
         )}

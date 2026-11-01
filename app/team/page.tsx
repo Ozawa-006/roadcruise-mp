@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
+import { useTr } from '../../components/I18nProvider';
 import Navbar from '../../components/Navbar';
 
 const supabase = createClient(
@@ -13,9 +14,125 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+/**
+ * 静态 UI 文案：中文原文 -> 英文。英文缺失时 useTr 自动回退中文。
+ * 按区块分组：页面头部 / 组织架构说明 / 在任成员 / 完整职位一览 / 加入团队 / 保留文案。
+ * 说明：部门名（如「社区线」）、职位名（如「社区版主」）、等级数字与抓取日期属于数据结构，
+ * 不在此翻译；这里只翻译页面自身的说明性文案与状态标签。
+ */
+const EN: Record<string, string> = {
+  // ---------- 页面头部 ----------
+  '团队与组织架构': 'Team & Organization',
+  '了解 RCT MP 的部门划分、职位等级与当前在任成员。本页用于说明社区内的沟通与汇报关系，以及各职位的职责范围；等级只代表职责与站内权限，不代表玩家水平高低。':
+    'Learn how RCT MP is organized: departments, rank levels and current active members. This page explains the communication and reporting lines inside the community, plus the scope of each rank; levels reflect responsibility and site permissions only, not player skill.',
+  '个部门': 'departments',
+  '个职位': 'positions',
+  '位在任成员': 'active members',
+
+  // ---------- 组织架构说明 ----------
+  '关于这份组织架构图': 'About this organization chart',
+  '本页展示的是沟通 / 汇报关系，不是晋升阶梯。':
+    'This page shows communication and reporting lines, not a promotion ladder.',
+  '职位等级用于说明职责范围与站内权限，不构成任何晋升承诺，也不代表玩家之间的高低。':
+    'Rank levels describe the scope of responsibility and site permissions. They are not a promotion promise and do not imply any hierarchy between players.',
+  'RCT MP 是玩家社区团队，全体成员均为志愿者；与 SCS Software、TruckersMP 无隶属关系。':
+    'RCT MP is a player community team. Every member is a volunteer; we are not affiliated with SCS Software or TruckersMP.',
+  '本站不是 TruckersMP 的官方分支，也不代表 SCS Software。':
+    'This site is not an official branch of TruckersMP and does not represent SCS Software.',
+  '职位体系参考 TruckersMP 官方 Meet the Team / Ranks 整理，':
+    'The rank system is based on the official TruckersMP Meet the Team / Ranks page,',
+  '仅用于说明本社区的职位名称与职责；具体权限以站内实际设置为准。':
+    'and is only used to explain rank names and responsibilities in this community. Actual permissions follow the site settings.',
+  '志愿者社区': 'Volunteer community',
+  '所有团队成员均为志愿者，不领取报酬。请尊重他们的时间与劳动。':
+    'Every team member is a volunteer and is not paid. Please respect their time and work.',
+  '招募不收取任何费用，请勿轻信“付费入队”或“内部推荐”。':
+    'Recruitment is always free. Do not trust any “pay to join” or “internal referral” offers.',
+
+  // ---------- 在任成员 ----------
+  '在任成员': 'Active members',
+  '按所属部门分组，仅展示昵称、头像与公开职位信息；不展示 Steam ID、Discord ID 等隐私信息。':
+    'Grouped by department. Only nicknames, avatars and public rank information are shown; private details such as Steam ID or Discord ID are not displayed.',
+  '共 {count} 人': 'Total {count} members',
+  '暂无在任成员': 'No active members',
+  '暂无在任成员 · 招募中': 'No active members · Recruiting',
+  '团队正在招募中，欢迎关注新闻公告中的招募信息。':
+    'The team is recruiting. Watch the news announcements for recruitment posts.',
+  '查看新闻公告 →': 'View news →',
+
+  // ---------- 成员卡片 / 徽标 ----------
+  '{count} 人': '{count} members',
+  '未命名成员': 'Unnamed member',
+  '未分配职位': 'Unassigned role',
+  '未定级': 'Unranked',
+  'Steam 已验证': 'Steam verified',
+  'VTC 成员': 'VTC member',
+  '{name} 的头像': '{name} avatar',
+
+  // ---------- 完整职位一览 ----------
+  '完整职位一览': 'Full rank list',
+  '按部门分组 · 共 {count} 个职位 · 点击展开 / 收起':
+    'Grouped by department · {count} ranks in total · Click to expand / collapse',
+  '职位数据抓取于 2026-11，当前在任人数会随招募与离任变动。Lv.40 及以上为在任团队岗位，Lv.10 为注册司机基础等级。':
+    'Rank data was captured in 2026-11; current headcount changes as people join or leave. Lv.40 and above are active staff positions, and Lv.10 is the base level for registered drivers.',
+  '{count} 个职位': '{count} ranks',
+  'Lv.98–100 决策层': 'Lv.98–100 Decision makers',
+  'Lv.90–97 高级管理': 'Lv.90–97 Senior management',
+  'Lv.70–89 经理': 'Lv.70–89 Managers',
+  'Lv.40–69 组长 / 执行': 'Lv.40–69 Leads / Staff',
+  'Lv.10–39 入门 / 实习': 'Lv.10–39 Entry / Trainee',
+
+  // ---------- 职责层级 ----------
+  '决策层': 'Decision makers',
+  '高级管理': 'Senior management',
+  '经理': 'Manager',
+  '组长 / 执行': 'Lead / Staff',
+  '入门 / 实习': 'Entry / Trainee',
+
+  // ---------- 部门说明 ----------
+  '项目方向与最终决策': 'Project direction and final decisions',
+  '跨部门协调与社区运营': 'Cross-department coordination and community operations',
+  '论坛秩序与社区沟通': 'Forum order and community communication',
+  '游戏内违规处理与巡查': 'In-game rule enforcement and patrols',
+  '联运与社区活动': 'Convoys and community events',
+  '玩家问题与技术支持': 'Player issues and technical support',
+  '网站与游戏功能开发': 'Website and game feature development',
+  '新闻、社交与宣传素材': 'News, social media and promo material',
+  '多语言内容与本地化': 'Multilingual content and localization',
+  '版本与功能测试': 'Release and feature testing',
+  '日常运营与一线执行': 'Daily operations and frontline work',
+  '注册司机与社区基础成员': 'Registered drivers and community members',
+  '暂未匹配到部门': 'No department matched yet',
+
+  // ---------- 加载 / 错误 / 空状态 ----------
+  '正在加载团队数据…': 'Loading team data…',
+  '加载失败': 'Failed to load',
+  '重试': 'Retry',
+  '未知错误，请稍后重试': 'Unknown error. Please try again later.',
+
+  // ---------- 加入团队 ----------
+  '想加入团队？': 'Want to join the team?',
+  '请关注': 'Keep an eye on',
+  '新闻公告': 'News & announcements',
+  '中的招募信息。团队只在需要时开放岗位，招募流程与要求以公告为准。':
+    'for recruitment posts. Positions open only when needed; the process and requirements follow the announcement.',
+  '对职位或申请流程有疑问，可到论坛帮助版块咨询；举报与申诉请走专用入口，不要在公开帖中发布他人隐私。':
+    'If you have questions about ranks or the application process, ask in the forum help section. For reports and appeals, use the dedicated entry and never post other people’s private information publicly.',
+  '帮助中心': 'Help center',
+  '常见问题与操作指引': 'FAQs and how-to guides',
+  '举报与申诉': 'Reports & appeals',
+  '提交证据或对处理结果申诉': 'Submit evidence or appeal a decision',
+  '申请 / 咨询': 'Apply / Ask',
+  '到论坛帮助版块发帖': 'Post in the forum help section',
+  '更新日志': 'Changelog',
+  '查看站点功能与修复记录': 'Site features and fix history',
+};
+
 /** 员工判定：Lv.40 及以上（与 lib/permissions.ts 的 ROLE_LEVEL.STAFF 保持一致）。 */
 const STAFF_LEVEL = 40;
 const OTHER_DEPARTMENT = '其他';
+/** 兜底错误文案（渲染时按当前语言翻译）。 */
+const UNKNOWN_ERROR = '未知错误，请稍后重试';
 
 interface RoleRow {
   name: string;
@@ -224,7 +341,7 @@ function errorMessageOf(error: unknown): string {
     const message = (error as { message?: unknown }).message;
     if (typeof message === 'string' && message.trim()) return message;
   }
-  return '未知错误，请稍后重试';
+  return UNKNOWN_ERROR;
 }
 
 /** 按「已知部门顺序 -> 未知部门 -> 其他」排列。 */
@@ -275,30 +392,33 @@ function StatPill({ label, value }: { label: string; value: string }) {
 }
 
 function LevelBadge({ level }: { level: number }) {
+  const tr = useTr(EN);
   const tier = tierOf(level);
   return (
     <span
       className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold ${tier.className}`}
     >
       <span className="font-mono">Lv.{level}</span>
-      <span className="opacity-80">{tier.label}</span>
+      <span className="opacity-80">{tr(tier.label)}</span>
     </span>
   );
 }
 
 function SteamBadge() {
+  const tr = useTr(EN);
   return (
     <span className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-bold text-sky-300">
       <svg aria-hidden="true" className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
       </svg>
-      Steam 已验证
+      {tr('Steam 已验证')}
     </span>
   );
 }
 
 function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: string }) {
-  const name = member.display_name?.trim() || '未命名成员';
+  const tr = useTr(EN);
+  const name = member.display_name?.trim() || tr('未命名成员');
 
   return (
     <article className="rounded-lg border border-gray-700 bg-[#2c2d31] p-3 transition hover:border-blue-500/50">
@@ -311,7 +431,7 @@ function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: strin
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={member.avatar_url}
-              alt={`${name} 的头像`}
+              alt={tr('{name} 的头像', { name })}
               loading="lazy"
               className="absolute inset-0 h-full w-full object-cover"
               onError={(event) => {
@@ -327,7 +447,7 @@ function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: strin
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {member.role_level == null ? (
               <span className="rounded border border-gray-600 bg-[#18191c] px-1.5 py-0.5 text-[10px] font-bold text-gray-400">
-                未定级
+                {tr('未定级')}
               </span>
             ) : (
               <LevelBadge level={member.role_level} />
@@ -335,7 +455,7 @@ function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: strin
             {member.steam_verified === true && <SteamBadge />}
             {member.vtc_id != null && (
               <span className="inline-flex items-center rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-bold text-orange-300">
-                VTC 成员
+                {tr('VTC 成员')}
               </span>
             )}
           </div>
@@ -354,6 +474,7 @@ function DepartmentCard({
   members: MemberRow[];
   roleByName: ReadonlyMap<string, RoleRow>;
 }) {
+  const tr = useTr(EN);
   const meta = DEPARTMENT_META[department];
   const isLeadership = department === '顶层治理' || department === '高层';
 
@@ -375,19 +496,19 @@ function DepartmentCard({
             <h3 className="text-base font-black text-white">{department}</h3>
             {meta ? (
               <p className="text-[11px] text-gray-500">
-                {meta.en} · {meta.description}
+                {meta.en} · {tr(meta.description)}
               </p>
             ) : null}
           </div>
         </div>
         <span className="shrink-0 rounded-full border border-gray-700 bg-[#18191c] px-2 py-0.5 text-[10px] font-bold text-gray-500">
-          {members.length} 人
+          {tr('{count} 人', { count: members.length })}
         </span>
       </div>
 
       {members.length === 0 ? (
         <p className="mt-3 rounded-lg border border-dashed border-gray-700 bg-[#18191c]/50 px-3 py-3 text-center text-xs text-gray-500">
-          暂无在任成员 · 招募中
+          {tr('暂无在任成员 · 招募中')}
         </p>
       ) : (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -395,7 +516,7 @@ function DepartmentCard({
             const role = member.role ? roleByName.get(member.role) : undefined;
             const roleLabel = role
               ? splitDisplayName(role.display_name).zh
-              : member.role?.trim() || '未分配职位';
+              : member.role?.trim() || tr('未分配职位');
             return <MemberCard key={member.id} member={member} roleLabel={roleLabel} />;
           })}
         </div>
@@ -405,6 +526,7 @@ function DepartmentCard({
 }
 
 function LoadingBlock() {
+  const tr = useTr(EN);
   return (
     <div
       role="status"
@@ -415,40 +537,44 @@ function LoadingBlock() {
         aria-hidden="true"
         className="h-4 w-4 animate-spin rounded-full border-2 border-gray-600 border-t-blue-400"
       />
-      正在加载团队数据…
+      {tr('正在加载团队数据…')}
     </div>
   );
 }
 
 function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const tr = useTr(EN);
   return (
     <div role="alert" className="mt-4 rounded-xl border border-red-700 bg-red-900/20 p-5">
-      <h3 className="text-base font-black text-red-300">加载失败</h3>
-      <p className="mt-1 break-words text-sm text-red-200/80">{message}</p>
+      <h3 className="text-base font-black text-red-300">{tr('加载失败')}</h3>
+      <p className="mt-1 break-words text-sm text-red-200/80">
+        {message === UNKNOWN_ERROR ? tr(UNKNOWN_ERROR) : message}
+      </p>
       <button
         type="button"
         onClick={onRetry}
         className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
       >
-        重试
+        {tr('重试')}
       </button>
     </div>
   );
 }
 
 function EmptyBlock() {
+  const tr = useTr(EN);
   return (
     <div className="mt-4 rounded-xl border border-dashed border-gray-700 bg-[#2c2d31] p-8 text-center">
       <p aria-hidden="true" className="text-3xl">
         🛠️
       </p>
-      <h3 className="mt-2 text-lg font-black text-white">暂无在任成员</h3>
-      <p className="mt-1 text-sm text-gray-500">团队正在招募中，欢迎关注新闻公告中的招募信息。</p>
+      <h3 className="mt-2 text-lg font-black text-white">{tr('暂无在任成员')}</h3>
+      <p className="mt-1 text-sm text-gray-500">{tr('团队正在招募中，欢迎关注新闻公告中的招募信息。')}</p>
       <Link
         href="/news"
         className="mt-4 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500"
       >
-        查看新闻公告 →
+        {tr('查看新闻公告 →')}
       </Link>
     </div>
   );
@@ -491,6 +617,7 @@ function ActionLink({
 }
 
 export default function TeamPage() {
+  const tr = useTr(EN);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -581,17 +708,16 @@ export default function TeamPage() {
             RCT MP · Team &amp; Ranks
           </p>
           <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">团队与组织架构</h1>
+            <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">{tr('团队与组织架构')}</h1>
             <span className="text-lg font-bold text-gray-500 md:text-xl">/ Team &amp; Ranks</span>
           </div>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-400">
-            了解 RCT MP 的部门划分、职位等级与当前在任成员。本页用于说明社区内的沟通与汇报关系，
-            以及各职位的职责范围；等级只代表职责与站内权限，不代表玩家水平高低。
+            {tr('了解 RCT MP 的部门划分、职位等级与当前在任成员。本页用于说明社区内的沟通与汇报关系，以及各职位的职责范围；等级只代表职责与站内权限，不代表玩家水平高低。')}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-            <StatPill label="个部门" value={String(RANKS_BY_DEPARTMENT.length)} />
-            <StatPill label="个职位" value={String(RANKS.length)} />
-            <StatPill label="位在任成员" value={memberCountLabel} />
+            <StatPill label={tr('个部门')} value={String(RANKS_BY_DEPARTMENT.length)} />
+            <StatPill label={tr('个职位')} value={String(RANKS.length)} />
+            <StatPill label={tr('位在任成员')} value={memberCountLabel} />
           </div>
         </header>
 
@@ -604,7 +730,7 @@ export default function TeamPage() {
                   Before You Read
                 </p>
                 <h2 id="team-notice" className="mt-1 text-xl font-black text-white">
-                  关于这份组织架构图
+                  {tr('关于这份组织架构图')}
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
                   Communication chart, not a promotion chart.
@@ -615,40 +741,39 @@ export default function TeamPage() {
                     <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                     <p>
                       <strong className="font-bold text-gray-200">
-                        本页展示的是沟通 / 汇报关系，不是晋升阶梯。
+                        {tr('本页展示的是沟通 / 汇报关系，不是晋升阶梯。')}
                       </strong>
-                      职位等级用于说明职责范围与站内权限，不构成任何晋升承诺，也不代表玩家之间的高低。
+                      {tr('职位等级用于说明职责范围与站内权限，不构成任何晋升承诺，也不代表玩家之间的高低。')}
                     </p>
                   </li>
                   <li className="flex gap-2.5">
                     <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                     <p>
                       <strong className="font-bold text-gray-200">
-                        RCT MP 是玩家社区团队，全体成员均为志愿者；与 SCS Software、TruckersMP
-                        无隶属关系。
+                        {tr('RCT MP 是玩家社区团队，全体成员均为志愿者；与 SCS Software、TruckersMP 无隶属关系。')}
                       </strong>
-                      本站不是 TruckersMP 的官方分支，也不代表 SCS Software。
+                      {tr('本站不是 TruckersMP 的官方分支，也不代表 SCS Software。')}
                     </p>
                   </li>
                   <li className="flex gap-2.5">
                     <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                     <p>
                       <strong className="font-bold text-gray-200">
-                        职位体系参考 TruckersMP 官方 Meet the Team / Ranks 整理，
+                        {tr('职位体系参考 TruckersMP 官方 Meet the Team / Ranks 整理，')}
                       </strong>
-                      仅用于说明本社区的职位名称与职责；具体权限以站内实际设置为准。
+                      {tr('仅用于说明本社区的职位名称与职责；具体权限以站内实际设置为准。')}
                     </p>
                   </li>
                 </ul>
               </div>
 
               <div className="shrink-0 rounded-xl border border-gray-700 bg-[#18191c] p-4 lg:w-56">
-                <p className="text-sm font-black text-gray-200">志愿者社区</p>
+                <p className="text-sm font-black text-gray-200">{tr('志愿者社区')}</p>
                 <p className="mt-1 text-xs leading-5 text-gray-500">
-                  所有团队成员均为志愿者，不领取报酬。请尊重他们的时间与劳动。
+                  {tr('所有团队成员均为志愿者，不领取报酬。请尊重他们的时间与劳动。')}
                 </p>
                 <p className="mt-3 border-t border-gray-800 pt-3 text-[11px] leading-5 text-gray-600">
-                  招募不收取任何费用，请勿轻信“付费入队”或“内部推荐”。
+                  {tr('招募不收取任何费用，请勿轻信“付费入队”或“内部推荐”。')}
                 </p>
               </div>
             </div>
@@ -660,14 +785,13 @@ export default function TeamPage() {
           <div className="flex flex-wrap items-end justify-between gap-2 border-b border-gray-700 pb-3">
             <div>
               <h2 id="team-members" className="text-xl font-black text-white">
-                在任成员
+                {tr('在任成员')}
               </h2>
               <p className="mt-1 text-sm text-gray-500">
-                按所属部门分组，仅展示昵称、头像与公开职位信息；不展示 Steam ID、Discord ID
-                等隐私信息。
+                {tr('按所属部门分组，仅展示昵称、头像与公开职位信息；不展示 Steam ID、Discord ID 等隐私信息。')}
               </p>
             </div>
-            <span className="text-xs text-gray-600">共 {memberCountLabel} 人</span>
+            <span className="text-xs text-gray-600">{tr('共 {count} 人', { count: memberCountLabel })}</span>
           </div>
 
           {loading ? (
@@ -697,10 +821,10 @@ export default function TeamPage() {
             <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 md:px-5 [&::-webkit-details-marker]:hidden">
               <div>
                 <h2 id="team-ranks" className="text-xl font-black text-white">
-                  完整职位一览
+                  {tr('完整职位一览')}
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  按部门分组 · 共 {RANKS.length} 个职位 · 点击展开 / 收起
+                  {tr('按部门分组 · 共 {count} 个职位 · 点击展开 / 收起', { count: RANKS.length })}
                 </p>
               </div>
               <svg
@@ -716,16 +840,15 @@ export default function TeamPage() {
 
             <div className="border-t border-gray-700 px-4 py-4 md:px-5">
               <p className="text-xs leading-5 text-gray-500">
-                职位数据抓取于 2026-11，当前在任人数会随招募与离任变动。Lv.40
-                及以上为在任团队岗位，Lv.10 为注册司机基础等级。
+                {tr('职位数据抓取于 2026-11，当前在任人数会随招募与离任变动。Lv.40 及以上为在任团队岗位，Lv.10 为注册司机基础等级。')}
               </p>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
-                <TierPill level={100} label="Lv.98–100 决策层" />
-                <TierPill level={90} label="Lv.90–97 高级管理" />
-                <TierPill level={70} label="Lv.70–89 经理" />
-                <TierPill level={40} label="Lv.40–69 组长 / 执行" />
-                <TierPill level={10} label="Lv.10–39 入门 / 实习" />
+                <TierPill level={100} label={tr('Lv.98–100 决策层')} />
+                <TierPill level={90} label={tr('Lv.90–97 高级管理')} />
+                <TierPill level={70} label={tr('Lv.70–89 经理')} />
+                <TierPill level={40} label={tr('Lv.40–69 组长 / 执行')} />
+                <TierPill level={10} label={tr('Lv.10–39 入门 / 实习')} />
               </div>
 
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -734,7 +857,7 @@ export default function TeamPage() {
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="text-sm font-black text-white">{department}</h3>
                       <span className="rounded-full border border-gray-700 bg-[#18191c] px-2 py-0.5 text-[10px] font-bold text-gray-500">
-                        {ranks.length} 个职位
+                        {tr('{count} 个职位', { count: ranks.length })}
                       </span>
                     </div>
 
@@ -759,7 +882,7 @@ export default function TeamPage() {
                               <span
                                 className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${tier.className}`}
                               >
-                                {tier.label}
+                                {tr(tier.label)}
                               </span>
                               <span className="rounded bg-[#18191c] px-1.5 py-0.5 font-mono text-[10px] font-bold text-gray-400">
                                 Lv.{rank.level}
@@ -787,28 +910,28 @@ export default function TeamPage() {
                 Join the Team
               </p>
               <h2 id="team-join" className="mt-1 text-2xl font-black text-white">
-                想加入团队？
+                {tr('想加入团队？')}
               </h2>
               <p className="mt-2 text-sm leading-6 text-gray-400">
-                请关注
+                {tr('请关注')}
                 <Link
                   href="/news"
                   className="mx-1 font-bold text-blue-400 underline decoration-blue-500/30 underline-offset-2 transition hover:text-blue-300"
                 >
-                  新闻公告
+                  {tr('新闻公告')}
                 </Link>
-                中的招募信息。团队只在需要时开放岗位，招募流程与要求以公告为准。
+                {tr('中的招募信息。团队只在需要时开放岗位，招募流程与要求以公告为准。')}
               </p>
               <p className="mt-3 text-xs leading-5 text-gray-500">
-                对职位或申请流程有疑问，可到论坛帮助版块咨询；举报与申诉请走专用入口，不要在公开帖中发布他人隐私。
+                {tr('对职位或申请流程有疑问，可到论坛帮助版块咨询；举报与申诉请走专用入口，不要在公开帖中发布他人隐私。')}
               </p>
             </div>
 
             <div className="grid shrink-0 gap-2 sm:grid-cols-2 lg:w-[420px]">
-              <ActionLink href="/support" title="帮助中心" description="常见问题与操作指引" />
-              <ActionLink href="/reports" title="举报与申诉" description="提交证据或对处理结果申诉" />
-              <ActionLink href="/forum/3" title="申请 / 咨询" description="到论坛帮助版块发帖" />
-              <ActionLink href="/changelog" title="更新日志" description="查看站点功能与修复记录" />
+              <ActionLink href="/support" title={tr('帮助中心')} description={tr('常见问题与操作指引')} />
+              <ActionLink href="/reports" title={tr('举报与申诉')} description={tr('提交证据或对处理结果申诉')} />
+              <ActionLink href="/forum/3" title={tr('申请 / 咨询')} description={tr('到论坛帮助版块发帖')} />
+              <ActionLink href="/changelog" title={tr('更新日志')} description={tr('查看站点功能与修复记录')} />
             </div>
           </div>
         </section>

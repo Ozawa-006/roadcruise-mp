@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import Navbar from '../components/Navbar';
 import Link from 'next/link';
 import { plainTextExcerpt } from '@/lib/rich-text';
+import { useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,11 +27,11 @@ type Announcement = {
 /** 轮播摘要长度：保持 2 行以内 */
 const ANNOUNCEMENT_SUMMARY_LENGTH = 100;
 
-/** 公告创建时间统一按中文环境展示 */
-function formatAnnouncementTime(value: string | null): string {
-  if (!value) return '时间待定';
+/** 公告创建时间统一按中文环境展示；空值/非法值使用调用方传入的本地化占位文案。 */
+function formatAnnouncementTime(value: string | null, fallback: string): string {
+  if (!value) return fallback;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '时间待定';
+  if (Number.isNaN(date.getTime())) return fallback;
   return date.toLocaleString('zh-CN');
 }
 
@@ -45,7 +46,88 @@ type UpcomingEvent = {
   registered_count: number;
 };
 
+/** 首页查询 events 表时的最小行字段（仅用于替换 any 标注）。 */
+type EventRow = {
+  id: number | string;
+  title: string;
+  start_at: string;
+  location: string | null;
+  server_id: string | null;
+  capacity: number | null;
+};
+
+/**
+ * 首页界面文案（以中文原文为 key），按页面区块组织。
+ * 只翻译 UI 文案；公告标题/正文、活动标题、服务器名等数据保持原文。
+ */
+const EN = {
+  // Hero / 公告轮播
+  '官方公告配图': 'Announcement cover image',
+  '公告': 'Announcement',
+  '未命名公告': 'Untitled announcement',
+  '时间待定': 'TBD',
+  '发布于 {publishedAt}': 'Published {publishedAt}',
+  '阅读全文': 'Read more',
+  '查看更多公告 →': 'View all announcements →',
+
+  // VTC Events 区块
+  '查看全部活动 →': 'View all events →',
+  '暂无即将开始的活动，去活动页看看 →': 'No upcoming events yet — visit the events page →',
+  '地点待定': 'Location TBD',
+  '服务器：{server}': 'Server: {server}',
+  '报名': 'Registered',
+  '{count} 人': '{count} people',
+
+  // 我们的服务
+  '我们的服务': 'Our services',
+  '模拟': 'Simulation',
+  '我们非常重视模拟体验，致力于为卡友提供最真实的驾驶环境。': 'We care deeply about simulation and strive to give truckers the most realistic driving experience.',
+  'VTC 系统': 'VTC system',
+  '完整的虚拟车队管理系统正在开发中，敬请期待。': 'A complete virtual trucking company management system is in development. Stay tuned.',
+  '调解': 'Moderation',
+  '我们的管理团队全年无休，随时处理违规举报，维护社区公平。': 'Our staff team is always on duty, handling reports and keeping the community fair.',
+  '支持': 'Support',
+  '遇到技术问题或社区疑问？我们的支持团队会尽快为您解答。': 'Technical issue or community question? Our support team will help you as soon as possible.',
+  '社区互动': 'Community',
+  '通过 Discord、论坛等多种渠道，与全球玩家分享你的卡车生活。': 'Share your trucking life with players worldwide via Discord, the forum and more.',
+  '创建您自己的活动': 'Create your own events',
+  '想自己办联运？我们有专门的预约系统帮您安排。': 'Want to host a convoy? Our dedicated booking system helps you plan it.',
+
+  // 数据统计
+  '注册用户': 'Registered users',
+  '发布的活动': 'Published events',
+  '团队成员': 'Team members',
+  '认证车队 (VTC)': 'Verified VTCs',
+
+  // 页脚
+  '我们是一个充满热情的 ETS2 社区，致力于提供真实的联运体验和难忘的旅程。': 'We are a passionate ETS2 community dedicated to realistic convoys and unforgettable journeys.',
+  '有用链接': 'Useful links',
+  '论坛首页': 'Forum home',
+  '新闻公告': 'News & announcements',
+  '更新日志': 'Changelog',
+  '实时地图': 'Live map',
+  '社区规则': 'Community rules',
+  '举报与申诉': 'Reports & appeals',
+  '帮助中心': 'Help center',
+  '客户端下载': 'Client download',
+  '条款与政策': 'Terms & policies',
+  '隐私政策 (Privacy)': 'Privacy Policy',
+  '服务条款 (Terms of Service)': 'Terms of Service',
+  '行为准则 (Code of Conduct)': 'Code of Conduct',
+  '服务器状态 (Status)': 'Server status',
+  '支持我们': 'Support us',
+  '如果您喜欢我们的工作，并希望支持服务器的日常维护，欢迎联系我们。': 'If you like our work and would like to support day-to-day server maintenance, get in touch.',
+  '联系我们': 'Contact us',
+  '版权所有.': 'All rights reserved.',
+
+  // 页脚底部法律链接
+  '隐私政策': 'Privacy Policy',
+  '服务条款': 'Terms of Service',
+  '行为准则': 'Code of Conduct',
+} satisfies Record<string, string>;
+
 export default function Home() {
+  const tr = useTr(EN);
   const [latestAnnouncements, setLatestAnnouncements] = useState<Announcement[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [stats, setStats] = useState({ users: 0, vtc: 0, events: 0, team: 0 });
@@ -93,8 +175,9 @@ export default function Home() {
           .limit(3);
 
         if (eventsError || !eventsData || eventsData.length === 0) return;
+        const events = eventsData as EventRow[];
 
-        const eventIds = eventsData.map((event: any) => event.id);
+        const eventIds = events.map((event) => event.id);
         const { data: countsData } = await supabase
           .from('event_registration_counts')
           .select('event_id, registered_count')
@@ -106,7 +189,7 @@ export default function Home() {
         }
 
         setUpcomingEvents(
-          eventsData.map((event: any) => ({
+          events.map((event) => ({
             id: Number(event.id),
             title: event.title,
             start_at: event.start_at,
@@ -170,7 +253,7 @@ export default function Home() {
                 <img 
                   src={item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'} 
                   className="w-full h-full object-cover"
-                  alt={item.title?.trim() || '官方公告配图'}
+                  alt={item.title?.trim() || tr('官方公告配图')}
                 />
                 <div className="absolute inset-0 bg-black/60"></div>
               </div>
@@ -197,12 +280,12 @@ export default function Home() {
               {/* 右侧：动态轮播的官方公告 */}
               <div className="w-full md:w-1/2 flex flex-col items-center md:items-start justify-center text-center md:text-left h-64 md:h-[21rem] relative pointer-events-auto">
                 {latestAnnouncements.map((item, index) => {
-                  const typeLabel = item.type?.trim() || '公告';
-                  const title = item.title?.trim() || '未命名公告';
+                  const typeLabel = item.type?.trim() || tr('公告');
+                  const title = item.title?.trim() || tr('未命名公告');
                   const summary = item.content
                     ? plainTextExcerpt(item.content, ANNOUNCEMENT_SUMMARY_LENGTH)
                     : '';
-                  const publishedAt = formatAnnouncementTime(item.created_at);
+                  const publishedAt = formatAnnouncementTime(item.created_at, tr('时间待定'));
 
                   return (
                     <div
@@ -227,19 +310,19 @@ export default function Home() {
                           {summary}
                         </p>
                       )}
-                      <p className="mb-2 md:mb-4 text-xs text-gray-400">发布于 {publishedAt}</p>
+                      <p className="mb-2 md:mb-4 text-xs text-gray-400">{tr('发布于 {publishedAt}', { publishedAt })}</p>
                       <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
                         <Link
                           href={`/news/${item.id}`}
                           className="inline-block bg-orange-500 hover:bg-orange-600 text-white px-6 md:px-8 py-2 md:py-3 rounded-md font-bold text-sm md:text-base transition shadow-lg transform hover:scale-105"
                         >
-                          阅读全文
+                          {tr('阅读全文')}
                         </Link>
                         <Link
                           href="/news"
                           className="text-sm font-bold text-gray-300 hover:text-white transition"
                         >
-                          查看更多公告 →
+                          {tr('查看更多公告 →')}
                         </Link>
                       </div>
                     </div>
@@ -292,14 +375,14 @@ export default function Home() {
               VTC Events
             </h2>
             <Link href="/events" className="text-sm text-blue-400 hover:text-blue-300 transition">
-              查看全部活动 →
+              {tr('查看全部活动 →')}
             </Link>
           </div>
           
           {upcomingEvents.length === 0 ? (
             <div className="bg-[#2c2d31] border border-gray-700 rounded-lg p-8 text-center shadow-lg">
               <Link href="/events" className="text-sm text-gray-400 hover:text-blue-400 transition">
-                暂无即将开始的活动，去活动页看看 →
+                {tr('暂无即将开始的活动，去活动页看看 →')}
               </Link>
             </div>
           ) : (
@@ -319,22 +402,22 @@ export default function Home() {
                       </p>
                       <p className="flex items-start gap-2">
                         <span className="text-blue-400">📍</span>
-                        <span>{event.location || '地点待定'}</span>
+                        <span>{event.location || tr('地点待定')}</span>
                       </p>
                       {event.server_id && (
                         <p className="flex items-start gap-2">
                           <span className="text-blue-400">🖥️</span>
-                          <span>服务器：{event.server_id}</span>
+                          <span>{tr('服务器：{server}', { server: event.server_id })}</span>
                         </p>
                       )}
                     </div>
                   </div>
                   <div className="flex justify-between items-center text-xs text-gray-500 mt-4 pt-4 border-t border-gray-700/50">
-                    <span>报名</span>
+                    <span>{tr('报名')}</span>
                     <span className="text-orange-400 font-mono">
                       {event.capacity
                         ? `${event.registered_count} / ${event.capacity}`
-                        : `${event.registered_count} 人`}
+                        : tr('{count} 人', { count: event.registered_count })}
                     </span>
                   </div>
                 </Link>
@@ -347,32 +430,32 @@ export default function Home() {
       {/* 第三区块：我们的服务 */}
       <section className="py-16 max-w-7xl mx-auto px-6">
         <h2 className="text-2xl font-bold text-white text-center mb-10">
-          <span className="border-b-2 border-blue-500 pb-2">我们的服务</span>
+          <span className="border-b-2 border-blue-500 pb-2">{tr('我们的服务')}</span>
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">模拟</h3>
-            <p className="text-sm text-gray-400">我们非常重视模拟体验，致力于为卡友提供最真实的驾驶环境。</p>
+            <h3 className="text-lg font-bold text-white mb-2">{tr('模拟')}</h3>
+            <p className="text-sm text-gray-400">{tr('我们非常重视模拟体验，致力于为卡友提供最真实的驾驶环境。')}</p>
           </div>
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">VTC 系统</h3>
-            <p className="text-sm text-gray-400">完整的虚拟车队管理系统正在开发中，敬请期待。</p>
+            <h3 className="text-lg font-bold text-white mb-2">{tr('VTC 系统')}</h3>
+            <p className="text-sm text-gray-400">{tr('完整的虚拟车队管理系统正在开发中，敬请期待。')}</p>
           </div>
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">调解</h3>
-            <p className="text-sm text-gray-400">我们的管理团队全年无休，随时处理违规举报，维护社区公平。</p>
+            <h3 className="text-lg font-bold text-white mb-2">{tr('调解')}</h3>
+            <p className="text-sm text-gray-400">{tr('我们的管理团队全年无休，随时处理违规举报，维护社区公平。')}</p>
           </div>
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">支持</h3>
-            <p className="text-sm text-gray-400">遇到技术问题或社区疑问？我们的支持团队会尽快为您解答。</p>
+            <h3 className="text-lg font-bold text-white mb-2">{tr('支持')}</h3>
+            <p className="text-sm text-gray-400">{tr('遇到技术问题或社区疑问？我们的支持团队会尽快为您解答。')}</p>
           </div>
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">社区互动</h3>
-            <p className="text-sm text-gray-400">通过 Discord、论坛等多种渠道，与全球玩家分享你的卡车生活。</p>
+            <h3 className="text-lg font-bold text-white mb-2">{tr('社区互动')}</h3>
+            <p className="text-sm text-gray-400">{tr('通过 Discord、论坛等多种渠道，与全球玩家分享你的卡车生活。')}</p>
           </div>
           <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">创建您自己的活动</h3>
-            <p className="text-sm text-gray-400">想自己办联运？我们有专门的预约系统帮您安排。</p>
+            <h3 className="text-lg font-bold text-white mb-2">{tr('创建您自己的活动')}</h3>
+            <p className="text-sm text-gray-400">{tr('想自己办联运？我们有专门的预约系统帮您安排。')}</p>
           </div>
         </div>
       </section>
@@ -382,19 +465,19 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           <div>
             <p className="text-4xl font-black text-white">{stats.users.toLocaleString()}</p>
-            <p className="text-sm text-gray-500 mt-2">注册用户</p>
+            <p className="text-sm text-gray-500 mt-2">{tr('注册用户')}</p>
           </div>
           <div>
             <p className="text-4xl font-black text-white">{stats.events}</p>
-            <p className="text-sm text-gray-500 mt-2">发布的活动</p>
+            <p className="text-sm text-gray-500 mt-2">{tr('发布的活动')}</p>
           </div>
           <div>
             <p className="text-4xl font-black text-white">{stats.team}</p>
-            <p className="text-sm text-gray-500 mt-2">团队成员</p>
+            <p className="text-sm text-gray-500 mt-2">{tr('团队成员')}</p>
           </div>
           <div>
             <p className="text-4xl font-black text-white">{stats.vtc}</p>
-            <p className="text-sm text-gray-500 mt-2">认证车队 (VTC)</p>
+            <p className="text-sm text-gray-500 mt-2">{tr('认证车队 (VTC)')}</p>
           </div>
         </div>
       </section>
@@ -407,59 +490,59 @@ export default function Home() {
               Road Cruise Transport MP
             </Link>
             <p className="text-sm text-gray-500 leading-relaxed">
-              我们是一个充满热情的 ETS2 社区，致力于提供真实的联运体验和难忘的旅程。
+              {tr('我们是一个充满热情的 ETS2 社区，致力于提供真实的联运体验和难忘的旅程。')}
             </p>
           </div>
 
           <div>
-            <h4 className="text-white font-bold mb-4">有用链接</h4>
+            <h4 className="text-white font-bold mb-4">{tr('有用链接')}</h4>
             <ul className="space-y-2 text-sm text-gray-400">
-              <li><Link href="/forum" className="hover:text-blue-400">论坛首页</Link></li>
-              <li><Link href="/news" className="hover:text-blue-400">新闻公告</Link></li>
-              <li><Link href="/team" className="hover:text-blue-400">团队成员</Link></li>
-              <li><Link href="/changelog" className="hover:text-blue-400">更新日志</Link></li>
-              <li><Link href="/rules" className="hover:text-blue-400">社区规则</Link></li>
-              <li><Link href="/map" className="hover:text-blue-400">实时地图</Link></li>
-              <li><Link href="/reports" className="hover:text-blue-400">举报与申诉</Link></li>
-              <li><Link href="/support" className="hover:text-blue-400">帮助中心</Link></li>
-              <li><Link href="/download" className="hover:text-blue-400">客户端下载</Link></li>
+              <li><Link href="/forum" className="hover:text-blue-400">{tr('论坛首页')}</Link></li>
+              <li><Link href="/news" className="hover:text-blue-400">{tr('新闻公告')}</Link></li>
+              <li><Link href="/team" className="hover:text-blue-400">{tr('团队成员')}</Link></li>
+              <li><Link href="/changelog" className="hover:text-blue-400">{tr('更新日志')}</Link></li>
+              <li><Link href="/rules" className="hover:text-blue-400">{tr('社区规则')}</Link></li>
+              <li><Link href="/map" className="hover:text-blue-400">{tr('实时地图')}</Link></li>
+              <li><Link href="/reports" className="hover:text-blue-400">{tr('举报与申诉')}</Link></li>
+              <li><Link href="/support" className="hover:text-blue-400">{tr('帮助中心')}</Link></li>
+              <li><Link href="/download" className="hover:text-blue-400">{tr('客户端下载')}</Link></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="text-white font-bold mb-4">条款与政策</h4>
+            <h4 className="text-white font-bold mb-4">{tr('条款与政策')}</h4>
             <ul className="space-y-2 text-sm text-gray-400">
-              <li><Link href="/privacy" className="hover:text-blue-400">隐私政策 (Privacy)</Link></li>
-              <li><Link href="/terms" className="hover:text-blue-400">服务条款 (Terms of Service)</Link></li>
-              <li><Link href="/code-of-conduct" className="hover:text-blue-400">行为准则 (Code of Conduct)</Link></li>
-              <li><Link href="/servers" className="hover:text-blue-400">服务器状态 (Status)</Link></li>
+              <li><Link href="/privacy" className="hover:text-blue-400">{tr('隐私政策 (Privacy)')}</Link></li>
+              <li><Link href="/terms" className="hover:text-blue-400">{tr('服务条款 (Terms of Service)')}</Link></li>
+              <li><Link href="/code-of-conduct" className="hover:text-blue-400">{tr('行为准则 (Code of Conduct)')}</Link></li>
+              <li><Link href="/servers" className="hover:text-blue-400">{tr('服务器状态 (Status)')}</Link></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="text-white font-bold mb-4">支持我们</h4>
+            <h4 className="text-white font-bold mb-4">{tr('支持我们')}</h4>
             <p className="text-sm text-gray-400 mb-4">
-              如果您喜欢我们的工作，并希望支持服务器的日常维护，欢迎联系我们。
+              {tr('如果您喜欢我们的工作，并希望支持服务器的日常维护，欢迎联系我们。')}
             </p>
             <Link
               href="/forum/3"
               className="inline-block bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded font-bold text-sm transition"
             >
-              联系我们
+              {tr('联系我们')}
             </Link>
           </div>
         </div>
 
         <div className="max-w-7xl mx-auto px-6 border-t border-gray-800/50 pt-6 flex flex-col md:flex-row justify-between items-center text-xs text-gray-600">
-          <p>© {new Date().getFullYear()} Road Cruise Transport MP. 版权所有.</p>
+          <p>© {new Date().getFullYear()} Road Cruise Transport MP. {tr('版权所有.')}</p>
           <div className="flex space-x-4 mt-4 md:mt-0">
-            <Link href="/privacy" className="hover:text-gray-300">隐私政策</Link>
+            <Link href="/privacy" className="hover:text-gray-300">{tr('隐私政策')}</Link>
             <span>|</span>
-            <Link href="/terms" className="hover:text-gray-300">服务条款</Link>
+            <Link href="/terms" className="hover:text-gray-300">{tr('服务条款')}</Link>
             <span>|</span>
-            <Link href="/code-of-conduct" className="hover:text-gray-300">行为准则</Link>
+            <Link href="/code-of-conduct" className="hover:text-gray-300">{tr('行为准则')}</Link>
             <span>|</span>
-            <Link href="/rules" className="hover:text-gray-300">社区规则</Link>
+            <Link href="/rules" className="hover:text-gray-300">{tr('社区规则')}</Link>
           </div>
         </div>
       </footer>

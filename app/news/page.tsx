@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
+import { useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,6 +13,39 @@ const supabase = createClient(
 
 const PAGE_SIZE = 10;
 const SUMMARY_LENGTH = 120;
+
+/** 英文文案表（中文原文为 key）：公告正文/标题、公告分类名等数据库内容不翻译。 */
+const EN: Record<string, string> = {
+  // ---- 页面标题区 ----
+  '新闻公告': 'News & Announcements',
+  // 中文标题后自带英文副标题，英文界面下标题已含 News，副标题留空避免重复。
+  '/ News': '',
+  'RCT MP 社区的最新公告、版本更新与活动资讯都会在这里发布。':
+    'The latest announcements, version updates, and event news from the RCT MP community are published here.',
+  '共 {n} 条 · 每页 {size} 条': '{n} items · {size} per page',
+
+  // ---- 加载 / 错误 / 空状态 ----
+  '正在获取新闻公告…': 'Loading news and announcements…',
+  '加载失败，请稍后重试': 'Failed to load. Please try again later.',
+  '暂时无法获取新闻公告列表，请检查网络后重试。':
+    'Unable to load the news list right now. Please check your connection and try again.',
+  '重新加载': 'Reload',
+  '暂无新闻公告': 'No news or announcements yet',
+  '新的公告与新闻会在这里发布，请稍后再来查看。':
+    'New announcements and news will be published here. Please check back later.',
+
+  // ---- 列表项 ----
+  '未命名公告': 'Untitled announcement',
+  '暂无正文内容。': 'No content yet.',
+  '阅读全文': 'Read more',
+
+  // ---- 分页 ----
+  '上一页': 'Previous',
+  '下一页': 'Next',
+  '第': 'Page',
+  '页': '',
+  '新闻公告分页': 'News and announcements pagination',
+};
 
 type Announcement = {
   id: number;
@@ -51,36 +85,39 @@ function badgeClass(type: string | null): string {
 }
 
 function LoadingState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-gray-700 bg-[#2c2d31] p-10 text-center">
       <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500" />
-      <p className="mt-4 text-sm text-gray-400">正在获取新闻公告…</p>
+      <p className="mt-4 text-sm text-gray-400">{tr('正在获取新闻公告…')}</p>
     </div>
   );
 }
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-red-900/60 bg-[#2c2d31] p-8 text-center md:p-10">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 font-mono text-lg font-bold text-red-300">
         !
       </div>
-      <p className="mt-4 text-lg font-bold text-white">加载失败，请稍后重试</p>
+      <p className="mt-4 text-lg font-bold text-white">{tr('加载失败，请稍后重试')}</p>
       <p className="mt-2 text-sm text-gray-500">
-        暂时无法获取新闻公告列表，请检查网络后重试。
+        {tr('暂时无法获取新闻公告列表，请检查网络后重试。')}
       </p>
       <button
         type="button"
         onClick={onRetry}
         className="mt-5 inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
       >
-        重新加载
+        {tr('重新加载')}
       </button>
     </div>
   );
 }
 
 function EmptyState() {
+  const tr = useTr(EN);
   return (
     <div className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/60 p-10 text-center md:p-14">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-gray-700 bg-[#232428]">
@@ -99,15 +136,16 @@ function EmptyState() {
           />
         </svg>
       </div>
-      <p className="mt-4 text-base font-bold text-white">暂无新闻公告</p>
+      <p className="mt-4 text-base font-bold text-white">{tr('暂无新闻公告')}</p>
       <p className="mt-2 text-sm text-gray-500">
-        新的公告与新闻会在这里发布，请稍后再来查看。
+        {tr('新的公告与新闻会在这里发布，请稍后再来查看。')}
       </p>
     </div>
   );
 }
 
 export default function NewsListPage() {
+  const tr = useTr(EN);
   const [items, setItems] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -173,15 +211,15 @@ export default function NewsListPage() {
         <div className="mb-6 border-b border-gray-700 pb-5 md:mb-8">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">
-              新闻公告
+              {tr('新闻公告')}
             </h1>
-            <span className="text-lg font-bold text-gray-500 md:text-xl">/ News</span>
+            <span className="text-lg font-bold text-gray-500 md:text-xl">{tr('/ News')}</span>
           </div>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-            RCT MP 社区的最新公告、版本更新与活动资讯都会在这里发布。
+            {tr('RCT MP 社区的最新公告、版本更新与活动资讯都会在这里发布。')}
           </p>
           {!loading && !failed && items.length > 0 ? (
-            <p className="mt-2 text-xs text-gray-600">共 {items.length} 条 · 每页 {PAGE_SIZE} 条</p>
+            <p className="mt-2 text-xs text-gray-600">{tr('共 {n} 条 · 每页 {size} 条', { n: items.length, size: PAGE_SIZE })}</p>
           ) : null}
         </div>
 
@@ -196,7 +234,7 @@ export default function NewsListPage() {
             <div className="space-y-4">
               {pageItems.map((item) => {
                 const type = item.type?.trim() || '公告';
-                const title = item.title?.trim() || '未命名公告';
+                const title = item.title?.trim() || tr('未命名公告');
                 const summary = summarize(item.content);
 
                 return (
@@ -237,10 +275,10 @@ export default function NewsListPage() {
                         {title}
                       </h2>
                       <p className="mt-2 line-clamp-2 text-sm leading-6 text-gray-400">
-                        {summary || '暂无正文内容。'}
+                        {summary || tr('暂无正文内容。')}
                       </p>
                       <span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-blue-400 transition group-hover:text-blue-300">
-                        阅读全文
+                        {tr('阅读全文')}
                         <span aria-hidden="true">→</span>
                       </span>
                     </div>
@@ -252,7 +290,7 @@ export default function NewsListPage() {
             {totalPages > 1 ? (
               <nav
                 className="mt-8 flex flex-wrap items-center justify-center gap-3"
-                aria-label="新闻公告分页"
+                aria-label={tr('新闻公告分页')}
               >
                 <button
                   type="button"
@@ -260,12 +298,12 @@ export default function NewsListPage() {
                   disabled={currentPage <= 1}
                   className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600 disabled:hover:border-gray-700"
                 >
-                  上一页
+                  {tr('上一页')}
                 </button>
                 <span className="text-sm text-gray-500">
-                  第{' '}
+                  {tr('第')}{' '}
                   <span className="font-mono text-gray-200">{currentPage}</span> /{' '}
-                  <span className="font-mono text-gray-400">{totalPages}</span> 页
+                  <span className="font-mono text-gray-400">{totalPages}</span> {tr('页')}
                 </span>
                 <button
                   type="button"
@@ -273,7 +311,7 @@ export default function NewsListPage() {
                   disabled={currentPage >= totalPages}
                   className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600 disabled:hover:border-gray-700"
                 >
-                  下一页
+                  {tr('下一页')}
                 </button>
               </nav>
             ) : null}

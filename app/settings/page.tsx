@@ -5,6 +5,7 @@ import { createClient, type User } from '@supabase/supabase-js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
+import { useTr } from '@/components/I18nProvider';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +20,127 @@ const AVATAR_EXTENSION_BY_MIME: Partial<Record<string, string>> = {
 };
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 const SUPABASE_AVATAR_PUBLIC_PREFIX = '/storage/v1/object/public/avatars/';
+
+/** 页面文案：中文原文为 key，英文缺失时回退中文。 */
+const EN: Record<string, string> = {
+  // 通用状态
+  '加载中...': 'Loading...',
+  '加载配置中...': 'Loading settings...',
+  '玩家': 'Player',
+  '未知错误': 'Unknown error',
+
+  // 左侧边栏
+  '个人资料': 'Profile',
+  '账号设置': 'Account Settings',
+
+  // 资料表单标题与邮箱
+  '编辑个人资料': 'Edit Profile',
+  '登录邮箱 (Email)：': 'Login email:',
+
+  // 头像
+  '头像 (Avatar)': 'Avatar',
+  '头像预览': 'Avatar preview',
+  '选择图片...': 'Choose an image...',
+  '支持 JPG/PNG/WebP，最大 2MB': 'JPG/PNG/WebP only, max 2MB',
+  '新头像待保存': 'New avatar pending save',
+  '取消选择': 'Cancel selection',
+  '移除中...': 'Removing...',
+  '移除头像': 'Remove avatar',
+
+  // 语言
+  '语言 (Languages)': 'Languages',
+  '简体中文': 'Simplified Chinese',
+  '简体中文 + English': 'Simplified Chinese + English',
+  'English': 'English',
+  '简中 + 英语 + 俄语': 'Simplified Chinese + English + Russian',
+
+  // 昵称与简介
+  '昵称 (Display Name)': 'Display Name',
+  '关于我 (Bio)': 'About Me (Bio)',
+  '简单介绍一下你自己...': 'Tell us a little about yourself...',
+
+  // 社交媒体
+  '社交媒体 (Social Information)': 'Social Information',
+  'Twitch 链接': 'Twitch link',
+  'Twitter (X) 链接': 'Twitter (X) link',
+  'YouTube 频道': 'YouTube channel',
+  'World of Trucks 链接': 'World of Trucks link',
+
+  // Steam 验证
+  'Steam 账号验证': 'Steam Verification',
+  '✅ 已验证': '✅ Verified',
+  '❌ 未绑定': '❌ Not linked',
+  '重新验证': 'Verify again',
+  '前往验证': 'Verify now',
+
+  // 头像校验与保存提示
+  '❌ 头像上传失败：仅支持 JPG/PNG/WebP 格式的图片。':
+    '❌ Avatar upload failed: only JPG/PNG/WebP images are supported.',
+  '❌ 头像上传失败：图片不能超过 2MB。': '❌ Avatar upload failed: image must be 2MB or smaller.',
+  '保存失败：登录状态已失效，请重新登录。':
+    'Save failed: your session has expired, please sign in again.',
+  '保存失败：{label} 链接必须以 http:// 或 https:// 开头。':
+    'Save failed: the {label} link must start with http:// or https://.',
+  '保存失败：仅支持 JPG/PNG/WebP 格式的图片。':
+    'Save failed: only JPG/PNG/WebP images are supported.',
+  '保存失败：{message}': 'Save failed: {message}',
+  '🎉 个人资料已保存！': '🎉 Profile saved!',
+
+  // 移除头像提示
+  '移除头像失败：登录状态已失效，请重新登录。':
+    'Remove avatar failed: your session has expired, please sign in again.',
+  '当前没有可移除的头像。': 'There is no avatar to remove.',
+  '确定要移除当前头像吗？未保存的新头像选择也会被取消。':
+    'Remove your current avatar? Any unsaved new selection will also be discarded.',
+  '✅ 头像已移除。': '✅ Avatar removed.',
+  '移除头像失败：{message}': 'Remove avatar failed: {message}',
+
+  // Steam 绑定提示
+  '正在跳转 Steam 验证...': 'Redirecting to Steam verification...',
+  '登录状态已失效，请重新登录后再绑定 Steam。':
+    'Your session has expired. Please sign in again before linking Steam.',
+  '无法发起 Steam 验证，请稍后重试。': 'Unable to start Steam verification, please try again later.',
+  '网络错误，无法发起 Steam 验证，请稍后重试。':
+    'Network error: unable to start Steam verification, please try again later.',
+  '🎉 Steam 账号验证成功！': '🎉 Steam account verified!',
+  '❌ 该账号已绑定其它 Steam 账号，如需换绑请联系管理员。':
+    '❌ This account is already linked to another Steam account. Contact an administrator to change it.',
+  '❌ 该 Steam 账号已被其它社区账号绑定。':
+    '❌ This Steam account is already linked to another community account.',
+  '❌ Steam 绑定失败，请稍后重试或联系管理员。':
+    '❌ Steam binding failed, please try again later or contact an administrator.',
+  '❌ 验证会话已过期或无效，请重新发起 Steam 验证。':
+    '❌ The verification session has expired or is invalid. Please start Steam verification again.',
+  '❌ Steam 接口暂时不可用，请稍后再试。':
+    '❌ The Steam API is temporarily unavailable, please try again later.',
+  '❌ 该 Steam 账号不满足正版 ETS2 / 2 小时门槛。':
+    '❌ This Steam account does not meet the licensed ETS2 / 2-hour requirement.',
+  '❌ 无法读取 Steam 游戏库，请把个人资料与游戏详情设为公开。':
+    '❌ Unable to read the Steam library. Please set your profile and game details to public.',
+  '❌ Steam 绑定失败，请稍后重试。': '❌ Steam binding failed, please try again later.',
+
+  // 修改密码
+  '账号安全': 'Account Security',
+  '修改登录密码需要先验证当前密码；修改成功后请使用新密码重新登录。':
+    'Changing your password requires verifying the current one first. After changing it, sign in again with the new password.',
+  '当前密码': 'Current password',
+  '新密码（至少 8 位）': 'New password (at least 8 characters)',
+  '确认新密码': 'Confirm new password',
+  '修改中...': 'Updating...',
+  '修改密码': 'Change password',
+  '保存中...': 'Saving...',
+  '保存更改': 'Save changes',
+  '❌ 未获取到登录邮箱，请重新登录。':
+    '❌ Login email not found, please sign in again.',
+  '❌ 新密码至少需要 8 个字符。': '❌ The new password must be at least 8 characters.',
+  '❌ 两次输入的新密码不一致。': '❌ The two new passwords do not match.',
+  '❌ 新密码不能与当前密码相同。':
+    '❌ The new password cannot be the same as the current password.',
+  '❌ 当前密码不正确。': '❌ The current password is incorrect.',
+  '✅ 密码已更新，请使用新密码登录。':
+    '✅ Password updated. Please sign in with your new password.',
+  '❌ 修改失败：{message}': '❌ Update failed: {message}',
+};
 
 function isAllowedAvatarType(type: string): boolean {
   return (ALLOWED_AVATAR_TYPES as readonly string[]).includes(type);
@@ -50,7 +172,10 @@ function getOwnedAvatarObjectPath(url: string, userId: string): string | null {
   }
 }
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(
+  error: unknown,
+  translate: (zh: string) => string = (zh) => zh
+): string {
   if (typeof error === 'string') return error;
 
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -58,7 +183,7 @@ function getErrorMessage(error: unknown): string {
     if (typeof message === 'string' && message) return message;
   }
 
-  return '未知错误';
+  return translate('未知错误');
 }
 
 function SettingsForm() {
@@ -101,6 +226,7 @@ function SettingsForm() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
+  const tr = useTr(EN);
 
   useEffect(() => {
     const success = searchParams.get('success');
@@ -108,20 +234,20 @@ function SettingsForm() {
     let steamNotice = '';
 
     if (success === 'steam_verified') {
-      steamNotice = '🎉 Steam 账号验证成功！';
+      steamNotice = tr('🎉 Steam 账号验证成功！');
       window.history.replaceState({}, '', '/settings');
     }
     if (errorCode) {
       const errorMessages: Record<string, string> = {
-        steam_already_bound: '❌ 该账号已绑定其它 Steam 账号，如需换绑请联系管理员。',
-        steam_in_use: '❌ 该 Steam 账号已被其它社区账号绑定。',
-        steam_bind_failed: '❌ Steam 绑定失败，请稍后重试或联系管理员。',
-        steam_state_invalid: '❌ 验证会话已过期或无效，请重新发起 Steam 验证。',
-        steam_api_failed: '❌ Steam 接口暂时不可用，请稍后再试。',
-        no_ets2: '❌ 该 Steam 账号不满足正版 ETS2 / 2 小时门槛。',
-        steam_private: '❌ 无法读取 Steam 游戏库，请把个人资料与游戏详情设为公开。',
+        steam_already_bound: tr('❌ 该账号已绑定其它 Steam 账号，如需换绑请联系管理员。'),
+        steam_in_use: tr('❌ 该 Steam 账号已被其它社区账号绑定。'),
+        steam_bind_failed: tr('❌ Steam 绑定失败，请稍后重试或联系管理员。'),
+        steam_state_invalid: tr('❌ 验证会话已过期或无效，请重新发起 Steam 验证。'),
+        steam_api_failed: tr('❌ Steam 接口暂时不可用，请稍后再试。'),
+        no_ets2: tr('❌ 该 Steam 账号不满足正版 ETS2 / 2 小时门槛。'),
+        steam_private: tr('❌ 无法读取 Steam 游戏库，请把个人资料与游戏详情设为公开。'),
       };
-      steamNotice = errorMessages[errorCode] ?? '❌ Steam 绑定失败，请稍后重试。';
+      steamNotice = errorMessages[errorCode] ?? tr('❌ Steam 绑定失败，请稍后重试。');
       window.history.replaceState({}, '', '/settings');
     }
 
@@ -154,6 +280,8 @@ function SettingsForm() {
       setLoading(false);
     };
     loadData();
+    // tr 每次渲染都是新函数，加入依赖会让 effect 反复执行，这里刻意不列入。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, searchParams]);
 
   // 本地预览 URL 的生命周期：替换时 revoke 旧 URL，组件卸载时兜底 revoke。
@@ -198,13 +326,13 @@ function SettingsForm() {
     }
 
     if (!isAllowedAvatarType(selected.type)) {
-      setMsg('❌ 头像上传失败：仅支持 JPG/PNG/WebP 格式的图片。');
+      setMsg(tr('❌ 头像上传失败：仅支持 JPG/PNG/WebP 格式的图片。'));
       clearSelectedFile();
       return;
     }
 
     if (selected.size > MAX_AVATAR_SIZE) {
-      setMsg('❌ 头像上传失败：图片不能超过 2MB。');
+      setMsg(tr('❌ 头像上传失败：图片不能超过 2MB。'));
       clearSelectedFile();
       return;
     }
@@ -217,7 +345,7 @@ function SettingsForm() {
     e.preventDefault();
 
     if (!user) {
-      setMsg('保存失败：登录状态已失效，请重新登录。');
+      setMsg(tr('保存失败：登录状态已失效，请重新登录。'));
       return;
     }
 
@@ -239,7 +367,7 @@ function SettingsForm() {
       for (const [label, value] of socialLinks) {
         const trimmed = value.trim();
         if (trimmed && !/^https?:\/\/[^\s]+$/i.test(trimmed)) {
-          setMsg(`保存失败：${label} 链接必须以 http:// 或 https:// 开头。`);
+          setMsg(tr('保存失败：{label} 链接必须以 http:// 或 https:// 开头。', { label }));
           return;
         }
       }
@@ -266,7 +394,7 @@ function SettingsForm() {
       if (file) {
         const extension = getAvatarExtension(file.type);
         if (!extension) {
-          setMsg('保存失败：仅支持 JPG/PNG/WebP 格式的图片。');
+          setMsg(tr('保存失败：仅支持 JPG/PNG/WebP 格式的图片。'));
           return;
         }
 
@@ -312,7 +440,7 @@ function SettingsForm() {
       }
 
       clearSelectedFile();
-      setMsg('🎉 个人资料已保存！');
+      setMsg(tr('🎉 个人资料已保存！'));
     } catch (error: unknown) {
       // 新文件已上传但资料写入失败时，尽力删除这份孤儿文件。
       if (uploadedFileName && !saved) {
@@ -327,7 +455,7 @@ function SettingsForm() {
           console.warn('新头像文件回滚失败：', getErrorMessage(cleanupError));
         }
       }
-      setMsg(`保存失败：${getErrorMessage(error)}`);
+      setMsg(tr('保存失败：{message}', { message: getErrorMessage(error, tr) }));
     } finally {
       setSaving(false);
     }
@@ -335,16 +463,16 @@ function SettingsForm() {
 
   const handleRemoveAvatar = async () => {
     if (!user) {
-      setMsg('移除头像失败：登录状态已失效，请重新登录。');
+      setMsg(tr('移除头像失败：登录状态已失效，请重新登录。'));
       return;
     }
 
     if (!originalAvatarUrl) {
-      setMsg('当前没有可移除的头像。');
+      setMsg(tr('当前没有可移除的头像。'));
       return;
     }
 
-    if (!window.confirm('确定要移除当前头像吗？未保存的新头像选择也会被取消。')) {
+    if (!window.confirm(tr('确定要移除当前头像吗？未保存的新头像选择也会被取消。'))) {
       return;
     }
 
@@ -378,9 +506,9 @@ function SettingsForm() {
         }
       }
 
-      setMsg('✅ 头像已移除。');
+      setMsg(tr('✅ 头像已移除。'));
     } catch (error: unknown) {
-      setMsg(`移除头像失败：${getErrorMessage(error)}`);
+      setMsg(tr('移除头像失败：{message}', { message: getErrorMessage(error, tr) }));
     } finally {
       setRemoving(false);
     }
@@ -388,7 +516,7 @@ function SettingsForm() {
 
   const handleSteamBind = async () => {
     if (!user) return;
-    setMsg('正在跳转 Steam 验证...');
+    setMsg(tr('正在跳转 Steam 验证...'));
     try {
       // 必须先用会话 token 向服务端证明“我是谁”，服务端会把 userId 写进签名 state Cookie，
       // 回调时不再信任 URL 里的 userId（旧实现存在越权绑定风险）。
@@ -396,7 +524,7 @@ function SettingsForm() {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) {
-        setMsg('登录状态已失效，请重新登录后再绑定 Steam。');
+        setMsg(tr('登录状态已失效，请重新登录后再绑定 Steam。'));
         return;
       }
 
@@ -409,13 +537,13 @@ function SettingsForm() {
         | null;
 
       if (!res.ok || !data?.redirectUrl) {
-        setMsg(data?.message || '无法发起 Steam 验证，请稍后重试。');
+        setMsg(data?.message || tr('无法发起 Steam 验证，请稍后重试。'));
         return;
       }
 
       window.location.href = data.redirectUrl;
     } catch {
-      setMsg('网络错误，无法发起 Steam 验证，请稍后重试。');
+      setMsg(tr('网络错误，无法发起 Steam 验证，请稍后重试。'));
     }
   };
 
@@ -424,19 +552,19 @@ function SettingsForm() {
     e.preventDefault();
     setPasswordMsg('');
     if (!user?.email) {
-      setPasswordMsg('❌ 未获取到登录邮箱，请重新登录。');
+      setPasswordMsg(tr('❌ 未获取到登录邮箱，请重新登录。'));
       return;
     }
     if (newPassword.length < 8) {
-      setPasswordMsg('❌ 新密码至少需要 8 个字符。');
+      setPasswordMsg(tr('❌ 新密码至少需要 8 个字符。'));
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordMsg('❌ 两次输入的新密码不一致。');
+      setPasswordMsg(tr('❌ 两次输入的新密码不一致。'));
       return;
     }
     if (newPassword === currentPassword) {
-      setPasswordMsg('❌ 新密码不能与当前密码相同。');
+      setPasswordMsg(tr('❌ 新密码不能与当前密码相同。'));
       return;
     }
 
@@ -447,19 +575,19 @@ function SettingsForm() {
         password: currentPassword,
       });
       if (verifyError) {
-        setPasswordMsg('❌ 当前密码不正确。');
+        setPasswordMsg(tr('❌ 当前密码不正确。'));
         return;
       }
 
       const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
       if (updateError) throw updateError;
 
-      setPasswordMsg('✅ 密码已更新，请使用新密码登录。');
+      setPasswordMsg(tr('✅ 密码已更新，请使用新密码登录。'));
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
     } catch (error: unknown) {
-      setPasswordMsg(`❌ 修改失败：${getErrorMessage(error)}`);
+      setPasswordMsg(tr('❌ 修改失败：{message}', { message: getErrorMessage(error, tr) }));
     } finally {
       setPasswordSaving(false);
     }
@@ -468,7 +596,7 @@ function SettingsForm() {
   // 选好文件后优先展示本地预览，保存前不写数据库。
   const displayedAvatarUrl = previewUrl ?? avatarUrl;
 
-  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;
+  if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">{tr('加载中...')}</div>;
 
   return (
     <div className="flex-1 max-w-6xl mx-auto w-full p-4 md:p-6 flex flex-col md:flex-row gap-6">
@@ -482,26 +610,26 @@ function SettingsForm() {
               {displayedAvatarUrl ? <img src={displayedAvatarUrl} alt="avatar" className="w-full h-full object-cover" /> : displayName.charAt(0).toUpperCase()}
             </div>
             <div className="mt-8">
-              <h2 className="text-white font-bold text-lg">{displayName || '玩家'}</h2>
+              <h2 className="text-white font-bold text-lg">{displayName || tr('玩家')}</h2>
             </div>
           </div>
         </div>
 
         <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-2 shadow-lg">
           <ul className="text-sm space-y-1">
-            <li><Link href="/profile" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">个人资料</Link></li>
-            <li><Link href="/settings" className="flex items-center text-green-500 bg-[#3a3b40] px-3 py-2 rounded-md font-bold">账号设置</Link></li>
+            <li><Link href="/profile" className="flex items-center hover:bg-[#3a3b40] px-3 py-2 rounded-md transition">{tr('个人资料')}</Link></li>
+            <li><Link href="/settings" className="flex items-center text-green-500 bg-[#3a3b40] px-3 py-2 rounded-md font-bold">{tr('账号设置')}</Link></li>
           </ul>
         </div>
       </div>
 
       {/* 右侧表单区 */}
       <div className="flex-1 bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg p-6">
-        <h1 className="text-xl font-bold text-white mb-6 border-b border-gray-700 pb-3">编辑个人资料</h1>
+        <h1 className="text-xl font-bold text-white mb-6 border-b border-gray-700 pb-3">{tr('编辑个人资料')}</h1>
         
         <div className="mb-6 bg-[#18191c] border border-gray-600 rounded p-3 text-gray-400 text-sm flex justify-between items-center">
           <div>
-            <span>登录邮箱 (Email)：</span>
+            <span>{tr('登录邮箱 (Email)：')}</span>
             <span className="text-white font-mono ml-2">{user?.email}</span>
           </div>
         </div>
@@ -511,14 +639,14 @@ function SettingsForm() {
           {/* 头像与语言 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">头像 (Avatar)</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">{tr('头像 (Avatar)')}</label>
               <div className="flex items-start gap-4">
                 <div className="w-16 h-16 rounded-full bg-gray-800 border border-gray-600 flex items-center justify-center overflow-hidden shrink-0">
-                  {displayedAvatarUrl ? <img src={displayedAvatarUrl} alt="头像预览" className="w-full h-full object-cover" /> : <span className="text-2xl">👤</span>}
+                  {displayedAvatarUrl ? <img src={displayedAvatarUrl} alt={tr('头像预览')} className="w-full h-full object-cover" /> : <span className="text-2xl">👤</span>}
                 </div>
                 <div className="flex flex-col gap-1.5 min-w-0">
                   <div className="border border-gray-600 rounded bg-[#232428] px-4 py-2 cursor-pointer relative hover:bg-gray-800 transition">
-                    <span className="text-sm block max-w-[180px] truncate">{file ? file.name : '选择图片...'}</span>
+                    <span className="text-sm block max-w-[180px] truncate">{file ? file.name : tr('选择图片...')}</span>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -528,9 +656,9 @@ function SettingsForm() {
                       className="absolute inset-0 opacity-0 cursor-pointer"
                     />
                   </div>
-                  <span className="text-xs text-gray-500">支持 JPG/PNG/WebP，最大 2MB</span>
+                  <span className="text-xs text-gray-500">{tr('支持 JPG/PNG/WebP，最大 2MB')}</span>
                   <div className="flex items-center gap-3 flex-wrap">
-                    {file && <span className="text-xs font-bold text-amber-400">新头像待保存</span>}
+                    {file && <span className="text-xs font-bold text-amber-400">{tr('新头像待保存')}</span>}
                     {file && (
                       <button
                         type="button"
@@ -538,7 +666,7 @@ function SettingsForm() {
                         disabled={saving || removing}
                         className="text-xs text-gray-400 underline hover:text-white disabled:opacity-50"
                       >
-                        取消选择
+                        {tr('取消选择')}
                       </button>
                     )}
                     {originalAvatarUrl && (
@@ -548,7 +676,7 @@ function SettingsForm() {
                         disabled={saving || removing}
                         className="text-xs text-red-400 underline hover:text-red-300 disabled:opacity-50"
                       >
-                        {removing ? '移除中...' : '移除头像'}
+                        {removing ? tr('移除中...') : tr('移除头像')}
                       </button>
                     )}
                   </div>
@@ -557,48 +685,48 @@ function SettingsForm() {
             </div>
             
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">语言 (Languages)</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">{tr('语言 (Languages)')}</label>
               <select 
                 value={languages} 
                 onChange={(e) => setLanguages(e.target.value)}
                 className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
               >
-                <option value="Chinese (Simplified)">简体中文</option>
-                <option value="Chinese (Simplified), English">简体中文 + English</option>
-                <option value="English">English</option>
-                <option value="Chinese (Simplified), English, Russian">简中 + 英语 + 俄语</option>
+                <option value="Chinese (Simplified)">{tr('简体中文')}</option>
+                <option value="Chinese (Simplified), English">{tr('简体中文 + English')}</option>
+                <option value="English">{tr('English')}</option>
+                <option value="Chinese (Simplified), English, Russian">{tr('简中 + 英语 + 俄语')}</option>
               </select>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">昵称 (Display Name)</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">{tr('昵称 (Display Name)')}</label>
             <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500" required />
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-400 mb-2">关于我 (Bio)</label>
-            <textarea value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-24 focus:outline-none focus:border-blue-500" placeholder="简单介绍一下你自己..."></textarea>
+            <label className="block text-sm font-bold text-gray-400 mb-2">{tr('关于我 (Bio)')}</label>
+            <textarea value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white h-24 focus:outline-none focus:border-blue-500" placeholder={tr('简单介绍一下你自己...')}></textarea>
           </div>
 
           {/* 🌟 新增：社交媒体链接 */}
           <div className="border-t border-gray-700 pt-4">
-            <h3 className="text-md font-bold text-white mb-4">社交媒体 (Social Information)</h3>
+            <h3 className="text-md font-bold text-white mb-4">{tr('社交媒体 (Social Information)')}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Twitch 链接</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">{tr('Twitch 链接')}</label>
                 <input type="url" value={twitchUrl} onChange={(e) => setTwitchUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://twitch.tv/..." />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">Twitter (X) 链接</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">{tr('Twitter (X) 链接')}</label>
                 <input type="url" value={twitterUrl} onChange={(e) => setTwitterUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://twitter.com/..." />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">YouTube 频道</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">{tr('YouTube 频道')}</label>
                 <input type="url" value={youtubeUrl} onChange={(e) => setYoutubeUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://youtube.com/..." />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-400 mb-1">World of Trucks 链接</label>
+                <label className="block text-xs font-bold text-gray-400 mb-1">{tr('World of Trucks 链接')}</label>
                 <input type="url" value={wotUrl} onChange={(e) => setWotUrl(e.target.value)} className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white" placeholder="https://worldoftrucks.com/..." />
               </div>
             </div>
@@ -606,35 +734,35 @@ function SettingsForm() {
 
           {/* Steam 验证区域保持不变 */}
           <div className="border-t border-gray-700 pt-4">
-            <label className="block text-sm font-bold text-gray-400 mb-2">Steam 账号验证</label>
+            <label className="block text-sm font-bold text-gray-400 mb-2">{tr('Steam 账号验证')}</label>
             <div className="flex items-center justify-between bg-[#18191c] border border-gray-600 rounded p-3">
               <div className="flex flex-col">
-                <span className="text-white text-sm font-bold">{steamVerified ? '✅ 已验证' : '❌ 未绑定'}</span>
+                <span className="text-white text-sm font-bold">{steamVerified ? tr('✅ 已验证') : tr('❌ 未绑定')}</span>
                 {steamVerified && steamId && <span className="text-xs text-gray-500 font-mono mt-1">ID: {steamId}</span>}
               </div>
               <button type="button" onClick={handleSteamBind} className="px-4 py-1.5 rounded text-sm font-bold bg-[#171a21] border border-gray-500 text-white">
-                {steamVerified ? '重新验证' : '前往验证'}
+                {steamVerified ? tr('重新验证') : tr('前往验证')}
               </button>
             </div>
           </div>
 
           <div className="pt-4 border-t border-gray-700 flex items-center gap-4">
             <button type="submit" disabled={saving || removing} className="bg-green-600 hover:bg-green-700 text-white px-8 py-2 rounded font-bold transition disabled:opacity-50">
-              {saving ? '保存中...' : '保存更改'}
+              {saving ? tr('保存中...') : tr('保存更改')}
             </button>
-            {msg && <span className={`text-sm font-bold ${msg.includes('失败') ? 'text-red-400' : 'text-green-400'}`}>{msg}</span>}
+            {msg && <span className={`text-sm font-bold ${msg.includes('失败') || msg.includes('failed') ? 'text-red-400' : 'text-green-400'}`}>{msg}</span>}
           </div>
         </form>
 
         {/* 账号安全：修改密码 */}
         <div className="mt-6 border-t border-gray-700 pt-6">
-          <h2 className="text-lg font-bold text-white mb-1">账号安全</h2>
+          <h2 className="text-lg font-bold text-white mb-1">{tr('账号安全')}</h2>
           <p className="text-xs text-gray-500 mb-4">
-            修改登录密码需要先验证当前密码；修改成功后请使用新密码重新登录。
+            {tr('修改登录密码需要先验证当前密码；修改成功后请使用新密码重新登录。')}
           </p>
           <form onSubmit={handlePasswordChange} className="space-y-3 max-w-md">
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-1">当前密码</label>
+              <label className="block text-sm font-bold text-gray-400 mb-1">{tr('当前密码')}</label>
               <input
                 type="password"
                 value={currentPassword}
@@ -646,7 +774,7 @@ function SettingsForm() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-bold text-gray-400 mb-1">新密码（至少 8 位）</label>
+                <label className="block text-sm font-bold text-gray-400 mb-1">{tr('新密码（至少 8 位）')}</label>
                 <input
                   type="password"
                   value={newPassword}
@@ -658,7 +786,7 @@ function SettingsForm() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-400 mb-1">确认新密码</label>
+                <label className="block text-sm font-bold text-gray-400 mb-1">{tr('确认新密码')}</label>
                 <input
                   type="password"
                   value={confirmNewPassword}
@@ -676,7 +804,7 @@ function SettingsForm() {
                 disabled={passwordSaving}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition disabled:opacity-50"
               >
-                {passwordSaving ? '修改中...' : '修改密码'}
+                {passwordSaving ? tr('修改中...') : tr('修改密码')}
               </button>
               {passwordMsg && (
                 <span className={`text-sm font-bold ${passwordMsg.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
@@ -692,10 +820,12 @@ function SettingsForm() {
 }
 
 export default function SettingsPage() {
+  const tr = useTr(EN);
+
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
-      <Suspense fallback={<div className="text-center text-white mt-20">加载配置中...</div>}>
+      <Suspense fallback={<div className="text-center text-white mt-20">{tr('加载配置中...')}</div>}>
         <SettingsForm />
       </Suspense>
     </main>

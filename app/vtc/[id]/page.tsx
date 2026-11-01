@@ -6,6 +6,168 @@ import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
+import { useTr } from '@/components/I18nProvider';
+
+// 英文文案：键为中文原文，缺失时回退中文。
+const EN: Record<string, string> = {
+  // —— 通用 / 错误前缀 ——
+  '操作失败，请稍后重试': 'Something went wrong. Please try again later.',
+  '加载车队信息失败：{error}': 'Failed to load VTC info: {error}',
+  '加载成员列表失败：{error}': 'Failed to load the member list: {error}',
+  '加载申请列表失败：{error}': 'Failed to load applications: {error}',
+  '加入失败：{error}': 'Failed to join: {error}',
+  '申请失败：{error}': 'Failed to apply: {error}',
+  '取消失败：{error}': 'Failed to cancel: {error}',
+  '接受邀请失败：{error}': 'Failed to accept the invitation: {error}',
+  '拒绝邀请失败：{error}': 'Failed to decline the invitation: {error}',
+  '退出失败：{error}': 'Failed to leave: {error}',
+  '审核失败：{error}': 'Review failed: {error}',
+  '搜索失败：{error}': 'Search failed: {error}',
+  '邀请失败：{error}': 'Failed to invite: {error}',
+  '设置职位失败：{error}': 'Failed to change the role: {error}',
+  '踢出失败：{error}': 'Failed to remove the member: {error}',
+  '保存失败：{error}': 'Failed to save: {error}',
+  '转让失败：{error}': 'Transfer failed: {error}',
+  '解散失败：{error}': 'Failed to dissolve: {error}',
+  // —— 职位 / 加入方式 ——
+  '队长': 'Owner',
+  '副队长': 'Vice owner',
+  '调度员': 'Dispatcher',
+  '车手': 'Driver',
+  '经理': 'Manager',
+  '开放加入': 'Open to join',
+  '需申请': 'Approval required',
+  '仅邀请': 'Invite only',
+  // —— 操作提示 ——
+  '🎉 成功加入车队！': '🎉 Successfully joined the VTC!',
+  '申请已提交，请等待车队管理层审核。':
+    'Application submitted. Please wait for the VTC management to review it.',
+  '已取消加入申请。': 'Application cancelled.',
+  '已接受邀请，欢迎加入车队！': 'Invitation accepted. Welcome to the VTC!',
+  '已拒绝该邀请。': 'Invitation declined.',
+  '你已退出该车队。': 'You have left the VTC.',
+  '已通过该申请。': 'Application approved.',
+  '已拒绝该申请。': 'Application declined.',
+  '已向 {name} 发送邀请。': 'Invitation sent to {name}.',
+  '已将 {name} 设为{role}。': 'Set {name} as {role}.',
+  '已将 {name} 移出车队。': 'Removed {name} from the VTC.',
+  '✅ 车队设置已保存。': '✅ VTC settings saved.',
+  '✅ 车队信息已更新。': '✅ VTC info updated.',
+  '车队已转让，你已变为普通车手。':
+    'The VTC has been transferred. You are now a regular driver.',
+  '请输入玩家昵称或 ID。': 'Enter a player nickname or ID.',
+  '搜索内容包含非法字符，请重新输入。':
+    'The search contains invalid characters. Please try again.',
+  '请输入 DISSOLVE 以确认解散。': 'Type DISSOLVE to confirm dissolving.',
+  '请选择新的队长。': 'Select a new owner.',
+  '该玩家': 'this player',
+  '该成员': 'this member',
+  '未命名玩家': 'Unnamed player',
+  '未分配': 'Unassigned',
+  // —— 确认提示 ——
+  '确定要退出该车队吗？': 'Leave this VTC?',
+  '确定将 {name} 踢出车队吗？': 'Remove {name} from the VTC?',
+  '确定转让车队吗？转让后你将变为普通车手。':
+    'Transfer the VTC? You will become a regular driver afterwards.',
+  // —— 加载 / 未找到 ——
+  '加载车队信息中...': 'Loading VTC info...',
+  '车队不存在': 'VTC not found',
+  '该车队可能已被解散，或链接有误。':
+    'This VTC may have been dissolved, or the link is invalid.',
+  '返回车队大厅': 'Back to the VTC lobby',
+  // —— 车队概览 ——
+  '车队大厅': 'VTC lobby',
+  '登录后加入车队': 'Sign in to join this VTC',
+  '你已加入其他车队，需先退出才能加入':
+    'You are already in another VTC. Leave it before joining this one.',
+  '招聘中': 'Recruiting',
+  '已停止招募': 'Recruitment closed',
+  '{count} 名成员': '{count} members',
+  '创建于 {date}': 'Created {date}',
+  '我的职位：{role}': 'My role: {role}',
+  '这个车队还没有填写简介。': 'This VTC has not added a description yet.',
+  '招募要求': 'Recruitment requirements',
+  '取消编辑': 'Cancel editing',
+  '编辑车队信息': 'Edit VTC info',
+  '你是该车队的队长': 'You are the owner of this VTC',
+  '处理中...': 'Processing...',
+  '退出车队': 'Leave VTC',
+  '该车队邀请你加入': 'This VTC has invited you',
+  '接受邀请': 'Accept invitation',
+  '拒绝': 'Decline',
+  '申请审核中': 'Application under review',
+  '取消申请': 'Cancel application',
+  '立即加入': 'Join now',
+  '收起申请': 'Hide application',
+  '申请加入': 'Apply to join',
+  '仅邀请加入': 'Invite only',
+  '你已有其他车队的待审核申请，请先取消':
+    'You have a pending application with another VTC. Cancel it first.',
+  '← 返回大厅': '← Back to lobby',
+  '申请留言（选填）': 'Application note (optional)',
+  '介绍一下你的在线时间 / 驾驶经验，方便队长审核...':
+    'Tell us about your online hours / driving experience so the owner can review your application...',
+  '提交中...': 'Submitting...',
+  '提交申请': 'Submit application',
+  '取消': 'Cancel',
+  // —— 编辑表单 ——
+  '车队全名 *': 'VTC full name *',
+  '车队标签 (Tag)': 'VTC tag',
+  '车队 Logo 链接': 'VTC logo URL',
+  '车队简介 *': 'VTC description *',
+  '开放招募': 'Recruiting',
+  '保存中...': 'Saving...',
+  '保存修改': 'Save changes',
+  // —— 申请审核 ——
+  '申请审核': 'Applications',
+  '待审核 {count} 条': '{count} pending',
+  '暂无待审核的加入申请。': 'No pending applications.',
+  '（未填写留言）': '(No note provided)',
+  '通过': 'Approve',
+  // —— 邀请成员 ——
+  '邀请成员': 'Invite members',
+  '搜索昵称 / 玩家 ID': 'Search nickname / player ID',
+  '输入玩家昵称，或完整 custom_id / random_id':
+    'Enter a player nickname, or the full custom_id / random_id',
+  '搜索中...': 'Searching...',
+  '搜索': 'Search',
+  '没有找到可邀请的玩家。': 'No players available to invite.',
+  '邀请': 'Invite',
+  '已邀请': 'Invited',
+  '已在其他车队': 'In another VTC',
+  '发送中...': 'Sending...',
+  // —— 成员列表 ——
+  '车队成员': 'Members',
+  '共 {count} 人': '{count} members',
+  '车队新闻 →': 'VTC news →',
+  '这个车队还没有成员。': 'This VTC has no members yet.',
+  '踢出': 'Remove',
+  // —— 车队设置 ——
+  '车队设置': 'VTC settings',
+  '加入方式': 'Join mode',
+  '开放加入（立即加入）': 'Open (join instantly)',
+  '需要申请（管理员审核）': 'Approval required (management review)',
+  '修改后立即对大厅的加入按钮生效。':
+    'Takes effect immediately on the join buttons in the lobby.',
+  '招募状态': 'Recruitment status',
+  '招聘中（点击暂停招募）': 'Recruiting (click to pause)',
+  '已停止招募（点击开放）': 'Recruitment closed (click to open)',
+  '关闭后申请与直接加入都会被拒绝，邀请仍然可用。':
+    'When closed, applications and direct joins are rejected, but invitations still work.',
+  '保存车队设置': 'Save VTC settings',
+  // —— 危险区 ——
+  '危险区': 'Danger zone',
+  '转让车队': 'Transfer VTC',
+  '将队长身份转让给本队成员，转让后你将成为普通车手。':
+    'Transfer ownership to a member. You will become a regular driver afterwards.',
+  '暂无可转让的成员。': 'No members available to transfer ownership to.',
+  '选择新队长...': 'Select a new owner...',
+  '{name}（{role}）': '{name} ({role})',
+  '解散车队': 'Dissolve VTC',
+  '解散后车队与成员关系将无法恢复。请输入': 'Dissolving cannot be undone. Type',
+  '确认。': 'to confirm.',
+  '永久解散车队': 'Dissolve VTC permanently',
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -118,8 +280,8 @@ function joinModeOf(mode: string | null | undefined): JoinMode {
   return 'approval';
 }
 
-function roleLabelOf(role: string | null | undefined): string {
-  return (role && VTC_ROLE_LABELS[role]) || '车手';
+function roleLabelOf(role: string | null | undefined, tr: (zh: string) => string): string {
+  return tr((role && VTC_ROLE_LABELS[role]) || '车手');
 }
 
 function roleBadgeOf(role: string | null | undefined): string {
@@ -131,12 +293,12 @@ function applicantOf(application: VtcApplication): ApplicantProfile | null {
   return application.profiles ?? null;
 }
 
-function rpcErrorText(error: unknown): string {
+function rpcErrorText(error: unknown, tr: (zh: string) => string): string {
   if (error && typeof error === 'object' && 'message' in error) {
     const message = (error as { message?: unknown }).message;
     if (typeof message === 'string' && message.trim()) return message;
   }
-  return '操作失败，请稍后重试';
+  return tr('操作失败，请稍后重试');
 }
 
 function Feedback({ error, success }: { error?: string; success?: string }) {
@@ -150,6 +312,9 @@ function Feedback({ error, success }: { error?: string; success?: string }) {
 }
 
 export default function VTCDetailPage() {
+  const tr = useTr(EN);
+  const errorText = (prefix: string, error: unknown) =>
+    tr(prefix, { error: rpcErrorText(error, tr) });
   const params = useParams();
   const router = useRouter();
   const rawId = params?.id;
@@ -270,7 +435,7 @@ export default function VTCDetailPage() {
         .maybeSingle();
 
       if (vtcError) {
-        setTopError(`加载车队信息失败：${vtcError.message}`);
+        setTopError(errorText('加载车队信息失败：{error}', vtcError));
         return;
       }
       if (!vtcData) {
@@ -299,7 +464,7 @@ export default function VTCDetailPage() {
 
       if (membersError) {
         console.error('获取成员列表失败:', membersError);
-        setMemberError(`加载成员列表失败：${membersError.message}`);
+        setMemberError(errorText('加载成员列表失败：{error}', membersError));
       } else if (membersData) {
         // owner 排最前，其次副队长 / 调度员 / 车手
         const weight: Record<string, number> = {
@@ -333,7 +498,7 @@ export default function VTCDetailPage() {
 
         if (appError) {
           console.error('获取申请列表失败:', appError);
-          setReviewError(`加载申请列表失败：${appError.message}`);
+          setReviewError(errorText('加载申请列表失败：{error}', appError));
           setApplications([]);
         } else {
           setApplications((appRows ?? []) as unknown as VtcApplication[]);
@@ -378,10 +543,12 @@ export default function VTCDetailPage() {
       setMyApplication(pendingApp);
       setMyInvitation(pendingInvite);
     } catch (error: unknown) {
-      setTopError(`加载车队信息失败：${rpcErrorText(error)}`);
+      setTopError(errorText('加载车队信息失败：{error}', error));
     } finally {
       setLoading(false);
     }
+    // tr 每次渲染都会重新创建，加入依赖会导致重复请求；语言切换由 Provider 刷新页面处理。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vtcId]);
 
   useEffect(() => {
@@ -406,11 +573,11 @@ export default function VTCDetailPage() {
     try {
       const { error } = await supabase.rpc('rct_vtc_join_open', { p_vtc_id: vtc.id });
       if (error) throw error;
-      setTopNotice('🎉 成功加入车队！');
+      setTopNotice(tr('🎉 成功加入车队！'));
       setApplyOpen(false);
       await loadPage(false);
     } catch (error: unknown) {
-      setTopError(`加入失败：${rpcErrorText(error)}`);
+      setTopError(errorText('加入失败：{error}', error));
     } finally {
       setTopBusy(false);
     }
@@ -433,10 +600,10 @@ export default function VTCDetailPage() {
       if (error) throw error;
       setApplyOpen(false);
       setApplyMessage('');
-      setTopNotice('申请已提交，请等待车队管理层审核。');
+      setTopNotice(tr('申请已提交，请等待车队管理层审核。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setTopError(`申请失败：${rpcErrorText(error)}`);
+      setTopError(errorText('申请失败：{error}', error));
     } finally {
       setTopBusy(false);
     }
@@ -455,10 +622,10 @@ export default function VTCDetailPage() {
         p_id: myApplication.id,
       });
       if (error) throw error;
-      setTopNotice('已取消加入申请。');
+      setTopNotice(tr('已取消加入申请。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setTopError(`取消失败：${rpcErrorText(error)}`);
+      setTopError(errorText('取消失败：{error}', error));
     } finally {
       setTopBusy(false);
     }
@@ -478,10 +645,12 @@ export default function VTCDetailPage() {
         p_accept: accept,
       });
       if (error) throw error;
-      setTopNotice(accept ? '已接受邀请，欢迎加入车队！' : '已拒绝该邀请。');
+      setTopNotice(tr(accept ? '已接受邀请，欢迎加入车队！' : '已拒绝该邀请。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setTopError(`${accept ? '接受' : '拒绝'}邀请失败：${rpcErrorText(error)}`);
+      setTopError(
+        errorText(accept ? '接受邀请失败：{error}' : '拒绝邀请失败：{error}', error)
+      );
     } finally {
       setTopBusy(false);
     }
@@ -489,7 +658,7 @@ export default function VTCDetailPage() {
 
   // 退出车队
   const handleLeave = async () => {
-    if (!window.confirm('确定要退出该车队吗？')) return;
+    if (!window.confirm(tr('确定要退出该车队吗？'))) return;
 
     setTopBusy(true);
     setTopError('');
@@ -498,10 +667,10 @@ export default function VTCDetailPage() {
     try {
       const { error } = await supabase.rpc('rct_vtc_leave');
       if (error) throw error;
-      setTopNotice('你已退出该车队。');
+      setTopNotice(tr('你已退出该车队。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setTopError(`退出失败：${rpcErrorText(error)}`);
+      setTopError(errorText('退出失败：{error}', error));
     } finally {
       setTopBusy(false);
     }
@@ -519,10 +688,10 @@ export default function VTCDetailPage() {
         p_approve: approve,
       });
       if (error) throw error;
-      setReviewNotice(approve ? '已通过该申请。' : '已拒绝该申请。');
+      setReviewNotice(tr(approve ? '已通过该申请。' : '已拒绝该申请。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setReviewError(`审核失败：${rpcErrorText(error)}`);
+      setReviewError(errorText('审核失败：{error}', error));
     } finally {
       setReviewBusyId(null);
     }
@@ -535,14 +704,14 @@ export default function VTCDetailPage() {
 
     const term = searchTerm.trim();
     if (!term) {
-      setInviteError('请输入玩家昵称或 ID。');
+      setInviteError(tr('请输入玩家昵称或 ID。'));
       return;
     }
 
     // 去掉会破坏 PostgREST or 过滤语法的字符
     const safe = term.replace(/[%,()*]/g, ' ').trim();
     if (!safe) {
-      setInviteError('搜索内容包含非法字符，请重新输入。');
+      setInviteError(tr('搜索内容包含非法字符，请重新输入。'));
       return;
     }
 
@@ -572,7 +741,7 @@ export default function VTCDetailPage() {
       setSearchResults(rows);
       setSearchDone(true);
     } catch (error: unknown) {
-      setInviteError(`搜索失败：${rpcErrorText(error)}`);
+      setInviteError(errorText('搜索失败：{error}', error));
       setSearchResults([]);
       setSearchDone(true);
     } finally {
@@ -590,9 +759,11 @@ export default function VTCDetailPage() {
       const { error } = await supabase.rpc('rct_vtc_invite', { p_user_id: profile.id });
       if (error) throw error;
       setInvitedIds((prev) => (prev.includes(profile.id) ? prev : [...prev, profile.id]));
-      setInviteNotice(`已向 ${profile.display_name || '该玩家'} 发送邀请。`);
+      setInviteNotice(
+        tr('已向 {name} 发送邀请。', { name: profile.display_name || tr('该玩家') })
+      );
     } catch (error: unknown) {
-      setInviteError(`邀请失败：${rpcErrorText(error)}`);
+      setInviteError(errorText('邀请失败：{error}', error));
     } finally {
       setInviteBusyId(null);
     }
@@ -610,10 +781,15 @@ export default function VTCDetailPage() {
         p_role: role,
       });
       if (error) throw error;
-      setMemberNotice(`已将 ${member.display_name || '该成员'} 设为${roleLabelOf(role)}。`);
+      setMemberNotice(
+        tr('已将 {name} 设为{role}。', {
+          name: member.display_name || tr('该成员'),
+          role: roleLabelOf(role, tr),
+        })
+      );
       await loadPage(false);
     } catch (error: unknown) {
-      setMemberError(`设置职位失败：${rpcErrorText(error)}`);
+      setMemberError(errorText('设置职位失败：{error}', error));
     } finally {
       setMemberBusyId(null);
     }
@@ -627,8 +803,8 @@ export default function VTCDetailPage() {
 
   // 踢出成员（仅队长可见/可用）
   const handleKick = async (member: VtcMember) => {
-    const name = member.display_name || '该成员';
-    if (!window.confirm(`确定将 ${name} 踢出车队吗？`)) return;
+    const name = member.display_name || tr('该成员');
+    if (!window.confirm(tr('确定将 {name} 踢出车队吗？', { name }))) return;
 
     setMemberBusyId(member.id);
     setMemberError('');
@@ -637,10 +813,10 @@ export default function VTCDetailPage() {
     try {
       const { error } = await supabase.rpc('rct_vtc_kick', { p_user_id: member.id });
       if (error) throw error;
-      setMemberNotice(`已将 ${name} 移出车队。`);
+      setMemberNotice(tr('已将 {name} 移出车队。', { name }));
       await loadPage(false);
     } catch (error: unknown) {
-      setMemberError(`踢出失败：${rpcErrorText(error)}`);
+      setMemberError(errorText('踢出失败：{error}', error));
     } finally {
       setMemberBusyId(null);
     }
@@ -664,10 +840,10 @@ export default function VTCDetailPage() {
         .eq('id', vtc.id);
 
       if (error) throw error;
-      setSettingsNotice('✅ 车队设置已保存。');
+      setSettingsNotice(tr('✅ 车队设置已保存。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setSettingsError(`保存失败：${rpcErrorText(error)}`);
+      setSettingsError(errorText('保存失败：{error}', error));
     } finally {
       setSettingsBusy(false);
     }
@@ -696,11 +872,11 @@ export default function VTCDetailPage() {
         .eq('id', vtc.id);
 
       if (error) throw error;
-      setTopNotice('✅ 车队信息已更新。');
+      setTopNotice(tr('✅ 车队信息已更新。'));
       setEditing(false);
       await loadPage(false);
     } catch (error: unknown) {
-      setTopError(`保存失败：${rpcErrorText(error)}`);
+      setTopError(errorText('保存失败：{error}', error));
     } finally {
       setSaveBusy(false);
     }
@@ -710,10 +886,10 @@ export default function VTCDetailPage() {
   const handleTransfer = async () => {
     if (!vtc) return;
     if (!transferTarget) {
-      setDangerError('请选择新的队长。');
+      setDangerError(tr('请选择新的队长。'));
       return;
     }
-    if (!window.confirm('确定转让车队吗？转让后你将变为普通车手。')) return;
+    if (!window.confirm(tr('确定转让车队吗？转让后你将变为普通车手。'))) return;
 
     setDangerBusy(true);
     setDangerError('');
@@ -725,10 +901,10 @@ export default function VTCDetailPage() {
       });
       if (error) throw error;
       setTransferTarget('');
-      setTopNotice('车队已转让，你已变为普通车手。');
+      setTopNotice(tr('车队已转让，你已变为普通车手。'));
       await loadPage(false);
     } catch (error: unknown) {
-      setDangerError(`转让失败：${rpcErrorText(error)}`);
+      setDangerError(errorText('转让失败：{error}', error));
     } finally {
       setDangerBusy(false);
     }
@@ -738,7 +914,7 @@ export default function VTCDetailPage() {
   const handleDissolve = async () => {
     if (!vtc) return;
     if (dissolveText !== 'DISSOLVE') {
-      setDangerError('请输入 DISSOLVE 以确认解散。');
+      setDangerError(tr('请输入 DISSOLVE 以确认解散。'));
       return;
     }
 
@@ -753,7 +929,7 @@ export default function VTCDetailPage() {
       if (error) throw error;
       router.push('/vtc');
     } catch (error: unknown) {
-      setDangerError(`解散失败：${rpcErrorText(error)}`);
+      setDangerError(errorText('解散失败：{error}', error));
     } finally {
       setDangerBusy(false);
     }
@@ -762,7 +938,7 @@ export default function VTCDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">
-        加载车队信息中...
+        {tr('加载车队信息中...')}
       </div>
     );
   }
@@ -773,10 +949,10 @@ export default function VTCDetailPage() {
         <Navbar />
         <div className="flex-1 flex flex-col justify-center items-center gap-4">
           <p className="text-4xl">🚛</p>
-          <h1 className="text-xl font-bold text-white">车队不存在</h1>
-          <p className="text-sm text-gray-500">该车队可能已被解散，或链接有误。</p>
+          <h1 className="text-xl font-bold text-white">{tr('车队不存在')}</h1>
+          <p className="text-sm text-gray-500">{tr('该车队可能已被解散，或链接有误。')}</p>
           <Link href="/vtc" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition">
-            返回车队大厅
+            {tr('返回车队大厅')}
           </Link>
         </div>
       </main>
@@ -808,7 +984,7 @@ export default function VTCDetailPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/85 to-black/40"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-5xl mx-auto w-full px-4 md:px-8">
           <div className="text-sm text-gray-400 mb-2">
-            <Link href="/vtc" className="hover:text-white transition">车队大厅</Link>
+            <Link href="/vtc" className="hover:text-white transition">{tr('车队大厅')}</Link>
             <span className="mx-2">/</span>
             <span className="text-white font-bold">{vtc?.name}</span>
           </div>
@@ -856,27 +1032,37 @@ export default function VTCDetailPage() {
                   </span>
                 )}
                 <span className={`text-xs font-bold px-2 py-1 rounded ${JOIN_MODE_BADGES[joinMode]}`}>
-                  {JOIN_MODE_LABELS[joinMode]}
+                  {tr(JOIN_MODE_LABELS[joinMode])}
                 </span>
                 {vtc?.is_recruiting ? (
-                  <span className="text-xs text-green-500 font-bold bg-green-900/20 px-2 py-1 rounded">招聘中</span>
+                  <span className="text-xs text-green-500 font-bold bg-green-900/20 px-2 py-1 rounded">
+                    {tr('招聘中')}
+                  </span>
                 ) : (
-                  <span className="text-xs text-red-500 font-bold bg-red-900/20 px-2 py-1 rounded">已停止招募</span>
+                  <span className="text-xs text-red-500 font-bold bg-red-900/20 px-2 py-1 rounded">
+                    {tr('已停止招募')}
+                  </span>
                 )}
               </div>
 
               <div className="flex flex-wrap gap-4 text-xs text-gray-500 mb-4">
-                <span>{members.length} 名成员</span>
+                <span>{tr('{count} 名成员', { count: members.length })}</span>
                 {vtc?.created_at && (
-                  <span>创建于 {new Date(vtc.created_at).toLocaleDateString()}</span>
+                  <span>
+                    {tr('创建于 {date}', {
+                      date: new Date(vtc.created_at).toLocaleDateString(),
+                    })}
+                  </span>
                 )}
                 {isMember && (
-                  <span className="text-blue-400 font-bold">我的职位：{roleLabelOf(myRole)}</span>
+                  <span className="text-blue-400 font-bold">
+                    {tr('我的职位：{role}', { role: roleLabelOf(myRole, tr) })}
+                  </span>
                 )}
               </div>
 
               <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
-                {vtc?.description || '这个车队还没有填写简介。'}
+                {vtc?.description || tr('这个车队还没有填写简介。')}
               </p>
             </div>
           </div>
@@ -884,7 +1070,9 @@ export default function VTCDetailPage() {
           {vtc?.requirements && (
             <div className="px-6 pb-6">
               <div className="bg-[#232428] border border-gray-700 rounded-lg p-4">
-                <h3 className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-2">招募要求</h3>
+                <h3 className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-2">
+                  {tr('招募要求')}
+                </h3>
                 <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{vtc.requirements}</p>
               </div>
             </div>
@@ -897,13 +1085,13 @@ export default function VTCDetailPage() {
                 href="/login"
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg"
               >
-                登录后加入车队
+                {tr('登录后加入车队')}
               </Link>
             )}
 
             {inOtherVtc && (
               <span className="text-sm text-yellow-400 font-bold bg-yellow-900/20 px-4 py-2.5 rounded border border-yellow-800">
-                你已加入其他车队，需先退出才能加入
+                {tr('你已加入其他车队，需先退出才能加入')}
               </span>
             )}
 
@@ -914,10 +1102,10 @@ export default function VTCDetailPage() {
                   onClick={() => setEditing((value) => !value)}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg"
                 >
-                  {editing ? '取消编辑' : '编辑车队信息'}
+                  {editing ? tr('取消编辑') : tr('编辑车队信息')}
                 </button>
                 <span className="text-sm text-gray-500 font-bold bg-[#18191c] px-4 py-2.5 rounded border border-gray-700">
-                  你是该车队的队长
+                  {tr('你是该车队的队长')}
                 </span>
               </>
             )}
@@ -930,7 +1118,7 @@ export default function VTCDetailPage() {
                 disabled={topBusy}
                 className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg disabled:opacity-50"
               >
-                {topBusy ? '处理中...' : '退出车队'}
+                {topBusy ? tr('处理中...') : tr('退出车队')}
               </button>
             )}
 
@@ -939,14 +1127,16 @@ export default function VTCDetailPage() {
               <>
                 {myInvitation && (
                   <div className="flex flex-wrap items-center gap-2 bg-yellow-900/20 border border-yellow-800 rounded px-3 py-2">
-                    <span className="text-sm font-bold text-yellow-400">该车队邀请你加入</span>
+                    <span className="text-sm font-bold text-yellow-400">
+                      {tr('该车队邀请你加入')}
+                    </span>
                     <button
                       type="button"
                       onClick={() => handleRespondInvite(true)}
                       disabled={topBusy}
                       className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                     >
-                      接受邀请
+                      {tr('接受邀请')}
                     </button>
                     <button
                       type="button"
@@ -954,7 +1144,7 @@ export default function VTCDetailPage() {
                       disabled={topBusy}
                       className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                     >
-                      拒绝
+                      {tr('拒绝')}
                     </button>
                   </div>
                 )}
@@ -962,7 +1152,7 @@ export default function VTCDetailPage() {
                 {myApplicationForThis && (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm text-yellow-400 font-bold bg-yellow-900/20 px-4 py-2.5 rounded border border-yellow-800">
-                      申请审核中
+                      {tr('申请审核中')}
                     </span>
                     <button
                       type="button"
@@ -970,7 +1160,7 @@ export default function VTCDetailPage() {
                       disabled={topBusy}
                       className="bg-[#18191c] border border-gray-600 hover:border-red-500 hover:text-red-400 text-gray-300 px-4 py-2.5 rounded font-bold transition disabled:opacity-50"
                     >
-                      {topBusy ? '处理中...' : '取消申请'}
+                      {topBusy ? tr('处理中...') : tr('取消申请')}
                     </button>
                   </div>
                 )}
@@ -984,7 +1174,11 @@ export default function VTCDetailPage() {
                         disabled={topBusy || !recruiting}
                         className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg disabled:opacity-50"
                       >
-                        {topBusy ? '处理中...' : recruiting ? '立即加入' : '已停止招募'}
+                        {topBusy
+                          ? tr('处理中...')
+                          : recruiting
+                            ? tr('立即加入')
+                            : tr('已停止招募')}
                       </button>
                     )}
 
@@ -995,7 +1189,11 @@ export default function VTCDetailPage() {
                         disabled={topBusy || !recruiting}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded font-bold transition shadow-lg disabled:opacity-50"
                       >
-                        {recruiting ? (applyOpen ? '收起申请' : '申请加入') : '已停止招募'}
+                        {recruiting
+                          ? applyOpen
+                            ? tr('收起申请')
+                            : tr('申请加入')
+                          : tr('已停止招募')}
                       </button>
                     )}
 
@@ -1005,7 +1203,7 @@ export default function VTCDetailPage() {
                         disabled
                         className="bg-[#18191c] border border-gray-700 text-gray-500 px-6 py-2.5 rounded font-bold cursor-not-allowed"
                       >
-                        仅邀请加入
+                        {tr('仅邀请加入')}
                       </button>
                     )}
                   </>
@@ -1013,7 +1211,7 @@ export default function VTCDetailPage() {
 
                 {!myInvitation && hasOtherPendingApplication && (
                   <span className="text-sm text-yellow-400 font-bold bg-yellow-900/20 px-4 py-2.5 rounded border border-yellow-800">
-                    你已有其他车队的待审核申请，请先取消
+                    {tr('你已有其他车队的待审核申请，请先取消')}
                   </span>
                 )}
               </>
@@ -1023,20 +1221,22 @@ export default function VTCDetailPage() {
               href="/vtc"
               className="ml-auto text-sm text-gray-400 hover:text-white transition font-bold"
             >
-              ← 返回大厅
+              {tr('← 返回大厅')}
             </Link>
           </div>
 
           {/* 申请留言内联表单 */}
           {canUseJoinActions && !myInvitation && !myApplication && joinMode === 'approval' && applyOpen && (
             <form onSubmit={handleSubmitApply} className="px-6 py-4 bg-[#232428] border-t border-gray-700/60 space-y-3">
-              <label className="block text-sm font-bold text-gray-400">申请留言（选填）</label>
+              <label className="block text-sm font-bold text-gray-400">
+                {tr('申请留言（选填）')}
+              </label>
               <textarea
                 value={applyMessage}
                 onChange={(e) => setApplyMessage(e.target.value)}
                 maxLength={300}
                 rows={3}
-                placeholder="介绍一下你的在线时间 / 驾驶经验，方便队长审核..."
+                placeholder={tr('介绍一下你的在线时间 / 驾驶经验，方便队长审核...')}
                 className={inputClass}
               />
               <div className="flex items-center gap-3">
@@ -1045,7 +1245,7 @@ export default function VTCDetailPage() {
                   disabled={topBusy}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition disabled:opacity-50"
                 >
-                  {topBusy ? '提交中...' : '提交申请'}
+                  {topBusy ? tr('提交中...') : tr('提交申请')}
                 </button>
                 <button
                   type="button"
@@ -1053,7 +1253,7 @@ export default function VTCDetailPage() {
                   disabled={topBusy}
                   className="text-sm text-gray-400 hover:text-white font-bold disabled:opacity-50"
                 >
-                  取消
+                  {tr('取消')}
                 </button>
               </div>
             </form>
@@ -1066,11 +1266,15 @@ export default function VTCDetailPage() {
             onSubmit={handleSave}
             className="bg-[#2c2d31] border border-gray-700 p-6 md:p-8 rounded-xl shadow-2xl space-y-6"
           >
-            <h2 className="text-lg font-bold text-white border-b border-gray-700 pb-3">编辑车队信息</h2>
+            <h2 className="text-lg font-bold text-white border-b border-gray-700 pb-3">
+              {tr('编辑车队信息')}
+            </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="md:col-span-2">
-                <label className="block text-sm font-bold text-gray-400 mb-2">车队全名 *</label>
+                <label className="block text-sm font-bold text-gray-400 mb-2">
+                  {tr('车队全名 *')}
+                </label>
                 <input
                   type="text"
                   value={form.name}
@@ -1080,7 +1284,9 @@ export default function VTCDetailPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-400 mb-2">车队标签 (Tag)</label>
+                <label className="block text-sm font-bold text-gray-400 mb-2">
+                  {tr('车队标签 (Tag)')}
+                </label>
                 <input
                   type="text"
                   value={form.tag}
@@ -1092,7 +1298,9 @@ export default function VTCDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">车队 Logo 链接</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">
+                {tr('车队 Logo 链接')}
+              </label>
               <input
                 type="url"
                 value={form.logo_url}
@@ -1103,7 +1311,9 @@ export default function VTCDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">车队简介 *</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">
+                {tr('车队简介 *')}
+              </label>
               <textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -1113,7 +1323,9 @@ export default function VTCDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-400 mb-2">招募要求</label>
+              <label className="block text-sm font-bold text-gray-400 mb-2">
+                {tr('招募要求')}
+              </label>
               <textarea
                 value={form.requirements}
                 onChange={(e) => setForm({ ...form, requirements: e.target.value })}
@@ -1129,7 +1341,7 @@ export default function VTCDetailPage() {
                   onChange={(e) => setForm({ ...form, is_recruiting: e.target.checked })}
                   className="w-4 h-4 accent-green-600"
                 />
-                <span className="text-sm text-gray-300 font-bold">开放招募</span>
+                <span className="text-sm text-gray-300 font-bold">{tr('开放招募')}</span>
               </label>
 
               <button
@@ -1137,7 +1349,7 @@ export default function VTCDetailPage() {
                 disabled={saveBusy}
                 className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded font-bold transition shadow-lg disabled:opacity-50"
               >
-                {saveBusy ? '保存中...' : '保存修改'}
+                {saveBusy ? tr('保存中...') : tr('保存修改')}
               </button>
             </div>
           </form>
@@ -1149,21 +1361,25 @@ export default function VTCDetailPage() {
             <div className="bg-[#232428] px-6 py-3 border-b border-gray-700 flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" /><path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" /></svg>
-                <span className="text-sm font-bold text-gray-400">申请审核</span>
+                <span className="text-sm font-bold text-gray-400">{tr('申请审核')}</span>
               </div>
-              <span className="text-xs text-gray-500">待审核 {applications.length} 条</span>
+              <span className="text-xs text-gray-500">
+                {tr('待审核 {count} 条', { count: applications.length })}
+              </span>
             </div>
 
             <div className="p-6 space-y-4">
               <Feedback error={reviewError} success={reviewNotice} />
 
               {applications.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-6">暂无待审核的加入申请。</p>
+                <p className="text-sm text-gray-500 text-center py-6">
+                  {tr('暂无待审核的加入申请。')}
+                </p>
               ) : (
                 <ul className="space-y-3">
                   {applications.map((application) => {
                     const applicant = applicantOf(application);
-                    const name = applicant?.display_name || '未命名玩家';
+                    const name = applicant?.display_name || tr('未命名玩家');
                     const busy = reviewBusyId !== null;
 
                     return (
@@ -1189,14 +1405,14 @@ export default function VTCDetailPage() {
                               {name}
                             </Link>
                             <span className="text-xs text-gray-500 font-mono">
-                              ID: {applicant?.custom_id || applicant?.random_id || '未分配'}
+                              ID: {applicant?.custom_id || applicant?.random_id || tr('未分配')}
                             </span>
                             <span className="text-xs text-gray-500">
                               {new Date(application.created_at).toLocaleString()}
                             </span>
                           </div>
                           <p className="text-sm text-gray-400 mt-1 whitespace-pre-wrap break-words">
-                            {application.message || '（未填写留言）'}
+                            {application.message || tr('（未填写留言）')}
                           </p>
                         </div>
 
@@ -1207,7 +1423,7 @@ export default function VTCDetailPage() {
                             disabled={busy}
                             className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                           >
-                            {reviewBusyId === application.id ? '处理中...' : '通过'}
+                            {reviewBusyId === application.id ? tr('处理中...') : tr('通过')}
                           </button>
                           <button
                             type="button"
@@ -1215,7 +1431,7 @@ export default function VTCDetailPage() {
                             disabled={busy}
                             className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-sm font-bold transition disabled:opacity-50"
                           >
-                            拒绝
+                            {tr('拒绝')}
                           </button>
                         </div>
                       </li>
@@ -1233,9 +1449,9 @@ export default function VTCDetailPage() {
             <div className="bg-[#232428] px-6 py-3 border-b border-gray-700 flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" /></svg>
-                <span className="text-sm font-bold text-gray-400">邀请成员</span>
+                <span className="text-sm font-bold text-gray-400">{tr('邀请成员')}</span>
               </div>
-              <span className="text-xs text-gray-500">搜索昵称 / 玩家 ID</span>
+              <span className="text-xs text-gray-500">{tr('搜索昵称 / 玩家 ID')}</span>
             </div>
 
             <div className="p-6 space-y-4">
@@ -1244,7 +1460,7 @@ export default function VTCDetailPage() {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="输入玩家昵称，或完整 custom_id / random_id"
+                  placeholder={tr('输入玩家昵称，或完整 custom_id / random_id')}
                   className={inputClass}
                 />
                 <button
@@ -1252,20 +1468,22 @@ export default function VTCDetailPage() {
                   disabled={searchBusy}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-bold transition shrink-0 disabled:opacity-50"
                 >
-                  {searchBusy ? '搜索中...' : '搜索'}
+                  {searchBusy ? tr('搜索中...') : tr('搜索')}
                 </button>
               </form>
 
               <Feedback error={inviteError} success={inviteNotice} />
 
               {searchDone && searchResults.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">没有找到可邀请的玩家。</p>
+                <p className="text-sm text-gray-500 text-center py-4">
+                  {tr('没有找到可邀请的玩家。')}
+                </p>
               )}
 
               {searchResults.length > 0 && (
                 <ul className="divide-y divide-gray-700/60 border border-gray-700 rounded-lg overflow-hidden">
                   {searchResults.map((profile) => {
-                    const name = profile.display_name || '未命名玩家';
+                    const name = profile.display_name || tr('未命名玩家');
                     const inOtherTeam = profile.vtc_id !== null;
                     const invited = invitedIds.includes(profile.id);
                     const busy = inviteBusyId !== null;
@@ -1288,7 +1506,7 @@ export default function VTCDetailPage() {
                             {name}
                           </Link>
                           <p className="text-xs text-gray-500 font-mono truncate">
-                            ID: {profile.custom_id || profile.random_id || '未分配'}
+                            ID: {profile.custom_id || profile.random_id || tr('未分配')}
                           </p>
                         </div>
                         <button
@@ -1297,7 +1515,13 @@ export default function VTCDetailPage() {
                           disabled={busy || invited || inOtherTeam}
                           className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm font-bold transition disabled:opacity-50 shrink-0"
                         >
-                          {invited ? '已邀请' : inOtherTeam ? '已在其他车队' : inviteBusyId === profile.id ? '发送中...' : '邀请'}
+                          {invited
+                            ? tr('已邀请')
+                            : inOtherTeam
+                              ? tr('已在其他车队')
+                              : inviteBusyId === profile.id
+                                ? tr('发送中...')
+                                : tr('邀请')}
                         </button>
                       </li>
                     );
@@ -1313,16 +1537,18 @@ export default function VTCDetailPage() {
           <div className="bg-[#232428] px-6 py-3 border-b border-gray-700 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
-              <span className="text-sm font-bold text-gray-400">车队成员</span>
+              <span className="text-sm font-bold text-gray-400">{tr('车队成员')}</span>
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-xs text-gray-500">共 {members.length} 人</span>
+              <span className="text-xs text-gray-500">
+                {tr('共 {count} 人', { count: members.length })}
+              </span>
               {vtc && (
                 <Link
                   href={`/vtc/${vtc.id}/news`}
                   className="text-xs font-bold text-blue-400 hover:text-blue-300 transition"
                 >
-                  车队新闻 →
+                  {tr('车队新闻 →')}
                 </Link>
               )}
             </div>
@@ -1334,12 +1560,12 @@ export default function VTCDetailPage() {
 
           {members.length === 0 ? (
             <div className="text-center text-gray-500 text-sm py-12">
-              这个车队还没有成员。
+              {tr('这个车队还没有成员。')}
             </div>
           ) : (
             <ul className="divide-y divide-gray-700/60">
               {members.map((member) => {
-                const displayName = member.display_name || '未命名玩家';
+                const displayName = member.display_name || tr('未命名玩家');
                 const isOwnerRow = member.id === vtc?.owner_id || member.vtc_role === 'owner';
                 const canManage = isOwner && !isOwnerRow;
                 const roleValue = member.vtc_role === 'vice_owner'
@@ -1373,13 +1599,13 @@ export default function VTCDetailPage() {
                           {displayName}
                         </p>
                         <p className="text-xs text-gray-500 font-mono truncate">
-                          ID: {member.custom_id || member.random_id || '未分配'}
+                          ID: {member.custom_id || member.random_id || tr('未分配')}
                         </p>
                       </div>
                     </Link>
 
                     <span className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${roleBadgeOf(member.vtc_role)}`}>
-                      {roleLabelOf(member.vtc_role)}
+                      {roleLabelOf(member.vtc_role, tr)}
                     </span>
 
                     {canManage && (
@@ -1390,9 +1616,9 @@ export default function VTCDetailPage() {
                           disabled={memberBusyId !== null}
                           className="bg-[#18191c] border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
                         >
-                          <option value="vice_owner">副队长</option>
-                          <option value="dispatcher">调度员</option>
-                          <option value="member">车手</option>
+                          <option value="vice_owner">{tr('副队长')}</option>
+                          <option value="dispatcher">{tr('调度员')}</option>
+                          <option value="member">{tr('车手')}</option>
                         </select>
                         <button
                           type="button"
@@ -1400,7 +1626,7 @@ export default function VTCDetailPage() {
                           disabled={memberBusyId !== null}
                           className="bg-red-900/30 hover:bg-red-800/50 text-red-400 border border-red-800 px-3 py-1.5 rounded text-xs font-bold transition disabled:opacity-50"
                         >
-                          {memberBusyId === member.id ? '处理中...' : '踢出'}
+                          {memberBusyId === member.id ? tr('处理中...') : tr('踢出')}
                         </button>
                       </div>
                     )}
@@ -1416,28 +1642,34 @@ export default function VTCDetailPage() {
           <div className="bg-[#2c2d31] border border-gray-700 rounded-xl shadow-2xl overflow-hidden">
             <div className="bg-[#232428] px-6 py-3 border-b border-gray-700 flex items-center gap-2">
               <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" /></svg>
-              <span className="text-sm font-bold text-gray-400">车队设置</span>
+              <span className="text-sm font-bold text-gray-400">{tr('车队设置')}</span>
             </div>
 
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-bold text-gray-400 mb-2">加入方式</label>
+                  <label className="block text-sm font-bold text-gray-400 mb-2">
+                    {tr('加入方式')}
+                  </label>
                   <select
                     value={settingsJoinMode}
                     onChange={(e) => setSettingsJoinMode(joinModeOf(e.target.value))}
                     disabled={settingsBusy}
                     className={inputClass}
                   >
-                    <option value="open">开放加入（立即加入）</option>
-                    <option value="approval">需要申请（管理员审核）</option>
-                    <option value="invite">仅邀请加入</option>
+                    <option value="open">{tr('开放加入（立即加入）')}</option>
+                    <option value="approval">{tr('需要申请（管理员审核）')}</option>
+                    <option value="invite">{tr('仅邀请加入')}</option>
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">修改后立即对大厅的加入按钮生效。</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {tr('修改后立即对大厅的加入按钮生效。')}
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-bold text-gray-400 mb-2">招募状态</label>
+                  <label className="block text-sm font-bold text-gray-400 mb-2">
+                    {tr('招募状态')}
+                  </label>
                   <button
                     type="button"
                     onClick={() => setSettingsRecruiting((value) => !value)}
@@ -1448,9 +1680,13 @@ export default function VTCDetailPage() {
                         : 'bg-red-900/30 border-red-700 text-red-400 hover:bg-red-900/50'
                     }`}
                   >
-                    {settingsRecruiting ? '招聘中（点击暂停招募）' : '已停止招募（点击开放）'}
+                    {settingsRecruiting
+                      ? tr('招聘中（点击暂停招募）')
+                      : tr('已停止招募（点击开放）')}
                   </button>
-                  <p className="text-xs text-gray-500 mt-1">关闭后申请与直接加入都会被拒绝，邀请仍然可用。</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {tr('关闭后申请与直接加入都会被拒绝，邀请仍然可用。')}
+                  </p>
                 </div>
               </div>
 
@@ -1463,7 +1699,7 @@ export default function VTCDetailPage() {
                   disabled={settingsBusy}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded font-bold transition shadow-lg disabled:opacity-50"
                 >
-                  {settingsBusy ? '保存中...' : '保存车队设置'}
+                  {settingsBusy ? tr('保存中...') : tr('保存车队设置')}
                 </button>
               </div>
             </div>
@@ -1475,7 +1711,7 @@ export default function VTCDetailPage() {
           <div className="bg-[#2c2d31] border border-red-900/60 rounded-xl shadow-2xl overflow-hidden">
             <div className="bg-red-950/30 px-6 py-3 border-b border-red-900/60 flex items-center gap-2">
               <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              <span className="text-sm font-bold text-red-400">危险区</span>
+              <span className="text-sm font-bold text-red-400">{tr('危险区')}</span>
             </div>
 
             <div className="p-6 space-y-6">
@@ -1484,12 +1720,12 @@ export default function VTCDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 转让车队 */}
                 <div className="bg-[#232428] border border-gray-700 rounded-lg p-4 space-y-3">
-                  <h3 className="text-sm font-bold text-white">转让车队</h3>
+                  <h3 className="text-sm font-bold text-white">{tr('转让车队')}</h3>
                   <p className="text-xs text-gray-500 leading-relaxed">
-                    将队长身份转让给本队成员，转让后你将成为普通车手。
+                    {tr('将队长身份转让给本队成员，转让后你将成为普通车手。')}
                   </p>
                   {transferCandidates.length === 0 ? (
-                    <p className="text-xs text-gray-500">暂无可转让的成员。</p>
+                    <p className="text-xs text-gray-500">{tr('暂无可转让的成员。')}</p>
                   ) : (
                     <>
                       <select
@@ -1498,10 +1734,13 @@ export default function VTCDetailPage() {
                         disabled={dangerBusy}
                         className={inputClass}
                       >
-                        <option value="">选择新队长...</option>
+                        <option value="">{tr('选择新队长...')}</option>
                         {transferCandidates.map((member) => (
                           <option key={member.id} value={member.id}>
-                            {member.display_name || '未命名玩家'}（{roleLabelOf(member.vtc_role)}）
+                            {tr('{name}（{role}）', {
+                              name: member.display_name || tr('未命名玩家'),
+                              role: roleLabelOf(member.vtc_role, tr),
+                            })}
                           </option>
                         ))}
                       </select>
@@ -1511,7 +1750,7 @@ export default function VTCDetailPage() {
                         disabled={dangerBusy || !transferTarget}
                         className="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded font-bold transition disabled:opacity-50"
                       >
-                        {dangerBusy ? '处理中...' : '转让车队'}
+                        {dangerBusy ? tr('处理中...') : tr('转让车队')}
                       </button>
                     </>
                   )}
@@ -1519,9 +1758,11 @@ export default function VTCDetailPage() {
 
                 {/* 解散车队 */}
                 <div className="bg-[#232428] border border-red-900/50 rounded-lg p-4 space-y-3">
-                  <h3 className="text-sm font-bold text-red-400">解散车队</h3>
+                  <h3 className="text-sm font-bold text-red-400">{tr('解散车队')}</h3>
                   <p className="text-xs text-gray-500 leading-relaxed">
-                    解散后车队与成员关系将无法恢复。请输入 <span className="font-mono text-red-400">DISSOLVE</span> 确认。
+                    {tr('解散后车队与成员关系将无法恢复。请输入')}{' '}
+                    <span className="font-mono text-red-400">DISSOLVE</span>{' '}
+                    {tr('确认。')}
                   </p>
                   <input
                     type="text"
@@ -1537,7 +1778,7 @@ export default function VTCDetailPage() {
                     disabled={dangerBusy || dissolveText !== 'DISSOLVE'}
                     className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded font-bold transition disabled:opacity-50"
                   >
-                    {dangerBusy ? '处理中...' : '永久解散车队'}
+                    {dangerBusy ? tr('处理中...') : tr('永久解散车队')}
                   </button>
                 </div>
               </div>
