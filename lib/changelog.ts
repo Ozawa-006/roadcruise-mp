@@ -21,10 +21,30 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.41v',
+    date: '2026-11-02',
+    title: '招募通知按部门与逐级升级',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新招募申请只通知该职位所属部门的经理（社区/活动/游戏/支持/开发线），不再全员通知；无对应经理时回退通知 Lv.90+，避免无人处理',
+      },
+      {
+        kind: 'feature',
+        text: '超时自动升级：24 小时未处理 → 通知高级经理；48 小时未处理 → 通知决策层（Lv.98+）；72 小时后每 24 小时继续提醒决策层',
+      },
+      {
+        kind: 'chore',
+        text: '启用 pg_cron，每小时执行一次「升级提醒 + 实习到期提醒」；移除 Vercel 每日 Cron 以避免重复',
+      },
+    ],
+  },
+  {
     version: '0.0.40v',
     date: '2026-11-01',
     title: '实习期提醒与回复删除',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
