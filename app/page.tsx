@@ -18,6 +18,7 @@ export default function Home() {
 
   useEffect(() => {
     const fetchData = async () => {
+      // 1. 获取最新官方公告
       const { data: topics } = await supabase
         .from('forum_topics')
         .select(`
@@ -29,6 +30,7 @@ export default function Home() {
         .limit(5);
       if (topics) setLatestTopics(topics);
 
+      // 2. 获取统计数据
       const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
       const { count: teamCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('role_level', 40);
       
@@ -42,11 +44,12 @@ export default function Home() {
     fetchData();
   }, []);
 
+  // 自动轮播
   useEffect(() => {
     if (latestTopics.length <= 1) return;
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % latestTopics.length);
-    }, 6000); // 延长到6秒，方便阅读
+    }, 6000);
     return () => clearInterval(timer);
   }, [latestTopics.length]);
 
@@ -61,95 +64,99 @@ export default function Home() {
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
       
-      {/* 🌟 第一区块：TMP风格欢迎页轮播 */}
-      <section className="relative w-full h-[60vh] md:h-[70vh] bg-black overflow-hidden group">
-        {latestTopics.length === 0 ? (
-          // 兜底：如果没有新闻
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center">
-            <div className="absolute inset-0 bg-black/60 z-0"></div>
-            <div className="relative z-10 text-center flex flex-col items-center">
-              <h1 className="text-4xl md:text-6xl font-black text-white mb-6 drop-shadow-lg">
-                Road Cruise Transport MP
-              </h1>
-              <Link href="/login" className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold text-lg transition shadow-xl">
-                今天就加入吧！
-              </Link>
-            </div>
+      {/* 🌟 第一区块：TMP风格主页首屏 */}
+      <section className="relative w-full h-[65vh] md:h-[75vh] bg-black overflow-hidden">
+        
+        {/* 1. 底层背景图（防止拉伸，统一使用高清图） */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0"
+          style={{ backgroundImage: `url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')` }}
+        ></div>
+        {/* 遮罩层，让文字清晰 */}
+        <div className="absolute inset-0 bg-black/60 z-0"></div>
+
+        {/* 2. 主体内容区（左右分栏） */}
+        <div className="relative z-10 w-full h-full max-w-7xl mx-auto px-6 md:px-10 flex flex-col md:flex-row items-center justify-between">
+          
+          {/* 左侧：固定的卖点列表 */}
+          <div className="w-full md:w-1/2 text-white space-y-4 mb-10 md:mb-0">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+              <span className="w-1.5 h-6 bg-blue-500 inline-block"></span> 
+              Why join us?
+            </h2>
+            <ul className="space-y-3 text-base md:text-lg text-gray-200">
+              <li className="flex items-center gap-3"><span className="text-blue-400">✔</span> Thousands of players</li>
+              <li className="flex items-center gap-3"><span className="text-blue-400">✔</span> Strong and Fair Game Moderation Team</li>
+              <li className="flex items-center gap-3"><span className="text-blue-400">✔</span> Dedicated Servers</li>
+              <li className="flex items-center gap-3"><span className="text-blue-400">✔</span> Great Community</li>
+              <li className="flex items-center gap-3"><span className="text-blue-400">✔</span> All that is missing is you!</li>
+            </ul>
           </div>
-        ) : (
-          <>
-            {latestTopics.map((item, index) => (
-              <div
-                key={item.id}
-                className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex flex-col items-center justify-center bg-cover bg-center ${
-                  index === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
-                }`}
-                style={{ backgroundImage: `url(${item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'})` }}
-              >
-                <div className="absolute inset-0 bg-black/60 z-0"></div>
 
-                {/* 🌟 核心：TMP风格的双栏欢迎区 */}
-                <div className="relative z-10 w-full max-w-7xl mx-auto px-6 md:px-10 flex flex-col md:flex-row items-center justify-between">
-                  {/* 左侧：卖点列表 */}
-                  <div className="text-white space-y-3 mb-8 md:mb-0">
-                    <h2 className="text-xl md:text-2xl font-bold mb-4 flex items-center gap-2">
-                      <span className="w-1.5 h-6 bg-blue-500 inline-block"></span> 
-                      Why join us?
-                    </h2>
-                    <ul className="space-y-2 text-sm md:text-base text-gray-200">
-                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Thousands of players</li>
-                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Strong and Fair Game Moderation Team</li>
-                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Dedicated Servers</li>
-                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> Great Community</li>
-                      <li className="flex items-center gap-2"><span className="text-blue-400">✔</span> All that is missing is you!</li>
-                    </ul>
-                  </div>
-
-                  {/* 右侧：行动号召按钮 */}
-                  <div className="text-center">
-                    <Link 
-                      href="/login" 
-                      className="inline-block bg-blue-600 hover:bg-blue-500 text-white px-10 py-3 rounded font-bold text-lg transition shadow-[0_0_15px_rgba(59,130,246,0.5)] hover:scale-105 transform"
-                    >
-                      Join today!
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* 🌟 修复：左右切换按钮（常驻显示，半透明背景） */}
-            {latestTopics.length > 1 && (
+          {/* 右侧：新闻轮播内容 */}
+          <div className="w-full md:w-1/2 flex flex-col items-center md:items-start justify-center text-center md:text-left h-64 relative">
+            {latestTopics.length === 0 ? (
+              // 没有新闻时的兜底展示
               <>
-                <button 
-                  onClick={prevSlide}
-                  className="absolute left-0 top-0 bottom-0 w-16 bg-white/10 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all duration-300"
-                >
-                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                <button 
-                  onClick={nextSlide}
-                  className="absolute right-0 top-0 bottom-0 w-16 bg-white/10 hover:bg-white/20 text-white flex items-center justify-center z-20 transition-all duration-300"
-                >
-                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
-                </button>
+                <h1 className="text-4xl md:text-5xl font-black text-white mb-6 drop-shadow-lg leading-tight">
+                  Road Cruise Transport MP
+                </h1>
+                <Link href="/login" className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-3 rounded font-bold text-lg transition shadow-lg">
+                  Join today!
+                </Link>
+              </>
+            ) : (
+              // 有新闻时的轮播展示
+              <div className="relative w-full h-full flex flex-col justify-center">
+                {latestTopics.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex flex-col justify-center ${
+                      index === currentIndex ? 'opacity-100 z-10 pointer-events-auto' : 'opacity-0 z-0 pointer-events-none'
+                    }`}
+                  >
+                    <span className="text-blue-500 font-bold tracking-widest uppercase mb-2 text-sm">Road Cruise News</span>
+                    <h1 className="text-2xl md:text-4xl font-black text-white mb-6 drop-shadow-lg leading-tight line-clamp-3">
+                      {item.title}
+                    </h1>
+                    <div>
+                      <Link 
+                        href={`/forum/${item.category_id}/${item.id}`} 
+                        className="inline-block bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-md font-bold text-base transition shadow-lg"
+                      >
+                        Read More (阅读更多)
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-                {/* 底部小圆点指示器 */}
-                <div className="absolute bottom-6 left-0 right-0 flex justify-center space-x-3 z-20">
-                  {latestTopics.map((_, index) => (
+            {/* 右侧轮播控制按钮与指示器 (绝对定位在右侧区域内) */}
+            {latestTopics.length > 1 && (
+              <div className="absolute -bottom-8 md:bottom-0 right-0 md:-right-8 flex items-center gap-4">
+                <button onClick={prevSlide} className="text-white/50 hover:text-white transition p-2">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <div className="flex space-x-2">
+                  {latestTopics.map((_, i) => (
                     <button
-                      key={index}
-                      onClick={() => setCurrentIndex(index)}
-                      className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                        index === currentIndex ? 'bg-white scale-125' : 'bg-white/40 hover:bg-white/70'
+                      key={i}
+                      onClick={() => setCurrentIndex(i)}
+                      className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                        i === currentIndex ? 'bg-white scale-125' : 'bg-white/30 hover:bg-white/60'
                       }`}
                     />
                   ))}
                 </div>
-              </>
+                <button onClick={nextSlide} className="text-white/50 hover:text-white transition p-2">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+              </div>
             )}
-          </>
-        )}
+          </div>
+
+        </div>
       </section>
 
       {/* 第二区块：VTC Events */}
