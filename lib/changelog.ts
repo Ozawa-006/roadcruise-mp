@@ -24,6 +24,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.0.26v',
     date: '2026-11-01',
     title: '内容生态与通知中心',
+    commit: 'c5e2d92',
     highlight: true,
     items: [
       {

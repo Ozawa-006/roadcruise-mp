@@ -647,10 +647,12 @@ export default function VtcNewsPage() {
             <ul className="divide-y divide-gray-700/60">
               {items.map((item) => {
                 const expanded = expandedIds.includes(item.id);
-                const tooLong = item.content.length > SUMMARY_LENGTH;
+                // 按 Unicode 码点截断，避免把 emoji 的代理对切断
+                const chars = Array.from(item.content);
+                const tooLong = chars.length > SUMMARY_LENGTH;
                 const body = isManager || expanded || !tooLong
                   ? item.content
-                  : `${item.content.slice(0, SUMMARY_LENGTH)}…`;
+                  : `${chars.slice(0, SUMMARY_LENGTH).join('')}…`;
                 const edited =
                   Boolean(item.updatedAt) &&
                   Boolean(item.createdAt) &&

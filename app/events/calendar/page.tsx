@@ -190,7 +190,9 @@ function CalendarEventLink({ event }: { event: EventRow }) {
       className="block rounded-lg border border-gray-700 bg-[#232428] p-3 transition hover:border-blue-500/60 hover:bg-[#2f3035]"
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 font-bold text-white">{titleOf(event)}</p>
+        <p className="line-clamp-2 min-w-0 break-words font-bold text-white">
+          {titleOf(event)}
+        </p>
         <span className="shrink-0 text-xs font-bold text-blue-400">详情 →</span>
       </div>
       <p className="mt-1 text-xs text-gray-400">🕒 {formatDateTime(event.start_at)}</p>
@@ -216,18 +218,23 @@ function CalendarDayCell({
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }) {
-  const isToday = cell.key === todayKey;
-  const isSelected = cell.key === selectedKey;
+  const isToday = cell.inMonth && cell.key === todayKey;
+  const isSelected = cell.inMonth && cell.key === selectedKey;
   const showsEvents = cell.inMonth && cell.events.length > 0;
   const visibleEvents = cell.events.slice(0, 2);
   const hiddenCount = cell.events.length - visibleEvents.length;
 
   const cellClassName = [
     'relative flex min-h-[72px] flex-col rounded-lg border p-1.5 text-left transition sm:min-h-[108px] sm:p-2',
-    cell.inMonth ? 'border-gray-700 bg-[#232428]' : 'border-gray-800 bg-[#1b1c20]',
-    isToday ? 'border-blue-500/70 bg-blue-500/10' : '',
-    isSelected ? 'border-orange-500/70 bg-orange-500/10 ring-1 ring-orange-500/40' : '',
-    showsEvents ? 'cursor-pointer hover:border-blue-500/60' : '',
+    isSelected
+      ? 'border-orange-500/70 bg-orange-500/10 ring-1 ring-orange-500/40'
+      : isToday
+        ? 'border-blue-500/70 bg-blue-500/10'
+        : cell.inMonth
+          ? 'border-gray-700 bg-[#232428]'
+          : 'border-gray-800 bg-[#1b1c20]',
+    showsEvents ? 'cursor-pointer' : '',
+    showsEvents && !isSelected ? 'hover:border-blue-500/60' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -264,7 +271,13 @@ function CalendarDayCell({
             }}
             aria-expanded={isSelected}
             aria-label={`${cell.date.getMonth() + 1}月${cell.date.getDate()}日，${cell.events.length} 个活动，查看当日列表`}
-            className={`${dateClassName} transition hover:bg-blue-500/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400`}
+            className={`${dateClassName} transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+              isToday
+                ? 'hover:bg-blue-500'
+                : isSelected
+                  ? 'hover:bg-orange-400'
+                  : 'hover:bg-blue-500/30'
+            }`}
           >
             {cell.date.getDate()}
           </button>
@@ -294,6 +307,7 @@ function CalendarDayCell({
               event.stopPropagation();
               onSelect(cell.key);
             }}
+            aria-label={`查看${cell.date.getMonth() + 1}月${cell.date.getDate()}日全部${cell.events.length}个活动`}
             className="mt-0.5 self-start rounded px-1 text-[11px] font-bold text-orange-300 transition hover:text-orange-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
           >
             +{hiddenCount}
@@ -462,12 +476,12 @@ export default function EventCalendarPage() {
             </p>
             {status === 'ready' && view && events.length > 0 ? (
               <p className="mt-2 text-xs text-gray-600">
-                共 {events.length} 个已发布活动 · 当前月 {monthEvents.length} 个
+                共 {events.length} 个已发布活动 · 当月 {monthEvents.length} 个
               </p>
             ) : null}
           </div>
 
-          <div className="inline-flex overflow-hidden rounded-lg border border-gray-700 bg-[#232428] p-0.5 text-xs font-bold">
+          <div className="ml-auto inline-flex overflow-hidden rounded-lg border border-gray-700 bg-[#232428] p-0.5 text-xs font-bold">
             <span
               aria-current="page"
               className="rounded-md bg-blue-600 px-3 py-1.5 text-white"
@@ -559,6 +573,12 @@ export default function EventCalendarPage() {
               </div>
             </section>
 
+            {monthEvents.length === 0 ? (
+              <p className="mt-3 hidden rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/60 px-4 py-3 text-center text-sm text-gray-500 sm:block">
+                当月暂无活动，可以切换月份查看。
+              </p>
+            ) : null}
+
             {selectedCell ? (
               <DayPanel cell={selectedCell} onClose={() => setSelectedKey(null)} />
             ) : null}
@@ -566,13 +586,13 @@ export default function EventCalendarPage() {
             <section aria-labelledby="calendar-month-events" className="mt-4 sm:hidden">
               <div className="mb-2 flex items-baseline justify-between">
                 <h2 id="calendar-month-events" className="text-lg font-bold text-white">
-                  本月活动
+                  当月活动
                 </h2>
                 <span className="text-xs text-gray-500">{monthEvents.length} 个</span>
               </div>
               {monthEvents.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-gray-700 bg-[#2c2d31]/60 p-5 text-center text-sm text-gray-500">
-                  本月暂无活动，可以切换月份查看。
+                  当月暂无活动，可以切换月份查看。
                 </p>
               ) : (
                 <ul className="space-y-2">
