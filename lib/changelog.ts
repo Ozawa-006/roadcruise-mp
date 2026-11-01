@@ -21,10 +21,46 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.29v',
+    date: '2026-11-01',
+    title: '社区治理与帮助中心',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新增举报/申诉系统：`/reports` 提交举报并查看自己的处理进度，`/admin/reports` 由工作人员处理（开始处理/已处理/驳回 + 备注），状态变化自动发站内通知',
+      },
+      {
+        kind: 'feature',
+        text: '论坛帖子与回复支持作者编辑（Lv.70+ 可管理他人内容）；主帖与回复新增「举报」入口',
+      },
+      {
+        kind: 'feature',
+        text: '新增帮助与支持中心 `/support`（FAQ + 快捷入口）与客户端下载页 `/download`（启动器测试中，明确标注即将开放）',
+      },
+      {
+        kind: 'feature',
+        text: '账号设置支持修改密码（需先验证当前密码，至少 8 位）',
+      },
+      {
+        kind: 'feature',
+        text: '全站搜索增强：支持帖子 / 玩家 / 活动 / 新闻 / 车队 分类型搜索',
+      },
+      {
+        kind: 'feature',
+        text: '活动管理后台支持查看每个活动的报名名单（昵称、专属 ID、Steam 验证、备注、报名时间）',
+      },
+      {
+        kind: 'chore',
+        text: '数据库新增 reports 表与 RLS；论坛回复编辑在数据库层锁定归属字段（topic_id/author_id/created_at）',
+      },
+    ],
+  },
+  {
     version: '0.0.28v',
     date: '2026-11-01',
     title: '安全富文本与头像管理',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

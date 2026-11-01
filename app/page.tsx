@@ -370,9 +370,9 @@ export default function Home() {
               <li><Link href="/changelog" className="hover:text-blue-400">更新日志</Link></li>
               <li><Link href="/rules" className="hover:text-blue-400">社区规则</Link></li>
               <li><Link href="/map" className="hover:text-blue-400">实时地图</Link></li>
-              <li>
-                <span className="text-gray-600 cursor-default" title="客户端尚未发布">下载客户端（即将推出）</span>
-              </li>
+              <li><Link href="/reports" className="hover:text-blue-400">举报与申诉</Link></li>
+              <li><Link href="/support" className="hover:text-blue-400">帮助中心</Link></li>
+              <li><Link href="/download" className="hover:text-blue-400">客户端下载</Link></li>
             </ul>
           </div>
 

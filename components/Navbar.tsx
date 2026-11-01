@@ -392,7 +392,7 @@ export default function Navbar() {
           <Link href="/servers" className="hover:text-white transition">服务器列表</Link>
           <Link href="/vtc" className="hover:text-white transition">车队 (VTC)</Link>
           <Link href="/rules" className="hover:text-white transition">社区规则</Link>
-          <Link href="/forum/3" className="hover:text-white transition">帮助与支持</Link>
+          <Link href="/support" className="hover:text-white transition">帮助与支持</Link>
 
           {/* 🌟 全局搜索框 (带分类下拉) */}
           <form onSubmit={handleSearch} className="relative ml-4 flex items-center bg-[#232428] border border-gray-700 rounded-full focus-within:border-blue-500 transition-all focus-within:w-80 w-64 h-8">

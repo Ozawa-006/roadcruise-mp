@@ -89,6 +89,13 @@ function SettingsForm() {
   const [steamVerified, setSteamVerified] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
+  // 修改密码
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
 
@@ -412,6 +419,52 @@ function SettingsForm() {
     }
   };
 
+  // 修改密码：先验证当前密码（避免会话被他人接管时直接改密），再更新
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordMsg('');
+    if (!user?.email) {
+      setPasswordMsg('❌ 未获取到登录邮箱，请重新登录。');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordMsg('❌ 新密码至少需要 8 个字符。');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordMsg('❌ 两次输入的新密码不一致。');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordMsg('❌ 新密码不能与当前密码相同。');
+      return;
+    }
+
+    setPasswordSaving(true);
+    try {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+      if (verifyError) {
+        setPasswordMsg('❌ 当前密码不正确。');
+        return;
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+
+      setPasswordMsg('✅ 密码已更新，请使用新密码登录。');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+    } catch (error: unknown) {
+      setPasswordMsg(`❌ 修改失败：${getErrorMessage(error)}`);
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
   // 选好文件后优先展示本地预览，保存前不写数据库。
   const displayedAvatarUrl = previewUrl ?? avatarUrl;
 
@@ -572,6 +625,67 @@ function SettingsForm() {
             {msg && <span className={`text-sm font-bold ${msg.includes('失败') ? 'text-red-400' : 'text-green-400'}`}>{msg}</span>}
           </div>
         </form>
+
+        {/* 账号安全：修改密码 */}
+        <div className="mt-6 border-t border-gray-700 pt-6">
+          <h2 className="text-lg font-bold text-white mb-1">账号安全</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            修改登录密码需要先验证当前密码；修改成功后请使用新密码重新登录。
+          </p>
+          <form onSubmit={handlePasswordChange} className="space-y-3 max-w-md">
+            <div>
+              <label className="block text-sm font-bold text-gray-400 mb-1">当前密码</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-bold text-gray-400 mb-1">新密码（至少 8 位）</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-400 mb-1">确认新密码</label>
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  className="w-full bg-[#18191c] border border-gray-600 rounded p-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <button
+                type="submit"
+                disabled={passwordSaving}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition disabled:opacity-50"
+              >
+                {passwordSaving ? '修改中...' : '修改密码'}
+              </button>
+              {passwordMsg && (
+                <span className={`text-sm font-bold ${passwordMsg.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
+                  {passwordMsg}
+                </span>
+              )}
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

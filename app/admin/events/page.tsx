@@ -25,6 +25,31 @@ interface EventRow {
   status: string | null;
 }
 
+interface RegistrationProfile {
+  display_name: string | null;
+  custom_id: string | null;
+  steam_verified: boolean | null;
+}
+
+interface RegistrationRow {
+  id: number;
+  user_id: string;
+  status: string | null;
+  note: string | null;
+  created_at: string | null;
+  profiles: RegistrationProfile | RegistrationProfile[] | null;
+}
+
+interface RegistrationEntry {
+  id: number;
+  userId: string;
+  displayName: string;
+  customId: string | null;
+  steamVerified: boolean;
+  note: string | null;
+  createdAt: string | null;
+}
+
 type EventStatus = 'draft' | 'published';
 
 interface EventFormState {
@@ -76,6 +101,53 @@ function countMapFrom(rows: unknown): Record<number, number> {
     map[id] = countOf(record.registered_count);
   }
   return map;
+}
+
+function pickProfile(
+  value: RegistrationRow['profiles'] | undefined
+): RegistrationProfile | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function toRegistrationEntries(
+  rows: unknown,
+  fallbackProfiles?: Map<string, RegistrationProfile>
+): RegistrationEntry[] {
+  if (!Array.isArray(rows)) return [];
+
+  const entries: RegistrationEntry[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const record = row as Record<string, unknown>;
+    const id = Number(record.id);
+    const userId = typeof record.user_id === 'string' ? record.user_id : '';
+    if (!Number.isFinite(id) || !userId) continue;
+
+    const joined = record.profiles as RegistrationRow['profiles'];
+    const profile = pickProfile(joined) ?? fallbackProfiles?.get(userId) ?? null;
+    const createdAt = typeof record.created_at === 'string' ? record.created_at : null;
+    const note = typeof record.note === 'string' && record.note.trim() ? record.note.trim() : null;
+
+    entries.push({
+      id,
+      userId,
+      displayName: profile?.display_name?.trim() || '未命名玩家',
+      customId: profile?.custom_id?.trim() || null,
+      steamVerified: profile?.steam_verified === true,
+      note,
+      createdAt,
+    });
+  }
+
+  // 按报名时间升序（created_at 缺失的排在最后）
+  entries.sort((a, b) => {
+    const left = a.createdAt ? new Date(a.createdAt).getTime() : Number.POSITIVE_INFINITY;
+    const right = b.createdAt ? new Date(b.createdAt).getTime() : Number.POSITIVE_INFINITY;
+    return left - right;
+  });
+
+  return entries;
 }
 
 function formatDateTime(value: string | null): string {
@@ -143,6 +215,11 @@ export default function AdminEventsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  const [openRegistrationIds, setOpenRegistrationIds] = useState<number[]>([]);
+  const [registrations, setRegistrations] = useState<Record<number, RegistrationEntry[]>>({});
+  const [registrationsLoading, setRegistrationsLoading] = useState<Record<number, boolean>>({});
+  const [registrationsError, setRegistrationsError] = useState<Record<number, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -411,6 +488,108 @@ export default function AdminEventsPage() {
       setNotice({ kind: 'error', text: errorMessage(error) });
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const loadRegistrations = async (eventId: number) => {
+    setRegistrationsLoading((previous) => ({ ...previous, [eventId]: true }));
+    setRegistrationsError((previous) => {
+      if (!(eventId in previous)) return previous;
+      const next = { ...previous };
+      delete next[eventId];
+      return next;
+    });
+
+    try {
+      const { data, error } = await supabase
+        .from('event_registrations')
+        .select(
+          'id, user_id, status, note, created_at, profiles!user_id(display_name, custom_id, steam_verified)'
+        )
+        .eq('event_id', eventId)
+        .eq('status', 'registered')
+        .order('created_at', { ascending: true })
+        .limit(200);
+
+      let entries: RegistrationEntry[] | null = null;
+
+      if (!error) {
+        entries = toRegistrationEntries(data);
+      } else {
+        // embed 关系解析失败时回退：先取报名记录，再按 user_id 批量查 profiles
+        const fallback = await supabase
+          .from('event_registrations')
+          .select('id, user_id, status, note, created_at')
+          .eq('event_id', eventId)
+          .eq('status', 'registered')
+          .order('created_at', { ascending: true })
+          .limit(200);
+
+        if (fallback.error) {
+          setRegistrationsError((previous) => ({
+            ...previous,
+            [eventId]: fallback.error.message,
+          }));
+          return;
+        }
+
+        const fallbackRows = (fallback.data ?? []) as RegistrationRow[];
+        const userIds = Array.from(
+          new Set(fallbackRows.map((row) => row.user_id).filter((id) => id.length > 0))
+        );
+        const profileMap = new Map<string, RegistrationProfile>();
+
+        if (userIds.length > 0) {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, display_name, custom_id, steam_verified')
+            .in('id', userIds);
+
+          if (profileError) {
+            setRegistrationsError((previous) => ({
+              ...previous,
+              [eventId]: profileError.message,
+            }));
+            return;
+          }
+
+          for (const row of (profileData ?? []) as (RegistrationProfile & { id: string })[]) {
+            profileMap.set(row.id, row);
+          }
+        }
+
+        entries = toRegistrationEntries(fallbackRows, profileMap);
+      }
+
+      const { data: countData, error: countError } = await supabase
+        .from('event_registration_counts')
+        .select('registered_count')
+        .eq('event_id', eventId)
+        .maybeSingle();
+      if (!countError) {
+        const nextCount = countOf(countData?.registered_count);
+        setCounts((previous) => ({ ...previous, [eventId]: nextCount }));
+      }
+
+      setRegistrations((previous) => ({ ...previous, [eventId]: entries ?? [] }));
+    } catch (error) {
+      setRegistrationsError((previous) => ({ ...previous, [eventId]: errorMessage(error) }));
+    } finally {
+      setRegistrationsLoading((previous) => {
+        const next = { ...previous };
+        delete next[eventId];
+        return next;
+      });
+    }
+  };
+
+  const toggleRegistrations = (eventId: number) => {
+    const isOpen = openRegistrationIds.includes(eventId);
+    setOpenRegistrationIds((previous) =>
+      isOpen ? previous.filter((id) => id !== eventId) : [...previous, eventId]
+    );
+    if (!isOpen && !(eventId in registrations) && !registrationsLoading[eventId]) {
+      void loadRegistrations(eventId);
     }
   };
 
@@ -691,6 +870,10 @@ export default function AdminEventsPage() {
                 const badge = statusBadge(event.status);
                 const registered = counts[event.id] ?? 0;
                 const isBusy = busyId === event.id;
+                const isOpen = openRegistrationIds.includes(event.id);
+                const isLoadingRegistrations = registrationsLoading[event.id] === true;
+                const registrationEntries = registrations[event.id];
+                const registrationError = registrationsError[event.id];
                 const countText =
                   event.capacity !== null
                     ? `${registered} / ${event.capacity}`
@@ -733,6 +916,14 @@ export default function AdminEventsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
+                          onClick={() => toggleRegistrations(event.id)}
+                          aria-expanded={isOpen}
+                          className="rounded-lg border border-blue-500/50 bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-300 transition hover:border-blue-400 hover:text-white"
+                        >
+                          {isOpen ? '收起名单' : '报名名单'}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openEdit(event)}
                           disabled={busyId !== null || submitting}
                           className="rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-bold text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -768,6 +959,72 @@ export default function AdminEventsPage() {
                         </button>
                       </div>
                     </div>
+
+                    {isOpen ? (
+                      <div className="mt-4 rounded-lg border border-gray-700 bg-[#232428] p-3 md:p-4">
+                        <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-gray-700 pb-2">
+                          <span className="text-sm font-bold text-white">报名名单</span>
+                          <span className="text-xs text-gray-500">
+                            已报名{' '}
+                            <span className="font-mono font-bold text-blue-300">{registered}</span>{' '}
+                            人
+                            {registrationEntries && registrationEntries.length !== registered
+                              ? `（已加载 ${registrationEntries.length} 条）`
+                              : ''}
+                          </span>
+                          {isLoadingRegistrations ? (
+                            <span className="text-xs text-gray-400">加载中…</span>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => void loadRegistrations(event.id)}
+                            disabled={isLoadingRegistrations}
+                            className="ml-auto rounded border border-gray-600 px-2 py-1 text-xs text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            刷新名单
+                          </button>
+                        </div>
+
+                        {registrationError ? (
+                          <p className="rounded border border-red-900/60 bg-red-500/5 px-3 py-2 text-xs text-red-300">
+                            {registrationError}
+                          </p>
+                        ) : isLoadingRegistrations && !registrationEntries ? (
+                          <p className="py-4 text-center text-xs text-gray-500">
+                            正在加载报名名单…
+                          </p>
+                        ) : !registrationEntries || registrationEntries.length === 0 ? (
+                          <p className="py-4 text-center text-xs text-gray-500">暂无报名</p>
+                        ) : (
+                          <ul className="text-sm">
+                            {registrationEntries.map((entry) => (
+                              <li
+                                key={entry.id}
+                                className="flex flex-col gap-1 border-t border-gray-700/60 py-2 first:border-t-0 md:flex-row md:items-center md:gap-4"
+                              >
+                                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                  <span className="truncate font-bold text-white">
+                                    {entry.displayName}
+                                  </span>
+                                  {entry.steamVerified ? (
+                                    <span className="rounded border border-green-500/40 bg-green-500/15 px-1.5 py-0.5 text-[11px] font-bold text-green-300">
+                                      Steam 已验证
+                                    </span>
+                                  ) : null}
+                                  <span className="font-mono text-xs text-blue-400">
+                                    ID: {entry.customId || '无'}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+                                  <span>📝 {entry.note || '无备注'}</span>
+                                  <span>🕒 {formatDateTime(entry.createdAt)}</span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

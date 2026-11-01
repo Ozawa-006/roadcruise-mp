@@ -1,13 +1,50 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation'; 
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
 import RichText from '@/components/RichText';
 import RichTextEditor from '@/components/RichTextEditor';
 import Link from 'next/link';
 import { ROLE_LEVEL, levelOf } from '@/lib/permissions';
+
+interface TopicAuthorProfile {
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+interface ReplyAuthorProfile extends TopicAuthorProfile {
+  role: string | null;
+}
+
+interface ForumTopic {
+  id: string | number;
+  title: string;
+  content: string;
+  author_id: string;
+  image_url: string | null;
+  created_at: string;
+  profiles?: TopicAuthorProfile | null;
+  forum_categories?: { name: string | null } | null;
+}
+
+interface ForumReply {
+  id: string | number;
+  author_id: string;
+  content: string;
+  created_at: string;
+  profiles?: ReplyAuthorProfile | null;
+}
+
+interface CurrentUser {
+  id: string;
+}
+
+interface ReplyFeedback {
+  id: string;
+  message: string;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,19 +54,40 @@ const supabase = createClient(
 export default function TopicDetailPage() {
   const [quoteUser, setQuoteUser] = useState('');
   const [quoteContent, setQuoteContent] = useState('');
-  const { id, topicId } = useParams(); 
+  const { id, topicId } = useParams();
   const router = useRouter();
-  
-  const [topic, setTopic] = useState<any>(null);
-  const [replies, setReplies] = useState<any[]>([]);
+  const pathname = usePathname();
+
+  const [topic, setTopic] = useState<ForumTopic | null>(null);
+  const [replies, setReplies] = useState<ForumReply[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // 用户与权限状态
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<CurrentUser | null>(null);
   const [currentLevel, setCurrentLevel] = useState<number>(0);
-  
+
   const [replyContent, setReplyContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // 帖子编辑状态
+  const [editingTopic, setEditingTopic] = useState(false);
+  const [topicTitle, setTopicTitle] = useState('');
+  const [topicContent, setTopicContent] = useState('');
+  const [savingTopic, setSavingTopic] = useState(false);
+  const [topicSaveError, setTopicSaveError] = useState('');
+  const [topicNotice, setTopicNotice] = useState('');
+
+  // 回复编辑状态（同一时间只编辑一条，保存时用 id 防串行）
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [replyEditContent, setReplyEditContent] = useState('');
+  const [savingReplyId, setSavingReplyId] = useState<string | null>(null);
+  const [replyError, setReplyError] = useState<ReplyFeedback | null>(null);
+  const [replyNotice, setReplyNotice] = useState<ReplyFeedback | null>(null);
+
+  // 举报入口：url 使用当前真实路径，未登录也可以跳转（/reports 自行提示登录）
+  const currentPath = pathname || `/forum/${String(id)}/${String(topicId)}`;
+  const reportHref = (targetType: 'topic' | 'reply', targetId: string): string =>
+    `/reports?type=${targetType}&id=${encodeURIComponent(targetId)}&url=${encodeURIComponent(currentPath)}`;
 
   const fetchTopicAndReplies = async () => {
     // 1. 获取帖子信息
@@ -126,8 +184,125 @@ export default function TopicDetailPage() {
     }
   };
 
+  const startTopicEdit = () => {
+    if (!topic) return;
+    setTopicTitle(topic.title);
+    setTopicContent(topic.content);
+    setTopicSaveError('');
+    setTopicNotice('');
+    setEditingTopic(true);
+  };
+
+  const cancelTopicEdit = () => {
+    setEditingTopic(false);
+    setTopicSaveError('');
+  };
+
+  const handleSaveTopic = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!topic || savingTopic) return;
+
+    const nextTitle = topicTitle.trim();
+    if (!nextTitle) {
+      setTopicSaveError('标题不能为空。');
+      return;
+    }
+    if (nextTitle.length > 120) {
+      setTopicSaveError('标题不能超过 120 个字符。');
+      return;
+    }
+
+    const nextContent = topicContent;
+
+    setSavingTopic(true);
+    setTopicSaveError('');
+    setTopicNotice('');
+
+    try {
+      const { error } = await supabase
+        .from('forum_topics')
+        .update({ title: nextTitle, content: nextContent })
+        .eq('id', topicId);
+
+      if (error) {
+        setTopicSaveError(`更新帖子失败：${error.message}`);
+        return;
+      }
+
+      setTopic((prev) =>
+        prev ? { ...prev, title: nextTitle, content: nextContent } : prev
+      );
+      setEditingTopic(false);
+      setTopicNotice('✅ 帖子已更新。');
+    } catch (error: unknown) {
+      setTopicSaveError(
+        error instanceof Error ? `更新帖子失败：${error.message}` : '更新帖子失败，请稍后重试。'
+      );
+    } finally {
+      setSavingTopic(false);
+    }
+  };
+
+  const startReplyEdit = (reply: ForumReply) => {
+    setEditingReplyId(String(reply.id));
+    setReplyEditContent(reply.content);
+    setReplyError(null);
+    setReplyNotice(null);
+  };
+
+  const cancelReplyEdit = () => {
+    setEditingReplyId(null);
+    setReplyEditContent('');
+    setReplyError(null);
+  };
+
+  const handleSaveReply = async (reply: ForumReply) => {
+    const replyId = String(reply.id);
+    if (savingReplyId !== null) return;
+
+    const nextContent = replyEditContent;
+    if (!nextContent.trim()) {
+      setReplyError({ id: replyId, message: '回复内容不能为空。' });
+      return;
+    }
+
+    setSavingReplyId(replyId);
+    setReplyError(null);
+    setReplyNotice(null);
+
+    try {
+      const { error } = await supabase
+        .from('forum_replies')
+        .update({ content: nextContent })
+        .eq('id', reply.id);
+
+      if (error) {
+        setReplyError({ id: replyId, message: `更新回复失败：${error.message}` });
+        return;
+      }
+
+      setReplies((prev) =>
+        prev.map((item) => (item.id === reply.id ? { ...item, content: nextContent } : item))
+      );
+      setEditingReplyId(null);
+      setReplyEditContent('');
+      setReplyNotice({ id: replyId, message: '✅ 回复已更新。' });
+    } catch (error: unknown) {
+      setReplyError({
+        id: replyId,
+        message:
+          error instanceof Error ? `更新回复失败：${error.message}` : '更新回复失败，请稍后重试。',
+      });
+    } finally {
+      setSavingReplyId(null);
+    }
+  };
+
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;
   if (!topic) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">帖子不存在或已被删除</div>;
+
+  const canEditTopic =
+    !!user && (user.id === topic.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans pb-12">
@@ -166,10 +341,26 @@ export default function TopicDetailPage() {
           </div>
           <div className="flex-1 p-6 md:p-8">
             
-            <div className="flex justify-between items-center text-xs text-gray-500 mb-6 border-b border-gray-700 pb-4">
+            <div className="flex flex-wrap justify-between items-center gap-2 text-xs text-gray-500 mb-6 border-b border-gray-700 pb-4">
               <span>发表于：{new Date(topic.created_at).toLocaleString()}</span>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
                 <span>#1</span>
+                {canEditTopic && !editingTopic && (
+                  <button
+                    type="button"
+                    onClick={startTopicEdit}
+                    disabled={savingTopic}
+                    className="text-xs font-bold text-blue-400 transition hover:text-blue-300 disabled:opacity-50"
+                  >
+                    编辑
+                  </button>
+                )}
+                <Link
+                  href={reportHref('topic', String(topic.id))}
+                  className="text-xs font-bold text-gray-400 transition hover:text-red-400"
+                >
+                  举报
+                </Link>
                 {user && (user.id === topic.author_id || currentLevel >= ROLE_LEVEL.MANAGER) && (
                   <button 
                     onClick={handleDeleteTopic} 
@@ -181,10 +372,71 @@ export default function TopicDetailPage() {
               </div>
             </div>
             
-            <RichText
-              text={topic.content}
-              className="text-gray-300 text-base leading-relaxed mb-6"
-            />
+            {topicNotice && (
+              <p role="status" className="mb-4 text-sm font-bold text-green-400">
+                {topicNotice}
+              </p>
+            )}
+
+            {editingTopic ? (
+              <form onSubmit={handleSaveTopic} className="space-y-4">
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <label htmlFor="topic-edit-title" className="text-sm font-bold text-gray-400">
+                      标题
+                    </label>
+                    <span className="font-mono text-xs text-gray-500">{topicTitle.length} / 120</span>
+                  </div>
+                  <input
+                    id="topic-edit-title"
+                    type="text"
+                    value={topicTitle}
+                    onChange={(event) => setTopicTitle(event.target.value)}
+                    maxLength={120}
+                    required
+                    placeholder="请输入帖子标题（不超过 120 字）"
+                    className="w-full rounded border border-gray-600 bg-[#18191c] p-3 text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <RichTextEditor
+                  value={topicContent}
+                  onChange={setTopicContent}
+                  rows={8}
+                  label="正文"
+                  placeholder="编辑帖子正文..."
+                />
+
+                {topicSaveError && (
+                  <p role="alert" className="text-sm font-bold text-red-400">
+                    {topicSaveError}
+                  </p>
+                )}
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={cancelTopicEdit}
+                    disabled={savingTopic}
+                    className="rounded border border-gray-600 bg-[#18191c] px-5 py-2 text-sm font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingTopic}
+                    className="rounded bg-blue-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {savingTopic ? '保存中...' : '保存修改'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <RichText
+                text={topic.content}
+                className="text-gray-300 text-base leading-relaxed mb-6"
+              />
+            )}
             {topic.image_url && (
               <div className="mt-6">
                 <img src={topic.image_url} alt="配图" className="max-w-full h-auto rounded-lg border border-gray-700 shadow-md" />
@@ -199,51 +451,126 @@ export default function TopicDetailPage() {
             全部回复 ({replies.length})
           </h3>
           
-          {replies.map((reply, index) => (
-            <div key={reply.id} className="bg-[#2c2d31] border border-gray-700 rounded-lg shadow-lg overflow-hidden flex flex-col md:flex-row">
-              <div className="w-full md:w-48 bg-[#232428] p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-gray-700 shrink-0">
-                <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-2xl font-bold text-white mb-2 overflow-hidden shadow-md border-2 border-gray-600">
-                  {reply.profiles?.avatar_url ? <img src={reply.profiles.avatar_url} className="w-full h-full object-cover" /> : reply.profiles?.display_name?.charAt(0).toUpperCase()}
+          {replies.map((reply, index) => {
+            const replyId = String(reply.id);
+            const editingThisReply = editingReplyId === replyId;
+            const canEditReply =
+              !!user &&
+              (user.id === reply.author_id || currentLevel >= ROLE_LEVEL.MANAGER);
+            const replyBusy = savingReplyId !== null;
+
+            return (
+              <div key={reply.id} className="bg-[#2c2d31] border border-gray-700 rounded-lg shadow-lg overflow-hidden flex flex-col md:flex-row">
+                <div className="w-full md:w-48 bg-[#232428] p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-gray-700 shrink-0">
+                  <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-2xl font-bold text-white mb-2 overflow-hidden shadow-md border-2 border-gray-600">
+                    {reply.profiles?.avatar_url ? <img src={reply.profiles.avatar_url} className="w-full h-full object-cover" /> : reply.profiles?.display_name?.charAt(0).toUpperCase()}
+                  </div>
+                  <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || '未知用户'}</h4>
+
+                  {/* 动态徽章 */}
+                  <div className="mt-2 text-center">
+                    {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ 开发者</span>}
+                    {reply.profiles?.role === 'senior_manager' && <span className="text-xs font-bold text-orange-400">🧭 高级社区经理</span>}
+                    {reply.profiles?.role === 'director' && <span className="text-xs font-bold text-purple-400">👑 论坛总经理</span>}
+                    {reply.profiles?.role === 'manager' && <span className="text-xs font-bold text-blue-400">🛡️ 社区经理</span>}
+                    {reply.profiles?.role === 'staff' && <span className="text-xs font-bold text-green-400">🔧 工作人员</span>}
+                    {reply.profiles?.role === 'community_moderator' && <span className="text-xs font-bold text-cyan-400">🧹 社区版主</span>}
+                    {(!reply.profiles?.role || reply.profiles?.role === 'member') && <span className="text-xs text-gray-500">成员</span>}
+                  </div>
                 </div>
-                <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || '未知用户'}</h4>
-                
-                {/* 动态徽章 */}
-                <div className="mt-2 text-center">
-                  {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ 开发者</span>}
-                  {reply.profiles?.role === 'senior_manager' && <span className="text-xs font-bold text-orange-400">🧭 高级社区经理</span>}
-                  {reply.profiles?.role === 'director' && <span className="text-xs font-bold text-purple-400">👑 论坛总经理</span>}
-                  {reply.profiles?.role === 'manager' && <span className="text-xs font-bold text-blue-400">🛡️ 社区经理</span>}
-                  {reply.profiles?.role === 'staff' && <span className="text-xs font-bold text-green-400">🔧 工作人员</span>}
-                  {reply.profiles?.role === 'community_moderator' && <span className="text-xs font-bold text-cyan-400">🧹 社区版主</span>}
-                  {(!reply.profiles?.role || reply.profiles?.role === 'member') && <span className="text-xs text-gray-500">成员</span>}
+                <div className="flex-1 p-6">
+                  <div className="flex justify-between items-center text-xs text-gray-500 mb-4 border-b border-gray-700 pb-3">
+                    <span>发表于：{new Date(reply.created_at).toLocaleString()}</span>
+                    <span>#{index + 2}</span>
+                  </div>
+
+                  {editingThisReply ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void handleSaveReply(reply);
+                      }}
+                      className="mb-4 space-y-3"
+                    >
+                      <RichTextEditor
+                        value={replyEditContent}
+                        onChange={setReplyEditContent}
+                        rows={4}
+                        placeholder="编辑回复内容..."
+                      />
+
+                      {replyError?.id === replyId && (
+                        <p role="alert" className="text-xs font-bold text-red-400">
+                          {replyError.message}
+                        </p>
+                      )}
+
+                      <div className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={cancelReplyEdit}
+                          disabled={replyBusy}
+                          className="rounded border border-gray-600 bg-[#18191c] px-4 py-1.5 text-xs font-bold text-gray-300 transition hover:border-gray-400 hover:text-white disabled:opacity-50"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={replyBusy}
+                          className="rounded bg-blue-600 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {savingReplyId === replyId ? '保存中...' : '保存'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      {replyNotice?.id === replyId && (
+                        <p role="status" className="mb-2 text-xs font-bold text-green-400">
+                          {replyNotice.message}
+                        </p>
+                      )}
+                      <RichText
+                        text={reply.content}
+                        className="text-gray-300 text-sm leading-relaxed mb-4"
+                      />
+                    </>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 pt-2 border-t border-gray-700/50">
+                    {canEditReply && !editingThisReply && (
+                      <button
+                        type="button"
+                        onClick={() => startReplyEdit(reply)}
+                        disabled={replyBusy}
+                        className="text-xs font-bold text-blue-400 transition hover:text-blue-300 disabled:opacity-50"
+                      >
+                        编辑
+                      </button>
+                    )}
+                    <Link
+                      href={reportHref('reply', replyId)}
+                      className="text-xs font-bold text-gray-400 transition hover:text-red-400"
+                    >
+                      举报
+                    </Link>
+                    {!editingThisReply && (
+                      <button
+                        onClick={() => {
+                          setQuoteUser(reply.profiles?.display_name || '未知用户');
+                          setQuoteContent(reply.content);
+                          document.getElementById('reply-box')?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="text-xs text-blue-400 hover:text-blue-300 font-bold"
+                      >
+                        引用回复
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="flex-1 p-6">
-                <div className="flex justify-between items-center text-xs text-gray-500 mb-4 border-b border-gray-700 pb-3">
-                  <span>发表于：{new Date(reply.created_at).toLocaleString()}</span>
-                  <span>#{index + 2}</span>
-                </div>
-                
-                <RichText
-                  text={reply.content}
-                  className="text-gray-300 text-sm leading-relaxed mb-4"
-                />
-                
-                <div className="flex justify-end pt-2 border-t border-gray-700/50">
-                  <button 
-                    onClick={() => {
-                      setQuoteUser(reply.profiles?.display_name || '未知用户');
-                      setQuoteContent(reply.content);
-                      document.getElementById('reply-box')?.scrollIntoView({ behavior: 'smooth' });
-                    }}
-                    className="text-xs text-blue-400 hover:text-blue-300 font-bold"
-                  >
-                    引用回复
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* 回复输入框 */}
