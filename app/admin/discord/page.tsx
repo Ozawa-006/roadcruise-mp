@@ -210,9 +210,14 @@ function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** Array.isArray 会把 unknown 收窄成 any[]；先落成 unknown[]，后续 map 参数才是 unknown。 */
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
+  const items: unknown[] = asArray(value);
+  return items.filter((item): item is string => typeof item === 'string');
 }
 
 function readErrorCode(payload: unknown): string | null {
@@ -259,7 +264,7 @@ function normalizeSiteRole(raw: unknown): SiteRole | null {
 
 /** Supabase 的嵌套关系可能返回对象或单元素数组，两种都接受。 */
 function normalizeAccountProfile(raw: unknown): AccountProfile | null {
-  const record = Array.isArray(raw) ? raw[0] : raw;
+  const record: unknown = Array.isArray(raw) ? raw[0] : raw;
   if (!isRecord(record)) return null;
   return {
     display_name: asString(record.display_name),
@@ -289,31 +294,23 @@ function normalizeAccount(raw: unknown): DiscordAccount | null {
 function normalizeAdminData(payload: unknown): DiscordAdminData | null {
   if (!isRecord(payload) || payload.ok !== true) return null;
 
-  const roles = Array.isArray(payload.roles)
-    ? payload.roles
-        .map((raw) => normalizeRole(raw))
-        .filter((role): role is DiscordRole => role !== null)
-        // 高层级身份组排在前面，与 Discord 的角色顺序一致。
-        .sort((left, right) => right.position - left.position)
-    : [];
+  const roles = asArray(payload.roles)
+    .map((raw) => normalizeRole(raw))
+    .filter((role): role is DiscordRole => role !== null)
+    // 高层级身份组排在前面，与 Discord 的角色顺序一致。
+    .sort((left, right) => right.position - left.position);
 
-  const mappings = Array.isArray(payload.mappings)
-    ? payload.mappings
-        .map((raw) => normalizeMapping(raw))
-        .filter((mapping): mapping is DiscordRoleMapping => mapping !== null)
-    : [];
+  const mappings = asArray(payload.mappings)
+    .map((raw) => normalizeMapping(raw))
+    .filter((mapping): mapping is DiscordRoleMapping => mapping !== null);
 
-  const accounts = Array.isArray(payload.accounts)
-    ? payload.accounts
-        .map((raw) => normalizeAccount(raw))
-        .filter((account): account is DiscordAccount => account !== null)
-    : [];
+  const accounts = asArray(payload.accounts)
+    .map((raw) => normalizeAccount(raw))
+    .filter((account): account is DiscordAccount => account !== null);
 
-  const siteRoles = Array.isArray(payload.siteRoles)
-    ? payload.siteRoles
-        .map((raw) => normalizeSiteRole(raw))
-        .filter((role): role is SiteRole => role !== null)
-    : [];
+  const siteRoles = asArray(payload.siteRoles)
+    .map((raw) => normalizeSiteRole(raw))
+    .filter((role): role is SiteRole => role !== null);
 
   return {
     oauthConfigured: payload.oauthConfigured === true,
@@ -329,8 +326,7 @@ function normalizeAdminData(payload: unknown): DiscordAdminData | null {
 
 /** 同步接口的 results 里取第一条失败原因，用于单用户同步的提示。 */
 function firstSyncError(raw: unknown): string | null {
-  if (!Array.isArray(raw)) return null;
-  for (const item of raw) {
+  for (const item of asArray(raw)) {
     if (!isRecord(item)) continue;
     if (item.ok === true) continue;
     const error = asString(item.error);
