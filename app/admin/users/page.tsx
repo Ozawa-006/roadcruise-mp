@@ -14,22 +14,19 @@ const supabase = createClient(
 export default function UserManagementPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
-  const [roles, setRoles] = useState<any[]>([]); // 从数据库拉取的职位表
+  const [roles, setRoles] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  // 搜索成员状态
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // 编辑状态
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState('');
   const [editLevel, setEditLevel] = useState(10);
   const [editCustomId, setEditCustomId] = useState('');
   
-  // 职位搜索下拉框状态
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [roleSearch, setRoleSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -37,7 +34,6 @@ export default function UserManagementPage() {
   useEffect(() => {
     checkAuthAndFetch();
     
-    // 点击外部关闭职位下拉框
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setIsRoleDropdownOpen(false);
@@ -48,33 +44,32 @@ export default function UserManagementPage() {
   }, []);
 
   const checkAuthAndFetch = async () => {
-    // 1. 检查当前登录者权限
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return router.push('/login');
 
-    const { data: profile } = await supabase.from('profiles').select('role, role_level, email').eq('id', user.id).single();
-    const myLevel = profile?.role_level || (profile?.email === '420075623@qq.com' ? 100 : 0);
+    // 🌟 修复：直接从 user.email 拿数据，同时判断 role 是否为 developer
+    const { data: profile } = await supabase.from('profiles').select('role, role_level').eq('id', user.id).single();
     
-    // 只有组长（Lv.60）及以上可以进这个页面
-    if (myLevel < 60 && profile?.email !== '420075623@qq.com') {
+    const isDev = user.email === '420075623@qq.com' || profile?.role === 'developer';
+    const myLevel = isDev ? 100 : (profile?.role_level || 10);
+    
+    // 小于 60 级直接踢走
+    if (myLevel < 60 && !isDev) {
       alert('🚫 权限不足：只有组长及以上级别才能访问人员管理。');
       router.push('/admin');
       return;
     }
-    setCurrentUser({ ...profile, id: user.id });
+    setCurrentUser({ ...profile, id: user.id, email: user.email }); // 把真正的 email 存进去
 
-    // 2. 拉取所有职位设定
     const { data: rolesData } = await supabase.from('roles').select('*').order('level', { ascending: false });
     if (rolesData) setRoles(rolesData);
 
-    // 3. 拉取用户列表
     const { data: usersData } = await supabase.from('profiles').select('*').order('role_level', { ascending: false });
     if (usersData) setUsers(usersData);
 
     setLoading(false);
   };
 
-  // 🔍 搜索成员（支持名字或ID）
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
@@ -92,7 +87,6 @@ export default function UserManagementPage() {
     setIsSearching(false);
   };
 
-  // ➕ 加入管理列表并直接编辑
   const addToManageList = (user: any) => {
     if (!users.find(u => u.id === user.id)) {
       setUsers([user, ...users]);
@@ -110,28 +104,27 @@ export default function UserManagementPage() {
     setRoleSearch('');
   };
 
-  // 💾 保存更改（含防越权拦截）
   const handleSave = async (targetUser: any) => {
-    const myLevel = currentUser?.role_level || (currentUser?.email === '420075623@qq.com' ? 100 : 0);
+    const isDev = currentUser?.email === '420075623@qq.com' || currentUser?.role === 'developer';
+    const myLevel = isDev ? 100 : (currentUser?.role_level || 0);
     const targetLevel = targetUser.role_level || 0;
 
-    // 1. 不能修改同级或上级
-    if (myLevel <= targetLevel && currentUser.email !== '420075623@qq.com') {
-      alert('❌ 权限不足：你不能修改同级或上级的职位！');
-      return;
+    if (!isDev) {
+      if (myLevel <= targetLevel) {
+        alert('❌ 权限不足：你不能修改同级或上级的职位！');
+        return;
+      }
+      if (myLevel < editLevel) {
+        alert('❌ 权限不足：你不能赋予别人比自己更高的职位！');
+        return;
+      }
     }
-    // 2. 不能任命比自己高的职位
-    if (myLevel < editLevel && currentUser.email !== '420075623@qq.com') {
-      alert('❌ 权限不足：你不能赋予别人比自己更高的职位！');
-      return;
-    }
-    // 3. 最高开发者不能被降级
+
     if (targetUser.email === '420075623@qq.com' && editLevel !== 100) {
       alert('❌ 无法降级：不能修改最高开发者的权限。');
       return;
     }
 
-    // 执行更新
     const { error } = await supabase
       .from('profiles')
       .update({ 
@@ -145,16 +138,16 @@ export default function UserManagementPage() {
       alert('保存失败: ' + error.message);
     } else {
       setEditingId(null);
-      checkAuthAndFetch(); // 刷新列表
+      checkAuthAndFetch(); 
     }
   };
 
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载权限数据中...</div>;
 
-  const myLevel = currentUser?.role_level || (currentUser?.email === '420075623@qq.com' ? 100 : 0);
-  // 过滤掉当前登录者没有权限赋予的职位
-  const allowedRoles = roles.filter(r => r.level <= myLevel || currentUser?.email === '420075623@qq.com');
-  // 处理下拉框搜索
+  const isGlobalDev = currentUser?.email === '420075623@qq.com' || currentUser?.role === 'developer';
+  const myLevel = isGlobalDev ? 100 : (currentUser?.role_level || 0);
+  
+  const allowedRoles = roles.filter(r => r.level <= myLevel || isGlobalDev);
   const filteredRoles = allowedRoles.filter(r => 
     r.display_name.toLowerCase().includes(roleSearch.toLowerCase()) || 
     r.name.toLowerCase().includes(roleSearch.toLowerCase())
@@ -164,7 +157,6 @@ export default function UserManagementPage() {
     <main className="min-h-screen bg-[#18191c] text-gray-300 p-10 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* 头部信息 */}
         <div className="flex justify-between items-center border-b border-gray-700 pb-4">
           <div>
             <h1 className="text-2xl font-bold text-white">👑 人员与职位管理</h1>
@@ -177,7 +169,6 @@ export default function UserManagementPage() {
           <Link href="/admin" className="text-blue-400 hover:underline text-sm">返回控制台</Link>
         </div>
 
-        {/* 搜索并添加成员 */}
         <div className="bg-[#2c2d31] p-6 rounded-md border border-gray-700 shadow-lg">
           <h2 className="text-sm font-bold text-white mb-3">🔍 搜索并添加成员</h2>
           <div className="flex gap-4">
@@ -194,7 +185,6 @@ export default function UserManagementPage() {
             </button>
           </div>
 
-          {/* 搜索结果展示 */}
           {searchResults.length > 0 && (
             <div className="mt-4 space-y-2">
               {searchResults.map(u => (
@@ -215,7 +205,6 @@ export default function UserManagementPage() {
           )}
         </div>
 
-        {/* 成员列表与编辑区 */}
         <div className="bg-[#2c2d31] rounded-md border border-gray-700 shadow-lg overflow-visible">
           <div className="overflow-x-auto min-h-[300px]">
             <table className="w-full text-left border-collapse min-w-[900px]">
@@ -246,7 +235,6 @@ export default function UserManagementPage() {
                           />
                         </td>
                         
-                        {/* 🌟 修复报错：将下拉框包裹在 div 中，正确绑定 ref */}
                         <td className="p-4">
                           <div className="relative" ref={dropdownRef}>
                             <button 
@@ -323,7 +311,7 @@ export default function UserManagementPage() {
                           </span>
                         </td>
                         <td className="p-4">
-                          {(myLevel > (u.role_level || 0) || currentUser?.email === '420075623@qq.com') && u.email !== '420075623@qq.com' ? (
+                          {(myLevel > (u.role_level || 0) || isGlobalDev) && u.email !== '420075623@qq.com' ? (
                             <button onClick={() => handleEditClick(u)} className="text-blue-400 hover:text-blue-300 font-bold text-sm">编辑</button>
                           ) : (
                             <span className="text-gray-600 text-sm">不可操作</span>
