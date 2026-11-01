@@ -17,7 +17,7 @@ export interface RichTextEditorProps {
 }
 
 const toolbarButtonClass =
-  'shrink-0 whitespace-nowrap rounded border border-gray-600 bg-[#232428] px-2.5 py-1.5 text-xs font-bold text-gray-300 transition hover:border-blue-500 hover:bg-[#2f3035] hover:text-white focus:outline-none focus-visible:border-blue-400 focus-visible:text-white active:bg-[#18191c]';
+  'shrink-0 whitespace-nowrap rounded border border-gray-600 bg-[#232428] px-2.5 py-1.5 text-xs font-bold text-gray-300 transition hover:border-blue-500 hover:bg-[#2f3035] hover:text-white focus:outline-none focus-visible:border-blue-400 focus-visible:text-white active:bg-[#18191c] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-600 disabled:hover:bg-[#232428] disabled:hover:text-gray-300';
 
 const defaultPlaceholder =
   '支持 **加粗**、*斜体*、`代码`、[链接](https://...)、![图片](https://...)、> 引用、- 列表、## 标题；普通换行会保留。';
@@ -35,10 +35,12 @@ function encodeUrlForMarkdown(href: string): string {
 function ToolbarButton({
   title,
   onClick,
+  disabled = false,
   children,
 }: {
   title: string;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -47,6 +49,7 @@ function ToolbarButton({
       title={title}
       aria-label={title}
       onClick={onClick}
+      disabled={disabled}
       // 防止点工具栏时 textarea 失焦、选区丢失（click 仍会触发）。
       onMouseDown={(event) => event.preventDefault()}
       className={toolbarButtonClass}
@@ -160,7 +163,7 @@ export default function RichTextEditor({
 
   const applyLinePrefix = (prefix: string) => {
     const { start, end } = readSelection();
-    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
     const nextBreak = value.indexOf('\n', end);
     const blockEnd = nextBreak === -1 ? value.length : nextBreak;
     const block = value.slice(lineStart, blockEnd);
@@ -189,7 +192,7 @@ export default function RichTextEditor({
 
   const applyHeading = () => {
     const { start } = readSelection();
-    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
     const nextBreak = value.indexOf('\n', start);
     const lineEnd = nextBreak === -1 ? value.length : nextBreak;
     const line = value.slice(lineStart, lineEnd);
@@ -221,6 +224,13 @@ export default function RichTextEditor({
     onChange(nextValue);
   };
 
+  // 预览时若原生 required 校验失败，自动切回编辑态，避免用户对着预览区无从下手。
+  const handleInvalid = () => {
+    if (!preview) return;
+    setPreview(false);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
   return (
     <div className={className}>
       {label &&
@@ -242,31 +252,53 @@ export default function RichTextEditor({
             <ToolbarButton
               title="加粗 (**文字**)"
               onClick={() => wrapSelection('**', '**', '加粗文字')}
+              disabled={preview}
             >
               <span className="font-black">B</span>
             </ToolbarButton>
-            <ToolbarButton title="斜体 (*文字*)" onClick={() => wrapSelection('*', '*', '斜体文字')}>
+            <ToolbarButton
+              title="斜体 (*文字*)"
+              onClick={() => wrapSelection('*', '*', '斜体文字')}
+              disabled={preview}
+            >
               <em>I</em>
             </ToolbarButton>
             <ToolbarButton
               title="行内代码 (`代码`)"
               onClick={() => wrapSelection('`', '`', '代码')}
+              disabled={preview}
             >
               <span className="font-mono text-[11px]">&lt;/&gt;</span>
             </ToolbarButton>
-            <ToolbarButton title="插入链接 [文字](https://...)" onClick={insertLink}>
+            <ToolbarButton
+              title="插入链接 [文字](https://...)"
+              onClick={insertLink}
+              disabled={preview}
+            >
               链接
             </ToolbarButton>
-            <ToolbarButton title="插入图片 ![描述](https://...)" onClick={insertImage}>
+            <ToolbarButton
+              title="插入图片 ![描述](https://...)"
+              onClick={insertImage}
+              disabled={preview}
+            >
               图片
             </ToolbarButton>
-            <ToolbarButton title="引用 (> 文字)" onClick={() => applyLinePrefix('> ')}>
+            <ToolbarButton
+              title="引用 (> 文字)"
+              onClick={() => applyLinePrefix('> ')}
+              disabled={preview}
+            >
               引用
             </ToolbarButton>
-            <ToolbarButton title="无序列表 (- 文字)" onClick={() => applyLinePrefix('- ')}>
+            <ToolbarButton
+              title="无序列表 (- 文字)"
+              onClick={() => applyLinePrefix('- ')}
+              disabled={preview}
+            >
               列表
             </ToolbarButton>
-            <ToolbarButton title="二级标题 (## 文字)" onClick={applyHeading}>
+            <ToolbarButton title="二级标题 (## 文字)" onClick={applyHeading} disabled={preview}>
               H2
             </ToolbarButton>
           </div>
@@ -310,6 +342,7 @@ export default function RichTextEditor({
           required={required}
           placeholder={placeholder}
           tabIndex={preview ? -1 : undefined}
+          onInvalid={handleInvalid}
           className={
             preview
               ? 'sr-only'

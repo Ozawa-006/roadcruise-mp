@@ -67,12 +67,12 @@ function renderBlock(block: RichBlock, key: number): ReactNode {
       return block.level === 2 ? (
         <h2
           key={key}
-          className="mb-3 mt-6 border-b border-gray-700 pb-1.5 text-xl font-bold first:mt-0 last:mb-0"
+          className="mb-3 mt-6 break-words border-b border-gray-700 pb-1.5 text-xl font-bold first:mt-0 last:mb-0"
         >
           {renderInline(block.content)}
         </h2>
       ) : (
-        <h3 key={key} className="mb-2 mt-5 text-lg font-bold first:mt-0 last:mb-0">
+        <h3 key={key} className="mb-2 mt-5 break-words text-lg font-bold first:mt-0 last:mb-0">
           {renderInline(block.content)}
         </h3>
       );
