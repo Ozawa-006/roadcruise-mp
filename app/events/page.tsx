@@ -222,7 +222,11 @@ export default function EventsListPage() {
           const {
             data: { user },
           } = await supabase.auth.getUser();
-          if (cancelled || !user) return;
+          if (cancelled) return;
+          if (!user) {
+            setRoleLevel(0);
+            return;
+          }
 
           const { data: profile } = await supabase
             .from('profiles')
@@ -274,7 +278,7 @@ export default function EventsListPage() {
 
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 md:px-8 md:py-10">
         <div className="mb-6 border-b border-gray-700 pb-5 md:mb-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h1 className="text-3xl font-black tracking-wide text-white md:text-4xl">活动</h1>
               <span className="text-lg font-bold text-gray-500 md:text-xl">/ Events</span>

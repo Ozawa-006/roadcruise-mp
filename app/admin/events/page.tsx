@@ -312,7 +312,7 @@ export default function AdminEventsPage() {
 
     const payload = {
       title,
-      description: form.description.trim() || null,
+      description: form.description.trim(),
       start_at: startDate.toISOString(),
       end_at: endDate ? endDate.toISOString() : null,
       location: form.location.trim() || null,
