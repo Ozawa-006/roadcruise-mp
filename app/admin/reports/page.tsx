@@ -533,7 +533,7 @@ export default function AdminReportsPage() {
 
         {loading ? (
           <p className="py-12 text-center text-sm text-gray-500">加载中...</p>
-        ) : reports.length === 0 ? (
+        ) : loadError ? null : reports.length === 0 ? (
           <p className="rounded border border-gray-700 bg-[#2c2d31] px-4 py-12 text-center text-sm text-gray-500">
             没有符合条件的举报。
           </p>

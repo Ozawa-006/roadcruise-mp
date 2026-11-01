@@ -498,7 +498,7 @@ function ReportsContent() {
 
         {reportsLoading ? (
           <p className="py-8 text-center text-sm text-gray-500">加载中...</p>
-        ) : reports.length === 0 ? (
+        ) : reportsError ? null : reports.length === 0 ? (
           <p className="rounded border border-gray-700 bg-[#232428] px-4 py-8 text-center text-sm text-gray-500">
             还没有提交过举报。
           </p>
