@@ -656,7 +656,7 @@ export default function AdminModerationPage() {
           <div>
             <h1 className="text-2xl font-bold text-white md:text-3xl">⚖️ 处罚管理 / Moderation</h1>
             <p className="mt-1 text-sm text-gray-500">
-              警告不限制发布；禁言 / 封禁会在到期前阻止发帖与报名。
+              警告不限制发布；禁言/封禁会在到期前阻止发帖与报名
             </p>
           </div>
           <Link href="/admin" className="text-sm text-gray-400 transition hover:text-white">

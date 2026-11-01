@@ -179,7 +179,7 @@ export default function ProfilePage() {
         const nowIso = new Date().toISOString();
         const { data: sanctionData, error: sanctionError } = await supabase
           .from('moderation_actions')
-          .select('id, action, expires_at')
+          .select('id,action,expires_at')
           .eq('user_id', viewId)
           .in('action', ['mute', 'ban'])
           .is('revoked_at', null)
@@ -289,6 +289,7 @@ export default function ProfilePage() {
                 <span className="text-sm font-bold text-gray-400">Player Info</span>
                 {sanctionBadge && (
                   <span
+                    title={`${sanctionBadge.label} ${sanctionBadge.detail}`}
                     className={`ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-bold ${sanctionBadge.className}`}
                   >
                     {sanctionBadge.label}

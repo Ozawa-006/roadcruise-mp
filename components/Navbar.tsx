@@ -354,7 +354,7 @@ export default function Navbar() {
       <div className="flex justify-between items-center px-6 py-3">
         <Link 
           href="/" 
-          className="text-xl md:text-2xl font-black italic tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-red-200 to-red-500 hover:opacity-80 transition whitespace-nowrap pr-2 pb-1 inline-block"
+          className="text-lg sm:text-xl md:text-2xl font-black italic tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-red-200 to-red-500 hover:opacity-80 transition whitespace-nowrap pr-2 pb-1 inline-block"
         >
           Road Cruise Transport MP
         </Link>
