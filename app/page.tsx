@@ -29,14 +29,14 @@ export default function Home() {
         .limit(3);
       if (topics) setLatestTopics(topics);
 
-      // 2. 获取统计人数（假数据兜底或真实拉取）
+      // 2. 获取统计数据
       const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
       const { count: teamCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('role_level', 40);
       
       setStats({
         users: userCount || 0,
-        vtc: 0, // 目前还没有 VTC 系统，默认 0
-        events: 0, // 目前没活动系统，默认 0
+        vtc: 0, 
+        events: 0, 
         team: teamCount || 0
       });
     };
@@ -82,63 +82,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 🌟 第二区块：数据统计 */}
-      <section className="bg-[#111111] py-12 border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-          <div>
-            <p className="text-4xl font-black text-white">{stats.users.toLocaleString()}</p>
-            <p className="text-sm text-gray-500 mt-2">注册用户</p>
-          </div>
-          <div>
-            <p className="text-4xl font-black text-white">{stats.events}</p>
-            <p className="text-sm text-gray-500 mt-2">发布的活动</p>
-          </div>
-          <div>
-            <p className="text-4xl font-black text-white">{stats.team}</p>
-            <p className="text-sm text-gray-500 mt-2">团队成员</p>
-          </div>
-          <div>
-            <p className="text-4xl font-black text-white">{stats.vtc}</p>
-            <p className="text-sm text-gray-500 mt-2">认证车队 (VTC)</p>
-          </div>
-        </div>
-      </section>
-
-      {/* 🌟 第三区块：我们的服务 (网格卡片) */}
-      <section className="py-16 max-w-7xl mx-auto px-6">
-        <h2 className="text-2xl font-bold text-white text-center mb-10">
-          <span className="border-b-2 border-blue-500 pb-2">我们的服务</span>
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">模拟</h3>
-            <p className="text-sm text-gray-400">我们非常重视模拟体验，致力于为卡友提供最真实的驾驶环境。</p>
-          </div>
-          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">VTC 系统</h3>
-            <p className="text-sm text-gray-400">完整的虚拟车队管理系统正在开发中，敬请期待。</p>
-          </div>
-          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">调解</h3>
-            <p className="text-sm text-gray-400">我们的管理团队全年无休，随时处理违规举报，维护社区公平。</p>
-          </div>
-          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">支持</h3>
-            <p className="text-sm text-gray-400">遇到技术问题或社区疑问？我们的支持团队会尽快为您解答。</p>
-          </div>
-          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">社区互动</h3>
-            <p className="text-sm text-gray-400">通过 Discord、论坛等多种渠道，与全球玩家分享你的卡车生活。</p>
-          </div>
-          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
-            <h3 className="text-lg font-bold text-white mb-2">创建您自己的活动</h3>
-            <p className="text-sm text-gray-400">想自己办联运？我们有专门的预约系统帮您安排。</p>
-          </div>
-        </div>
-      </section>
-
-      {/* 🌟 第四区块：官方动态 (保留你原有的) */}
-      <section className="py-16 bg-[#111111] border-t border-gray-800">
+      {/* 🌟 第二区块：最新消息 (按要求提前) */}
+      <section className="py-16 bg-[#111111] border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-end mb-8 border-b border-gray-800 pb-4">
             <h2 className="text-2xl font-bold text-white">最新消息</h2>
@@ -171,8 +116,63 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 🌟 第五区块：终极页脚 (红框重点要求) */}
-      <footer className="bg-[#0a0a0a] border-t border-gray-800 pt-16 pb-8">
+      {/* 🌟 第三区块：我们的服务 (按要求第二位) */}
+      <section className="py-16 max-w-7xl mx-auto px-6">
+        <h2 className="text-2xl font-bold text-white text-center mb-10">
+          <span className="border-b-2 border-blue-500 pb-2">我们的服务</span>
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
+            <h3 className="text-lg font-bold text-white mb-2">模拟</h3>
+            <p className="text-sm text-gray-400">我们非常重视模拟体验，致力于为卡友提供最真实的驾驶环境。</p>
+          </div>
+          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
+            <h3 className="text-lg font-bold text-white mb-2">VTC 系统</h3>
+            <p className="text-sm text-gray-400">完整的虚拟车队管理系统正在开发中，敬请期待。</p>
+          </div>
+          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
+            <h3 className="text-lg font-bold text-white mb-2">调解</h3>
+            <p className="text-sm text-gray-400">我们的管理团队全年无休，随时处理违规举报，维护社区公平。</p>
+          </div>
+          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
+            <h3 className="text-lg font-bold text-white mb-2">支持</h3>
+            <p className="text-sm text-gray-400">遇到技术问题或社区疑问？我们的支持团队会尽快为您解答。</p>
+          </div>
+          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
+            <h3 className="text-lg font-bold text-white mb-2">社区互动</h3>
+            <p className="text-sm text-gray-400">通过 Discord、论坛等多种渠道，与全球玩家分享你的卡车生活。</p>
+          </div>
+          <div className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 shadow-lg">
+            <h3 className="text-lg font-bold text-white mb-2">创建您自己的活动</h3>
+            <p className="text-sm text-gray-400">想自己办联运？我们有专门的预约系统帮您安排。</p>
+          </div>
+        </div>
+      </section>
+
+      {/* 🌟 第四区块：数据统计 (按要求第三位) */}
+      <section className="bg-[#111111] py-12 border-y border-gray-800">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+          <div>
+            <p className="text-4xl font-black text-white">{stats.users.toLocaleString()}</p>
+            <p className="text-sm text-gray-500 mt-2">注册用户</p>
+          </div>
+          <div>
+            <p className="text-4xl font-black text-white">{stats.events}</p>
+            <p className="text-sm text-gray-500 mt-2">发布的活动</p>
+          </div>
+          <div>
+            <p className="text-4xl font-black text-white">{stats.team}</p>
+            <p className="text-sm text-gray-500 mt-2">团队成员</p>
+          </div>
+          <div>
+            <p className="text-4xl font-black text-white">{stats.vtc}</p>
+            <p className="text-sm text-gray-500 mt-2">认证车队 (VTC)</p>
+          </div>
+        </div>
+      </section>
+
+      {/* 🌟 第五区块：终极页脚 */}
+      <footer className="bg-[#0a0a0a] pt-16 pb-8 mt-auto">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
           
           {/* Logo 与 简介 */}
@@ -196,13 +196,13 @@ export default function Home() {
             </ul>
           </div>
 
-          {/* 法律与隐私 (箭头重点要求) */}
+          {/* 法律与隐私 */}
           <div>
             <h4 className="text-white font-bold mb-4">条款与政策</h4>
             <ul className="space-y-2 text-sm text-gray-400">
-              <li><Link href="#" className="hover:text-blue-400">隐私政策 (Privacy)</Link></li>
-              <li><Link href="#" className="hover:text-blue-400">服务条款 (Terms of Service)</Link></li>
-              <li><Link href="#" className="hover:text-blue-400">行为准则 (Code of Conduct)</Link></li>
+              <li><Link href="/privacy" className="hover:text-blue-400">隐私政策 (Privacy)</Link></li>
+              <li><Link href="/terms" className="hover:text-blue-400">服务条款 (Terms of Service)</Link></li>
+              <li><Link href="/code-of-conduct" className="hover:text-blue-400">行为准则 (Code of Conduct)</Link></li>
               <li><Link href="#" className="hover:text-blue-400">平台状态 (Status)</Link></li>
             </ul>
           </div>
@@ -219,20 +219,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 底部版权栏 (箭头所指位置) */}
-                  {/* 法律与隐私 */}
-          <div>
-            <h4 className="text-white font-bold mb-4">条款与政策</h4>
-            <ul className="space-y-2 text-sm text-gray-400">
-              <li><Link href="/privacy" className="hover:text-blue-400">隐私政策 (Privacy)</Link></li>
-              <li><Link href="/terms" className="hover:text-blue-400">服务条款 (Terms of Service)</Link></li>
-              <li><Link href="/code-of-conduct" className="hover:text-blue-400">行为准则 (Code of Conduct)</Link></li>
-              <li><Link href="#" className="hover:text-blue-400">平台状态 (Status)</Link></li>
-            </ul>
-          </div>
-
-... （省略中间代码） ...
-
         {/* 底部版权栏 */}
         <div className="max-w-7xl mx-auto px-6 border-t border-gray-800/50 pt-6 flex flex-col md:flex-row justify-between items-center text-xs text-gray-600">
           <p>© {new Date().getFullYear()} Road Cruise Transport MP. 版权所有.</p>
@@ -247,7 +233,6 @@ export default function Home() {
           </div>
         </div>
       </footer>
-
     </main>
   );
 }
