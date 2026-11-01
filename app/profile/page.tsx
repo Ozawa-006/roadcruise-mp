@@ -12,6 +12,19 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// 车队职位展示标签（manager 为历史数据兼容）
+const VTC_ROLE_LABELS: Record<string, string> = {
+  owner: '队长',
+  vice_owner: '副队长',
+  dispatcher: '调度员',
+  member: '车手',
+  manager: '经理',
+};
+
+function vtcRoleLabel(role: string | null | undefined): string {
+  return (role && VTC_ROLE_LABELS[role]) || '车手';
+}
+
 export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -270,8 +283,13 @@ export default function ProfilePage() {
                       )}
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{profile.vtc_info.name}</h3>
-                      {profile.vtc_info.tag && <span className="text-xs text-blue-400 font-mono">[{profile.vtc_info.tag}]</span>}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{profile.vtc_info.name}</h3>
+                        {profile.vtc_info.tag && <span className="text-xs text-blue-400 font-mono">[{profile.vtc_info.tag}]</span>}
+                        <span className="text-[10px] font-bold text-blue-300 bg-blue-900/40 border border-blue-800 px-2 py-0.5 rounded">
+                          {vtcRoleLabel(profile.vtc_role as string | null | undefined)}
+                        </span>
+                      </div>
                     </div>
                   </Link>
                 ) : (

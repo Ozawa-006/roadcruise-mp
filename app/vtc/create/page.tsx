@@ -14,7 +14,7 @@ const supabase = createClient(
 
 export default function CreateVTCPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ id: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState('');
@@ -25,6 +25,8 @@ export default function CreateVTCPage() {
   const [logoUrl, setLogoUrl] = useState('');
   const [description, setDescription] = useState('');
   const [requirements, setRequirements] = useState('');
+  // 加入方式：open 开放加入 / approval 申请审批（默认）/ invite 仅邀请
+  const [joinMode, setJoinMode] = useState<'open' | 'approval' | 'invite'>('approval');
 
   useEffect(() => {
     const checkUser = async () => {
@@ -50,6 +52,10 @@ export default function CreateVTCPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      setMsg('请先登录后再创建车队。');
+      return;
+    }
     setSubmitting(true);
     setMsg('');
 
@@ -64,7 +70,8 @@ export default function CreateVTCPage() {
           logo_url: logoUrl,
           description,
           requirements,
-          is_recruiting: true
+          is_recruiting: true,
+          join_mode: joinMode
         })
         .select()
         .single();
@@ -87,8 +94,11 @@ export default function CreateVTCPage() {
       router.push('/vtc');
       router.refresh();
 
-    } catch (error: any) {
-      setMsg(`创建失败：${error.message}`);
+    } catch (error: unknown) {
+      const message = error && typeof error === 'object' && 'message' in error
+        ? (error as { message?: unknown }).message
+        : null;
+      setMsg(`创建失败：${typeof message === 'string' && message.trim() ? message : '操作失败，请稍后重试'}`);
     } finally {
       setSubmitting(false);
     }
@@ -149,6 +159,25 @@ export default function CreateVTCPage() {
               placeholder="https://i.imgur.com/xxxxx.jpg"
             />
             <p className="text-xs text-gray-500 mt-1">建议使用正方形图片（如 256x256）</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-gray-400 mb-2">加入方式 *</label>
+            <select
+              value={joinMode}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === 'open' || value === 'approval' || value === 'invite') {
+                  setJoinMode(value);
+                }
+              }}
+              className="w-full bg-[#18191c] border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="open">开放加入（玩家点击立即加入）</option>
+              <option value="approval">需要申请（队长/副队长审核）</option>
+              <option value="invite">仅邀请加入（只能由管理层邀请）</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">默认需要申请；创建后也可以在车队详情里修改。</p>
           </div>
 
           <div>
