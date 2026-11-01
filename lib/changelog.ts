@@ -21,10 +21,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.35v',
+    date: '2026-11-01',
+    title: '招募系统上线',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新增公开招募页 `/recruitment`：展示招募状态、团队介绍、任职要求与职位列表；开放时可提交申请（职位/联系方式/说明）并查看自己的申请进度',
+      },
+      {
+        kind: 'feature',
+        text: '新增后台 `/admin/recruitment`：一键开启/关闭招募资格、编辑标题/介绍/要求/职位，审核申请（审核中/通过/拒绝 + 备注）',
+      },
+      {
+        kind: 'feature',
+        text: '申请状态变化自动发站内通知；同一用户同时只能有一条待处理申请；未完成 Steam 验证或招募关闭时数据库层直接拦截',
+      },
+      {
+        kind: 'chore',
+        text: '论坛侧栏「招募 (Recruitment)」入口改为指向 `/recruitment`；补充默认招募文案（职位/要求可在后台修改）',
+      },
+    ],
+  },
+  {
     version: '0.0.34v',
     date: '2026-11-01',
     title: '图床链接插入（路过图床）',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
@@ -37,6 +61,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       {
         kind: 'chore',
         text: '移除编辑器内「上传图片」本地 Storage 按钮（`post-images` 桶保留备用，未删除数据）',
+      },
+      {
+        kind: 'fix',
+        text: '修复论坛侧栏「VTC System」死链（原指向不存在的 `/forum/4`），改为「VTC 车队系统」→ `/vtc`',
       },
     ],
   },

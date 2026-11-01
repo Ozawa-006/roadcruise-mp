@@ -89,6 +89,15 @@ export default function AdminDashboard() {
             </Link>
           )}
 
+          {/* 🌟 招募管理 (Lv.40 工作人员及以上可见) */}
+          {canAccessAdmin(roleLevel) && (
+            <Link href="/admin/recruitment" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-green-500 transition shadow-lg group block">
+              <div className="text-4xl mb-4 group-hover:scale-110 transition">📢</div>
+              <h2 className="text-xl font-bold text-white mb-2">招募管理</h2>
+              <p className="text-sm text-gray-400">开启/关闭招募、审核申请。</p>
+            </Link>
+          )}
+
           {/* 🌟 举报处理 (Lv.40 工作人员及以上可见) */}
           {canAccessAdmin(roleLevel) && (
             <Link href="/admin/reports" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-orange-500 transition shadow-lg group block">
