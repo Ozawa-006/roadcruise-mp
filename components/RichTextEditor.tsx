@@ -223,11 +223,14 @@ export default function RichTextEditor({
 
   return (
     <div className={className}>
-      {label && (
-        <label htmlFor={editorId} className="mb-2 block text-sm font-bold text-gray-400">
-          {label}
-        </label>
-      )}
+      {label &&
+        (preview ? (
+          <span className="mb-2 block text-sm font-bold text-gray-400">{label}</span>
+        ) : (
+          <label htmlFor={editorId} className="mb-2 block text-sm font-bold text-gray-400">
+            {label}
+          </label>
+        ))}
 
       <div className="overflow-hidden rounded-lg border border-gray-700 bg-[#18191c] transition-colors focus-within:border-blue-500">
         <div className="flex items-center gap-2 border-b border-gray-700 bg-[#2c2d31] px-2 py-2">
@@ -283,7 +286,7 @@ export default function RichTextEditor({
           </button>
         </div>
 
-        {preview ? (
+        {preview && (
           <div className="min-h-40 bg-[#18191c] p-3">
             {value.trim() ? (
               <RichText text={value} className="text-sm leading-relaxed text-gray-300" />
@@ -291,19 +294,28 @@ export default function RichTextEditor({
               <p className="text-sm text-gray-500">暂无内容，切换到编辑模式开始输入。</p>
             )}
           </div>
-        ) : (
-          <textarea
-            id={editorId}
-            ref={textareaRef}
-            value={value}
-            onChange={handleChange}
-            rows={rows}
-            maxLength={maxLength}
-            required={required}
-            placeholder={placeholder}
-            className="block w-full resize-y border-0 bg-[#18191c] p-3 text-sm leading-relaxed text-white placeholder:text-gray-500 focus:outline-none focus:ring-0"
-          />
         )}
+
+        {/*
+          预览时 textarea 仍保留在表单中（sr-only），
+          这样原生 required 校验在预览状态下依然生效。
+        */}
+        <textarea
+          id={editorId}
+          ref={textareaRef}
+          value={value}
+          onChange={handleChange}
+          rows={rows}
+          maxLength={maxLength}
+          required={required}
+          placeholder={placeholder}
+          tabIndex={preview ? -1 : undefined}
+          className={
+            preview
+              ? 'sr-only'
+              : 'block w-full resize-y border-0 bg-[#18191c] p-3 text-sm leading-relaxed text-white placeholder:text-gray-500 focus:outline-none focus:ring-0'
+          }
+        />
 
         <div className="flex items-center justify-between gap-3 border-t border-gray-700/60 bg-[#232428] px-3 py-1.5">
           <span className="min-w-0 truncate text-[11px] text-gray-500">
