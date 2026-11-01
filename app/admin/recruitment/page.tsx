@@ -101,6 +101,7 @@ interface ApplicationRow {
   status: RecruitmentStatus;
   handled_by: string | null;
   handle_note: string | null;
+  promoted_at: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -405,6 +406,7 @@ function toApplicationRow(raw: unknown): ApplicationRow | null {
     handled_by: asText(raw.handled_by),
     handle_note:
       typeof raw.handle_note === 'string' && raw.handle_note.trim() ? raw.handle_note : null,
+    promoted_at: asText(raw.promoted_at),
     created_at: createdAt,
     updated_at: asText(raw.updated_at),
   };
@@ -2741,7 +2743,9 @@ export default function AdminRecruitmentPage() {
                         </div>
                       ) : null}
 
-                      {application.status === 'accepted' && position?.is_trainee === true && (
+                      {application.status === 'accepted' &&
+                  position?.is_trainee === true &&
+                  !application.promoted_at && (
                         <div className="mt-4 border-t border-gray-700/60 pt-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <button
