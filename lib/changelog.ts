@@ -21,10 +21,30 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.37v',
+    date: '2026-11-01',
+    title: '招募文案编辑与申请通知',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '后台 `/admin/recruitment` 恢复「招募文案」编辑：可修改招募页标题、介绍与任职要求（保存后公开页立即生效）',
+      },
+      {
+        kind: 'feature',
+        text: '玩家提交招募申请后，自动给所有 Lv.40+ 员工发站内通知（含职位名称，链接到后台审核页）',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `supabase/recruitment-notify-staff.sql` 触发器；已实测申请插入后员工通知 +1',
+      },
+    ],
+  },
+  {
     version: '0.0.36v',
     date: '2026-11-01',
     title: '招募职位独立开关与专属问题',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

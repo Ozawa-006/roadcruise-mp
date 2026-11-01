@@ -13,7 +13,8 @@
 //     状态变化由数据库触发器自动通知申请人；同一用户同一职位只能有一条待处理申请。
 //   · profiles：id / display_name / custom_id / steam_verified（申请人、处理人展示）。
 //
-// 本页做三件事：① 总开关；② 职位与每职位题库管理；③ 按状态/职位筛选的申请审核。
+// 本页做四件事：① 总开关；② 招募文案（title/intro/requirements）；
+// ③ 职位与每职位题库管理；④ 按状态/职位筛选的申请审核。
 // 申请列表服务端分页（每页 20 条），count 与 range 同源，筛选项下推到 PostgREST；
 // 当前页的申请人/处理人再按 user_id 分块二次查询 profiles。
 
@@ -32,6 +33,8 @@ const PAGE_SIZE = 20;
 const PROFILE_CHUNK_SIZE = 100;
 const ANSWER_PREVIEW_ITEMS = 2;
 const ANSWER_PREVIEW_CHARS = 160;
+const COPY_TITLE_MAX_LENGTH = 120;
+const COPY_TEXT_MAX_LENGTH = 3000;
 
 type RecruitmentStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected';
 type StatusFilter = 'all' | RecruitmentStatus;
@@ -44,6 +47,13 @@ interface RecruitmentSettings {
   is_open: boolean;
   updated_by: string | null;
   updated_at: string | null;
+}
+
+/** 招募文案：recruitment_settings 的 title / intro / requirements，公开页直接展示。 */
+interface RecruitmentCopy {
+  title: string;
+  intro: string;
+  requirements: string;
 }
 
 interface Question {
@@ -284,6 +294,15 @@ function toSettings(raw: unknown): RecruitmentSettings | null {
   };
 }
 
+function toRecruitmentCopy(raw: unknown): RecruitmentCopy | null {
+  if (!isRecord(raw)) return null;
+  return {
+    title: asText(raw.title) ?? '',
+    intro: asText(raw.intro) ?? '',
+    requirements: asText(raw.requirements) ?? '',
+  };
+}
+
 function toPositionRow(raw: unknown): PositionRow | null {
   if (!isRecord(raw)) return null;
   const id = asNumber(raw.id);
@@ -512,6 +531,18 @@ export default function AdminRecruitmentPage() {
   const [toggleBusy, setToggleBusy] = useState(false);
   const [settingsNotice, setSettingsNotice] = useState<Notice | null>(null);
 
+  // —— 招募文案 ——
+  const [copyForm, setCopyForm] = useState<RecruitmentCopy>({
+    title: '',
+    intro: '',
+    requirements: '',
+  });
+  const [copyBusy, setCopyBusy] = useState(false);
+  const [copyNotice, setCopyNotice] = useState<Notice | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  // 用户改动过文案后置 true：设置重新加载时不覆盖正在编辑的内容。
+  const copyDirtyRef = useRef(false);
+
   // —— 职位管理 ——
   const [positions, setPositions] = useState<PositionRow[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
@@ -642,7 +673,7 @@ export default function AdminRecruitmentPage() {
       try {
         const { data, error } = await supabase
           .from('recruitment_settings')
-          .select('id,is_open,updated_by,updated_at')
+          .select('id,is_open,title,intro,requirements,updated_by,updated_at')
           .eq('id', 1)
           .maybeSingle();
         if (cancelled) return;
@@ -661,6 +692,11 @@ export default function AdminRecruitmentPage() {
         setIsOpen(parsed.is_open);
         setSettingsUpdatedBy(parsed.updated_by);
         setSettingsUpdatedAt(parsed.updated_at);
+
+        // 首次加载/重新加载时回填文案；用户正在编辑（dirty）时保留其输入。
+        const copy = toRecruitmentCopy(data);
+        if (copy && !copyDirtyRef.current) setCopyForm(copy);
+
         setSettingsReady(true);
 
         if (parsed.updated_by) void fetchProfiles([parsed.updated_by]);
@@ -875,7 +911,85 @@ export default function AdminRecruitmentPage() {
     }
   };
 
-  // 6. 职位开关：逐职位即时保存，失败回滚。
+  // 6. 招募文案：title/intro/requirements 一起回写，成功后回填表单并刷新设置。
+  const updateCopy = (patch: Partial<RecruitmentCopy>) => {
+    copyDirtyRef.current = true;
+    setCopyNotice(null);
+    setCopyError(null);
+    setCopyForm((current) => ({ ...current, ...patch }));
+  };
+
+  const saveCopy = async () => {
+    if (!userId || copyBusy || settingsLoading || !settingsReady) return;
+
+    const title = copyForm.title.trim();
+    const intro = copyForm.intro.trim();
+    const requirements = copyForm.requirements.trim();
+
+    setCopyError(null);
+
+    if (!title) {
+      setCopyError('标题不能为空。');
+      return;
+    }
+    if (title.length > COPY_TITLE_MAX_LENGTH) {
+      setCopyError(`标题不能超过 ${COPY_TITLE_MAX_LENGTH} 个字符。`);
+      return;
+    }
+    if (intro.length > COPY_TEXT_MAX_LENGTH) {
+      setCopyError(`招募介绍不能超过 ${COPY_TEXT_MAX_LENGTH} 个字符。`);
+      return;
+    }
+    if (requirements.length > COPY_TEXT_MAX_LENGTH) {
+      setCopyError(`任职要求不能超过 ${COPY_TEXT_MAX_LENGTH} 个字符。`);
+      return;
+    }
+
+    setCopyBusy(true);
+    setCopyNotice(null);
+
+    try {
+      const { data, error } = await supabase
+        .from('recruitment_settings')
+        .update({ title, intro, requirements, updated_by: userId })
+        .eq('id', 1)
+        .select('id,updated_at')
+        .maybeSingle();
+
+      if (error) {
+        setCopyNotice({ kind: 'error', text: `保存失败：${error.message}` });
+        return;
+      }
+
+      // update 被 RLS 过滤时不会报错，只会返回 0 行，这里按失败处理。
+      if (!data) {
+        setCopyNotice({
+          kind: 'error',
+          text: '保存失败：没有找到招募设置行（id=1），或当前账号无权修改。',
+        });
+        return;
+      }
+
+      const savedUpdatedAt = isRecord(data) ? asText(data.updated_at) : null;
+      if (savedUpdatedAt) setSettingsUpdatedAt(savedUpdatedAt);
+
+      copyDirtyRef.current = false;
+      setCopyForm({ title, intro, requirements });
+      setSettingsUpdatedBy(userId);
+      setCopyNotice({
+        kind: 'success',
+        text: '✅ 招募文案已保存，公开页会展示最新的标题、介绍与任职要求。',
+      });
+      // 重新拉取 settings，让表单与“最后更新”都以服务端为准。
+      setSettingsReloadToken((value) => value + 1);
+    } catch (error) {
+      setCopyNotice({ kind: 'error', text: `保存失败：${errorMessage(error)}` });
+    } finally {
+      setCopyBusy(false);
+    }
+  };
+
+  // 7. 职位开关：逐职位即时保存，失败回滚。
   const togglePosition = async (position: PositionRow) => {
     if (!userId || positionBusyId !== null) return;
 
@@ -931,7 +1045,7 @@ export default function AdminRecruitmentPage() {
     }
   };
 
-  // 7. 上移/下移：交换相邻两项的相对顺序，按 (index+1)*10 重写有变化的 sort_order。
+  // 8. 上移/下移：交换相邻两项的相对顺序，按 (index+1)*10 重写有变化的 sort_order。
   const movePosition = async (position: PositionRow, direction: -1 | 1) => {
     if (!userId || positionBusyId !== null) return;
 
@@ -1005,7 +1119,7 @@ export default function AdminRecruitmentPage() {
     setEditorError(null);
   };
 
-  // 8. 新增职位：is_open 默认 false，sort_order 默认最大值 +10。
+  // 9. 新增职位：is_open 默认 false，sort_order 默认最大值 +10。
   const submitAdd = async () => {
     if (!userId || addBusy) return;
 
@@ -1134,7 +1248,7 @@ export default function AdminRecruitmentPage() {
     });
   };
 
-  // 9. 保存职位：name/department/description 与 questions jsonb 一起回写，成功后刷新。
+  // 10. 保存职位：name/department/description 与 questions jsonb 一起回写，成功后刷新。
   const saveEditor = async () => {
     if (!userId || !editing || editorBusy) return;
 
@@ -1189,7 +1303,7 @@ export default function AdminRecruitmentPage() {
     }
   };
 
-  // 10. 删除职位：on delete set null，历史申请会保留，这里明确提示。
+  // 11. 删除职位：on delete set null，历史申请会保留，这里明确提示。
   const deletePosition = async (position: PositionRow) => {
     if (!userId || positionBusyId !== null) return;
 
@@ -1243,7 +1357,7 @@ export default function AdminRecruitmentPage() {
     }
   };
 
-  // 11. 审核：更新 { status, handled_by, handle_note } 后刷新当前页。
+  // 12. 审核：更新 { status, handled_by, handle_note } 后刷新当前页。
   //     通过/拒绝可带备注（空存 null）；开始审核不改备注。
   const applyUpdate = async (
     application: ApplicationRow,
@@ -1320,7 +1434,7 @@ export default function AdminRecruitmentPage() {
           <div>
             <h1 className="text-2xl font-bold text-white md:text-3xl">📢 招募管理</h1>
             <p className="mt-1 text-sm text-gray-500">
-              管理招募总开关、各职位独立开关与专属问题，并按状态/职位筛选审核申请；状态变更后系统会自动通知申请人。
+              管理招募文案、总开关、各职位独立开关与专属问题，并按状态/职位筛选审核申请；状态变更后系统会自动通知申请人。
             </p>
           </div>
           <div className="flex items-center gap-4 text-sm">
@@ -1388,6 +1502,99 @@ export default function AdminRecruitmentPage() {
           <p className="mt-3 text-xs text-gray-500">
             最后更新：{formatTime(settingsUpdatedAt)} · 更新人：{displayName(settingsUpdatedBy)}
           </p>
+        </section>
+
+        {/* ================= 招募文案 ================= */}
+        <section className="mb-6 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg md:p-5">
+          <div className="border-b border-gray-700/70 pb-3">
+            <h2 className="text-lg font-bold text-white">📝 招募文案</h2>
+            <p className="mt-1 max-w-3xl text-xs text-gray-500">
+              公开页会展示这里的标题、招募介绍与任职要求；保存后立即生效，可随时修改。
+            </p>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            <div>
+              <label htmlFor="recruitment-copy-title" className={labelClass}>
+                标题 *
+              </label>
+              <input
+                id="recruitment-copy-title"
+                type="text"
+                value={copyForm.title}
+                onChange={(event) => updateCopy({ title: event.target.value })}
+                maxLength={COPY_TITLE_MAX_LENGTH}
+                placeholder="例如：加入 RCT MP 团队"
+                disabled={copyBusy || !settingsReady}
+                className={inputClass}
+              />
+              <p className="mt-1 text-right text-xs text-gray-600">
+                {copyForm.title.length} / {COPY_TITLE_MAX_LENGTH}
+              </p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label htmlFor="recruitment-copy-intro" className={labelClass}>
+                  招募介绍
+                </label>
+                <textarea
+                  id="recruitment-copy-intro"
+                  value={copyForm.intro}
+                  onChange={(event) => updateCopy({ intro: event.target.value })}
+                  rows={6}
+                  maxLength={COPY_TEXT_MAX_LENGTH}
+                  placeholder="介绍服务器、团队氛围与招募背景；支持换行。"
+                  disabled={copyBusy || !settingsReady}
+                  className={`${inputClass} resize-y`}
+                />
+                <p className="mt-1 text-right text-xs text-gray-600">
+                  {copyForm.intro.length} / {COPY_TEXT_MAX_LENGTH}
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="recruitment-copy-requirements" className={labelClass}>
+                  任职要求
+                </label>
+                <textarea
+                  id="recruitment-copy-requirements"
+                  value={copyForm.requirements}
+                  onChange={(event) => updateCopy({ requirements: event.target.value })}
+                  rows={6}
+                  maxLength={COPY_TEXT_MAX_LENGTH}
+                  placeholder="列出申请人需要满足的条件；支持换行。"
+                  disabled={copyBusy || !settingsReady}
+                  className={`${inputClass} resize-y`}
+                />
+                <p className="mt-1 text-right text-xs text-gray-600">
+                  {copyForm.requirements.length} / {COPY_TEXT_MAX_LENGTH}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {copyError && (
+            <p role="alert" className="mt-3 break-all text-sm text-red-300">
+              {copyError}
+            </p>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void saveCopy()}
+              disabled={copyBusy || settingsLoading || !settingsReady}
+              className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {copyBusy ? '保存中...' : '保存文案'}
+            </button>
+            <span className="text-xs text-gray-500">
+              介绍与任职要求支持多行，换行会原样展示在公开页。
+            </span>
+          </div>
+
+          <NoticeLine notice={copyNotice} />
         </section>
 
         {/* ================= 职位管理 ================= */}
