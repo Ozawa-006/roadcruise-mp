@@ -269,7 +269,7 @@ export default function Navbar() {
           </div>
           
           <Link href="/map" className="hover:text-white transition flex items-center gap-1">实时地图</Link>
-          <Link href="/forum/4" className="hover:text-white transition">车队 (VTC)</Link>
+          <Link href="/vtc" className="hover:text-white transition">车队 (VTC)</Link>
           <Link href="/rules" className="hover:text-white transition">社区规则</Link>
           <Link href="#" className="hover:text-white transition">帮助与支持</Link>
 
