@@ -80,6 +80,15 @@ export default function AdminDashboard() {
             </Link>
           )}
 
+          {/* 🌟 活动管理 (Lv.40 工作人员及以上可见) */}
+          {canManageAnnouncements(roleLevel) && (
+            <Link href="/admin/events" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-orange-500 transition shadow-lg group block">
+              <div className="text-4xl mb-4 group-hover:scale-110 transition">🗓️</div>
+              <h2 className="text-xl font-bold text-white mb-2">活动管理</h2>
+              <p className="text-sm text-gray-400">发布活动、管理报名。</p>
+            </Link>
+          )}
+
           {/* 🌟 社区规则管理 (Lv.90 高级社区经理及以上可见) */}
           {canEditRules(roleLevel) && (
             <Link href="/admin/rules" className="bg-[#2c2d31] p-6 rounded-lg border border-gray-700 hover:border-purple-500 transition shadow-lg group block">

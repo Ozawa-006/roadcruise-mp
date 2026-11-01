@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { attemptSteamBind } from '../lib/steam-bind-client';
+import { ROLE_LEVEL, levelOf } from '../lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,7 +18,7 @@ const PLAYERS_POLL_INTERVAL_MS = 30_000;
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
   const [players, setPlayers] = useState<number | null>(null); 
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userLevel, setUserLevel] = useState(0);
   const [displayName, setDisplayName] = useState<string>('玩家');
   const [mounted, setMounted] = useState(false);
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -49,11 +50,11 @@ export default function Navbar() {
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('role, display_name, steam_verified')
+          .select('role, role_level, display_name, steam_verified')
           .eq('id', user.id)
           .single();
 
-        setUserRole(profile?.role || 'member');
+        setUserLevel(levelOf(profile?.role_level));
         setDisplayName(profile?.display_name || user.email?.split('@')[0] || '玩家');
 
         // 已登录但还未绑定 Steam 的账号：如果浏览器持有服务端签名的验证凭证，
@@ -345,7 +346,14 @@ export default function Navbar() {
               <svg className="w-3 h-3 text-gray-500 group-hover:text-white transition" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </button>
             <div className="absolute top-full left-0 mt-1 w-48 bg-[#222222] border border-gray-700 rounded shadow-2xl py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-              <span className="block px-4 py-2 text-sm text-gray-500 cursor-default select-none">暂无活动（敬请期待）</span>
+              <Link href="/events" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">
+                活动列表
+              </Link>
+              {user && userLevel >= ROLE_LEVEL.STAFF && (
+                <Link href="/admin/events" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#333333] hover:text-white transition">
+                  创建活动
+                </Link>
+              )}
             </div>
           </div>
           

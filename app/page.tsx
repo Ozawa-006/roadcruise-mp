@@ -11,8 +11,20 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+/** 首页「VTC Events」卡片使用的最小活动字段（含报名人数） */
+type UpcomingEvent = {
+  id: number;
+  title: string;
+  start_at: string;
+  location: string | null;
+  server_id: string | null;
+  capacity: number | null;
+  registered_count: number;
+};
+
 export default function Home() {
   const [latestTopics, setLatestTopics] = useState<any[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
   const [stats, setStats] = useState({ users: 0, vtc: 0, events: 0, team: 0 });
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -34,15 +46,60 @@ export default function Home() {
       const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
       const { count: teamCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('role_level', 40);
       const { count: vtcCount } = await supabase.from('vtcs').select('*', { count: 'exact', head: true });
+      const { count: eventCount } = await supabase.from('events').select('*', { count: 'exact', head: true }).eq('status', 'published');
       
       setStats({
         users: userCount || 0,
         vtc: vtcCount || 0, 
-        events: 0, 
+        events: eventCount || 0, 
         team: teamCount || 0
       });
     };
     fetchData();
+  }, []);
+
+  // 首页活动区块：已发布且尚未开始的最近 3 场活动 + 公开报名人数。
+  // 失败时静默保留空数组，由 UI 显示占位文案，不白屏。
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const { data: eventsData, error: eventsError } = await supabase
+          .from('events')
+          .select('id, title, start_at, location, server_id, capacity')
+          .eq('status', 'published')
+          .gte('start_at', new Date().toISOString())
+          .order('start_at', { ascending: true })
+          .limit(3);
+
+        if (eventsError || !eventsData || eventsData.length === 0) return;
+
+        const eventIds = eventsData.map((event: any) => event.id);
+        const { data: countsData } = await supabase
+          .from('event_registration_counts')
+          .select('event_id, registered_count')
+          .in('event_id', eventIds);
+
+        const countMap = new Map<string, number>();
+        for (const row of countsData ?? []) {
+          countMap.set(String(row.event_id), Number(row.registered_count) || 0);
+        }
+
+        setUpcomingEvents(
+          eventsData.map((event: any) => ({
+            id: Number(event.id),
+            title: event.title,
+            start_at: event.start_at,
+            location: event.location ?? null,
+            server_id: event.server_id ?? null,
+            capacity: event.capacity ?? null,
+            registered_count: countMap.get(String(event.id)) ?? 0,
+          }))
+        );
+      } catch {
+        // 静默失败：保留空数组
+      }
+    };
+    fetchEvents();
   }, []);
 
   // 🌟 5秒自动轮播
@@ -185,28 +242,56 @@ export default function Home() {
               <span className="w-1.5 h-6 bg-blue-500 block"></span>
               VTC Events
             </h2>
-            <Link href="/forum" className="text-sm text-blue-400 hover:text-blue-300 transition">
-              前往论坛查看全部 →
+            <Link href="/events" className="text-sm text-blue-400 hover:text-blue-300 transition">
+              查看全部活动 →
             </Link>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[1, 2, 3].map((item) => (
-              <div key={item} className="bg-[#2c2d31] border border-gray-700 p-5 rounded-lg hover:border-blue-500 transition shadow-lg flex flex-col justify-between">
-                <div>
-                   <div className="h-32 bg-[#1e1f23] rounded-md mb-4 flex items-center justify-center text-gray-500">
-                      <svg className="w-10 h-10 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                   </div>
-                   <h3 className="text-lg font-bold text-white mb-2">VTC 联动活动即将上线</h3>
-                   <p className="text-sm text-gray-400 line-clamp-2">敬请期待我们与各大车队联合举办的精彩联运活动，系统正在开发中...</p>
-                </div>
-                <div className="flex justify-between text-xs text-gray-500 mt-4 pt-4 border-t border-gray-700/50">
-                  <span>Road Cruise Official</span>
-                  <span className="text-orange-400">即将发布</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {upcomingEvents.length === 0 ? (
+            <div className="bg-[#2c2d31] border border-gray-700 rounded-lg p-8 text-center shadow-lg">
+              <Link href="/events" className="text-sm text-gray-400 hover:text-blue-400 transition">
+                暂无即将开始的活动，去活动页看看 →
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {upcomingEvents.map((event) => (
+                <Link
+                  key={event.id}
+                  href={`/events/${event.id}`}
+                  className="bg-[#2c2d31] border border-gray-700 p-5 rounded-lg hover:border-blue-500 transition shadow-lg flex flex-col justify-between"
+                >
+                  <div>
+                    <h3 className="text-lg font-bold text-white mb-3 line-clamp-2">{event.title}</h3>
+                    <div className="space-y-2 text-sm text-gray-400">
+                      <p className="flex items-start gap-2">
+                        <span className="text-blue-400">🕒</span>
+                        <span>{new Date(event.start_at).toLocaleString('zh-CN')}</span>
+                      </p>
+                      <p className="flex items-start gap-2">
+                        <span className="text-blue-400">📍</span>
+                        <span>{event.location || '地点待定'}</span>
+                      </p>
+                      {event.server_id && (
+                        <p className="flex items-start gap-2">
+                          <span className="text-blue-400">🖥️</span>
+                          <span>服务器：{event.server_id}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-gray-500 mt-4 pt-4 border-t border-gray-700/50">
+                    <span>报名</span>
+                    <span className="text-orange-400 font-mono">
+                      {event.capacity
+                        ? `${event.registered_count} / ${event.capacity}`
+                        : `${event.registered_count} 人`}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -252,7 +337,7 @@ export default function Home() {
           </div>
           <div>
             <p className="text-4xl font-black text-white">{stats.events}</p>
-            <p className="text-sm text-gray-500 mt-2">联运活动（即将上线）</p>
+            <p className="text-sm text-gray-500 mt-2">发布的活动</p>
           </div>
           <div>
             <p className="text-4xl font-black text-white">{stats.team}</p>

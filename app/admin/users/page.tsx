@@ -115,6 +115,13 @@ export default function UserManagementPage() {
   };
 
   const handleSave = async (targetUser: any) => {
+    // 0) 靓号格式校验：非空时必须是 4-8 位数字（与数据库 profiles_custom_id_format 约束一致）
+    const trimmedCustomId = editCustomId.trim();
+    if (trimmedCustomId !== '' && !/^[0-9]{4,8}$/.test(trimmedCustomId)) {
+      alert('靓号必须是 4-8 位数字');
+      return;
+    }
+
     const myLevel = levelOf(currentUser?.role_level);
     const targetLevel = levelOf(targetUser.role_level);
     const isSelf = targetUser.id === currentUser?.id;
@@ -285,7 +292,8 @@ export default function UserManagementPage() {
                           <input 
                             type="text" 
                             value={editCustomId} 
-                            onChange={(e) => setEditCustomId(e.target.value)}
+                            onChange={(e) => setEditCustomId(e.target.value.replace(/\D/g, ''))}
+                            maxLength={8}
                             className="bg-[#18191c] border border-blue-500 rounded px-2 py-1 w-24 text-white text-sm"
                             placeholder="留空撤回"
                           />
