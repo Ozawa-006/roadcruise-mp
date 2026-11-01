@@ -15,16 +15,16 @@ export default function Home() {
   const [latestTopics, setLatestTopics] = useState<any[]>([]);
   const [stats, setStats] = useState({ users: 0, vtc: 0, events: 0, team: 0 });
   
-  // 🌟 新增：轮播图状态
+  // 轮播图状态
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. 获取最新官方公告 (拉取5条用于轮播)
+      // 1. 获取最新官方公告 (🌟 修复：增加 image_url 字段)
       const { data: topics } = await supabase
         .from('forum_topics')
         .select(`
-          id, title, category_id, created_at, replies_count,
+          id, title, category_id, created_at, replies_count, image_url,
           profiles:author_id (display_name)
         `)
         .eq('category_id', 1)
@@ -46,7 +46,7 @@ export default function Home() {
     fetchData();
   }, []);
 
-  // 🌟 新增：自动轮播定时器
+  // 自动轮播定时器
   useEffect(() => {
     if (latestTopics.length <= 1) return;
     
@@ -90,12 +90,15 @@ export default function Home() {
             {latestTopics.map((item, index) => (
               <div
                 key={item.id}
-                className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex flex-col items-center justify-center bg-[url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center ${
+                // 🌟 修复：移除 className 里写死的 bg-[url(...)]
+                className={`absolute inset-0 transition-opacity duration-1000 ease-in-out flex flex-col items-center justify-center bg-cover bg-center ${
                   index === currentIndex ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
                 }`}
+                // 🌟 修复：优先使用发帖时的配图
+                style={{ backgroundImage: `url(${item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop'})` }}
               >
                 {/* 黑色遮罩 */}
-                <div className="absolute inset-0 bg-black/70 z-0"></div>
+                <div className="absolute inset-0 bg-black/60 z-0"></div>
 
                 {/* 新闻内容 */}
                 <div className="relative z-10 text-center max-w-4xl px-6 flex flex-col items-center">
@@ -147,7 +150,7 @@ export default function Home() {
         )}
       </section>
 
-      {/* 🌟 第二区块：VTC Events (原最新消息改名) */}
+      {/* 🌟 第二区块：VTC Events */}
       <section className="py-16 bg-[#111111] border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-end mb-8 border-b border-gray-800 pb-4">
@@ -161,7 +164,6 @@ export default function Home() {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* 活动占位卡片 */}
             {[1, 2, 3].map((item) => (
               <div key={item} className="bg-[#2c2d31] border border-gray-700 p-5 rounded-lg hover:border-blue-500 transition shadow-lg flex flex-col justify-between">
                 <div>
@@ -240,7 +242,6 @@ export default function Home() {
       <footer className="bg-[#0a0a0a] pt-16 pb-8 mt-auto">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
           
-          {/* Logo 与 简介 */}
           <div className="col-span-1 md:col-span-1">
             <Link href="/" className="text-xl lg:text-2xl font-black italic tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-red-500 inline-block mb-4">
               Road Cruise Transport MP
@@ -250,7 +251,6 @@ export default function Home() {
             </p>
           </div>
 
-          {/* 有用链接 */}
           <div>
             <h4 className="text-white font-bold mb-4">有用链接</h4>
             <ul className="space-y-2 text-sm text-gray-400">
@@ -261,7 +261,6 @@ export default function Home() {
             </ul>
           </div>
 
-          {/* 法律与隐私 */}
           <div>
             <h4 className="text-white font-bold mb-4">条款与政策</h4>
             <ul className="space-y-2 text-sm text-gray-400">
@@ -272,7 +271,6 @@ export default function Home() {
             </ul>
           </div>
 
-          {/* 支持与赞助 */}
           <div>
             <h4 className="text-white font-bold mb-4">支持我们</h4>
             <p className="text-sm text-gray-400 mb-4">
@@ -284,7 +282,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 底部版权栏 */}
         <div className="max-w-7xl mx-auto px-6 border-t border-gray-800/50 pt-6 flex flex-col md:flex-row justify-between items-center text-xs text-gray-600">
           <p>© {new Date().getFullYear()} Road Cruise Transport MP. 版权所有.</p>
           <div className="flex space-x-4 mt-4 md:mt-0">

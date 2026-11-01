@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation'; // 🌟 引入 useRouter
+import { useParams, useRouter } from 'next/navigation'; 
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
 import Link from 'next/link';
@@ -23,7 +23,7 @@ export default function TopicDetailPage() {
   
   // 用户与权限状态
   const [user, setUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<string>('member'); // 🌟 新增：记录当前用户角色
+  const [userRole, setUserRole] = useState<string>('member');
   
   const [replyContent, setReplyContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -42,7 +42,7 @@ export default function TopicDetailPage() {
 
     if (topicData) setTopic(topicData);
 
-    // 2. 获取回复列表（🌟 修复：加上 role 字段，让徽章能显示）
+    // 2. 获取回复列表
     const { data: replyData } = await supabase
       .from('forum_replies')
       .select(`
@@ -105,14 +105,10 @@ export default function TopicDetailPage() {
     setSubmitting(false);
   };
 
-  // 🌟 新增：删除帖子功能
   const handleDeleteTopic = async () => {
     if (!confirm('⚠️ 确定要删除这篇帖子吗？此操作不可恢复！')) return;
     
-    // 先删除帖子下的所有回复
     await supabase.from('forum_replies').delete().eq('topic_id', topicId);
-    
-    // 再删除帖子本身
     const { error } = await supabase.from('forum_topics').delete().eq('id', topicId);
     
     if (error) {
@@ -131,10 +127,10 @@ export default function TopicDetailPage() {
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans pb-12">
       <Navbar />
       
-      {/* 顶部横幅 */}
+      {/* 🌟 顶部横幅 (已修复：优先使用帖子自带的图片) */}
       <div 
         className="w-full h-48 md:h-64 relative bg-cover bg-center bg-blue-900 border-b border-gray-700"
-        style={{ backgroundImage: `url('https://images.unsplash.com/photo-1592838064575-70ed626d3a0e?q=80&w=1000&auto=format&fit=crop')` }}
+        style={{ backgroundImage: `url(${topic.image_url || 'https://images.unsplash.com/photo-1592838064575-70ed626d3a0e?q=80&w=1000&auto=format&fit=crop'})` }}
       >
         <div className="absolute inset-0 bg-black/60"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-5xl mx-auto w-full px-4 md:px-8">
@@ -164,7 +160,6 @@ export default function TopicDetailPage() {
           </div>
           <div className="flex-1 p-6 md:p-8">
             
-            {/* 🌟 修改：在这里加入删除按钮，并判断权限 */}
             <div className="flex justify-between items-center text-xs text-gray-500 mb-6 border-b border-gray-700 pb-4">
               <span>发表于：{new Date(topic.created_at).toLocaleString()}</span>
               <div className="flex items-center gap-4">
@@ -205,7 +200,7 @@ export default function TopicDetailPage() {
                 </div>
                 <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || '未知用户'}</h4>
                 
-                {/* 🌟 动态徽章 */}
+                {/* 动态徽章 */}
                 <div className="mt-2 text-center">
                   {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ 开发者</span>}
                   {reply.profiles?.role === 'director' && <span className="text-xs font-bold text-purple-400">👑 论坛总经理</span>}
@@ -220,12 +215,10 @@ export default function TopicDetailPage() {
                   <span>#{index + 2}</span>
                 </div>
                 
-                {/* 🌟 修复：删除了重复显示两遍的 {reply.content} */}
                 <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap mb-4">
                   {reply.content}
                 </div>
                 
-                {/* 引用按钮 */}
                 <div className="flex justify-end pt-2 border-t border-gray-700/50">
                   <button 
                     onClick={() => {
