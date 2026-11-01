@@ -5,7 +5,8 @@
 //   1. recruitment_settings（id=1）→ 总开关 is_open / 标题 / 介绍 / 要求；
 //   2. recruitment_positions      → 职位、独立 is_open、排序、每个职位的专属 questions；
 //   3. supabase.auth.getUser()    → 申请表单与「我的申请」的登录态；
-//   4. recruitment_applications   → 提交申请、读取本人最近 10 条申请。
+//   4. recruitment_applications   → 提交申请、读取本人最近 10 条申请；
+//   5. rct_recruitment_withdraw   → 本人撤回 pending/reviewing 申请（不写 SQL、不改状态约束）。
 //
 // 数据库是唯一事实来源：本页不修改设置、不写 SQL、不重复实现 RLS；
 // 提交前只做前端必填校验，并把数据库错误翻译成玩家可读的提示。
@@ -31,7 +32,7 @@ const DEFAULT_TITLE = '加入 RCT MP 团队';
 const MAX_APPLICATIONS = 10;
 const MAX_CONTACT = 120;
 
-type ApplicationStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected';
+type ApplicationStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected' | 'withdrawn';
 type RecruitStatus = 'open' | 'closed' | 'empty';
 type QuestionType = 'text' | 'textarea' | 'select';
 
@@ -82,6 +83,11 @@ interface SuccessNotice {
   text: string;
 }
 
+interface WithdrawNotice {
+  kind: 'success' | 'error';
+  text: string;
+}
+
 interface DbErrorInfo {
   code: string | null;
   status: number | null;
@@ -111,6 +117,10 @@ const STATUS_META: Record<ApplicationStatus, { label: string; className: string 
   rejected: {
     label: '未通过',
     className: 'border-gray-600 bg-[#232428] text-gray-400',
+  },
+  withdrawn: {
+    label: '已撤回',
+    className: 'border-slate-500/40 bg-slate-500/10 text-slate-400',
   },
 };
 
@@ -249,7 +259,8 @@ function isApplicationStatus(value: unknown): value is ApplicationStatus {
     value === 'pending' ||
     value === 'reviewing' ||
     value === 'accepted' ||
-    value === 'rejected'
+    value === 'rejected' ||
+    value === 'withdrawn'
   );
 }
 
@@ -337,6 +348,11 @@ function submitErrorText(error: unknown): string {
   return info.message || '提交失败，请稍后重试';
 }
 
+/** 撤回失败的兜底文案（RPC 的中文 error.message 已在上层直接展示）。 */
+function withdrawErrorText(error: unknown): string {
+  return toDbErrorInfo(error).message || '撤回失败，请稍后重试';
+}
+
 /**
  * 把 answers 映射为可展示的条目：
  *   · 职位仍存在 → 按职位当前 questions 的顺序与 label 展示；
@@ -395,6 +411,10 @@ export default function RecruitmentPage() {
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
   const [applicationsReload, setApplicationsReload] = useState(0);
   const [expandedApplications, setExpandedApplications] = useState<Record<string, boolean>>({});
+
+  // 撤回：同一时间只处理一条（button 全部禁用）；提示按申请 id 保存，互不覆盖。
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [withdrawNotices, setWithdrawNotices] = useState<Record<string, WithdrawNotice>>({});
 
   // 1. 公开数据：设置行 + 全部职位（匿名可读，按 sort_order / id 排序）。
   useEffect(() => {
@@ -596,6 +616,55 @@ export default function RecruitmentPage() {
       ...previous,
       [applicationId]: !previous[applicationId],
     }));
+  };
+
+  // 撤回申请：仅 pending/reviewing 可撤回（数据库 RPC 同样会校验）。
+  // 成功提示「申请已撤回」并刷新列表；失败展示 error.message，不使用 alert。
+  const handleWithdraw = async (application: ApplicationRow) => {
+    if (withdrawingId !== null) return;
+    if (application.status !== 'pending' && application.status !== 'reviewing') return;
+
+    if (!window.confirm('确定撤回这条申请吗？撤回后如需再次申请需重新提交。')) return;
+
+    setWithdrawingId(application.id);
+    setWithdrawNotices((current) => {
+      const next = { ...current };
+      delete next[application.id];
+      return next;
+    });
+
+    try {
+      const { error } = await supabase.rpc('rct_recruitment_withdraw', {
+        p_application_id: application.id,
+      });
+
+      if (error) {
+        setWithdrawNotices((current) => ({
+          ...current,
+          [application.id]: { kind: 'error', text: error.message },
+        }));
+        return;
+      }
+
+      setWithdrawNotices((current) => ({
+        ...current,
+        [application.id]: { kind: 'success', text: '申请已撤回' },
+      }));
+      // 立即把本条标记为「已撤回」，避免刷新完成前按钮仍可点击；随后由列表刷新校准。
+      setApplications((current) =>
+        current.map((item): ApplicationRow =>
+          item.id === application.id ? { ...item, status: 'withdrawn' } : item
+        )
+      );
+      setApplicationsReload((value) => value + 1);
+    } catch (error) {
+      setWithdrawNotices((current) => ({
+        ...current,
+        [application.id]: { kind: 'error', text: withdrawErrorText(error) },
+      }));
+    } finally {
+      setWithdrawingId(null);
+    }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1085,6 +1154,7 @@ export default function RecruitmentPage() {
                           positionById.get(application.position_id ?? -1)
                         );
                         const expanded = expandedApplications[application.id] === true;
+                        const withdrawNotice = withdrawNotices[application.id];
 
                         return (
                           <li
@@ -1152,6 +1222,33 @@ export default function RecruitmentPage() {
                             ) : (
                               <p className="mt-3 text-xs italic text-gray-500">
                                 未填写额外问题。
+                              </p>
+                            )}
+
+                            {(application.status === 'pending' ||
+                              application.status === 'reviewing') && (
+                              <div className="mt-3 border-t border-gray-700/60 pt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleWithdraw(application)}
+                                  disabled={withdrawingId !== null}
+                                  className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 transition hover:border-red-400/60 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {withdrawingId === application.id ? '撤回中...' : '撤回申请'}
+                                </button>
+                              </div>
+                            )}
+
+                            {withdrawNotice && (
+                              <p
+                                role={withdrawNotice.kind === 'error' ? 'alert' : 'status'}
+                                className={`mt-3 break-all text-xs ${
+                                  withdrawNotice.kind === 'error'
+                                    ? 'text-red-300'
+                                    : 'text-green-300'
+                                }`}
+                              >
+                                {withdrawNotice.text}
                               </p>
                             )}
                           </li>

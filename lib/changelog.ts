@@ -21,10 +21,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.42v',
+    date: '2026-11-02',
+    title: '撤回申请与招募统计',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '申请人可撤回「待审核/审核中」的申请（状态变为已撤回），撤回后可重新申请同一职位',
+      },
+      {
+        kind: 'feature',
+        text: '后台招募管理新增统计卡片：总申请 / 待审核 / 审核中 / 已通过 / 未通过 / 已撤回',
+      },
+      {
+        kind: 'feature',
+        text: '后台支持按当前筛选导出申请记录 CSV（最多 1000 条，含申请人、职位、状态、答案等）',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `supabase/recruitment-withdraw.sql`；状态约束与通知文案补充「已撤回」',
+      },
+    ],
+  },
+  {
     version: '0.0.41v',
     date: '2026-11-02',
     title: '招募通知按部门与逐级升级',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',

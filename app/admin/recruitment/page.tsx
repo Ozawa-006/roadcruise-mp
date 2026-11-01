@@ -10,7 +10,8 @@
 //     assign_role（通过后授予的正式角色）、is_trainee（是否实习岗位）、trainee_role（实习角色）。
 //     匿名可读，Lv.40+ 可 INSERT/UPDATE/DELETE。
 //   · recruitment_applications：position_id 关联职位（on delete set null）、answers jsonb、
-//     status ∈ pending|reviewing|accepted|rejected；Lv.40+ 可 SELECT 全部、UPDATE。
+//     status ∈ pending|reviewing|accepted|rejected|withdrawn；Lv.40+ 可 SELECT 全部、UPDATE。
+//     withdrawn 由申请人通过 RPC rct_recruitment_withdraw 自行发起，后台只做只读展示；
 //     状态变化由数据库触发器自动通知申请人；同一用户同一职位只能有一条待处理申请。
 //   · profiles：id / display_name / custom_id / steam_verified（申请人、处理人展示）。
 //   · roles：name / display_name / level / department（匿名可读），用于角色下拉与展示映射。
@@ -22,10 +23,12 @@
 //     （社区线：社区经理/社区版主经理/媒体经理/翻译经理；活动线：活动经理；游戏线：游戏管理经理；
 //     支持线：支持经理；Lv.90+ 可跨部门），权限不足抛 42501 + 中文提示，前端原样展示。
 //
-// 本页做四件事：① 总开关；② 招募文案（title/intro/requirements）；
-// ③ 职位与每职位题库管理；④ 按状态/职位筛选的申请审核。
+// 本页做六件事：① 总开关；② 招募文案（title/intro/requirements）；
+// ③ 职位与每职位题库管理；④ 申请统计卡片；⑤ 按状态/职位筛选的申请审核；
+// ⑥ 按当前筛选导出最多 1000 条 CSV。
 // 申请列表服务端分页（每页 20 条），count 与 range 同源，筛选项下推到 PostgREST；
-// 当前页的申请人/处理人再按 user_id 分块二次查询 profiles。
+// 当前页的申请人/处理人（以及导出集的申请人）再按 user_id 分块二次查询 profiles。
+// 统计卡片走 6 个并发 head count（总申请不加 status 条件），失败只显示 -，不阻塞列表。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -40,6 +43,8 @@ const supabase = createClient(
 
 const PAGE_SIZE = 20;
 const PROFILE_CHUNK_SIZE = 100;
+// CSV 导出上限：一次最多导出当前筛选下的 1000 条申请，避免前端内存与下载体积失控。
+const CSV_EXPORT_LIMIT = 1000;
 const ANSWER_PREVIEW_ITEMS = 2;
 const ANSWER_PREVIEW_CHARS = 160;
 const COPY_TITLE_MAX_LENGTH = 120;
@@ -51,8 +56,9 @@ const TRAINEE_DAYS_DEFAULT = 30;
 // 审核权限静态提示：实际校验在 RPC 内（该职位对应部门经理及以上）。
 const REVIEW_PERMISSION_HINT = '仅该职位对应部门经理及以上可审核（社区线需社区经理及以上）';
 
-type RecruitmentStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected';
+type RecruitmentStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected' | 'withdrawn';
 type StatusFilter = 'all' | RecruitmentStatus;
+type StatKey = 'total' | 'pending' | 'reviewing' | 'accepted' | 'rejected' | 'withdrawn';
 type DecisionStatus = 'accepted' | 'rejected';
 type QuestionType = 'text' | 'textarea' | 'select';
 type PositionFilter = 'all' | number;
@@ -197,6 +203,10 @@ const STATUS_META: Record<RecruitmentStatus, { label: string; className: string 
     label: '未通过',
     className: 'border-red-500/40 bg-red-500/15 text-red-300',
   },
+  withdrawn: {
+    label: '已撤回',
+    className: 'border-gray-500/40 bg-gray-500/15 text-gray-400',
+  },
 };
 
 const TRAINEE_STATUS_META: Record<TraineeStatus, { label: string; className: string }> = {
@@ -220,7 +230,35 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
   { value: 'reviewing', label: '审核中' },
   { value: 'accepted', label: '已通过' },
   { value: 'rejected', label: '未通过' },
+  { value: 'withdrawn', label: '已撤回' },
 ];
+
+/** 统计卡片：status 为 null 表示总申请（不加 status 条件）。 */
+const STAT_CARDS: ReadonlyArray<{
+  key: StatKey;
+  label: string;
+  status: RecruitmentStatus | null;
+  valueClassName: string;
+}> = [
+  { key: 'total', label: '总申请', status: null, valueClassName: 'text-white' },
+  { key: 'pending', label: '待审核', status: 'pending', valueClassName: 'text-orange-300' },
+  { key: 'reviewing', label: '审核中', status: 'reviewing', valueClassName: 'text-blue-300' },
+  { key: 'accepted', label: '已通过', status: 'accepted', valueClassName: 'text-green-300' },
+  { key: 'rejected', label: '未通过', status: 'rejected', valueClassName: 'text-red-300' },
+  { key: 'withdrawn', label: '已撤回', status: 'withdrawn', valueClassName: 'text-gray-400' },
+];
+
+/** 统计初值/失败回退：全部为 null，页面显示为 -。 */
+function emptyStats(): Record<StatKey, number | null> {
+  return {
+    total: null,
+    pending: null,
+    reviewing: null,
+    accepted: null,
+    rejected: null,
+    withdrawn: null,
+  };
+}
 
 const QUESTION_TYPE_OPTIONS: ReadonlyArray<{ value: QuestionType; label: string }> = [
   { value: 'text', label: '单行文本' },
@@ -278,7 +316,8 @@ function isRecruitmentStatus(value: unknown): value is RecruitmentStatus {
     value === 'pending' ||
     value === 'reviewing' ||
     value === 'accepted' ||
-    value === 'rejected'
+    value === 'rejected' ||
+    value === 'withdrawn'
   );
 }
 
@@ -307,6 +346,61 @@ function formatDate(value: string | null): string {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}/${month}/${day}`;
 }
+
+/** CSV 时间列：YYYY-MM-DD HH:mm:ss（本地时区）；空值与非法值分别回退空串/原始文案。 */
+function formatCsvTime(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (input: number) => String(input).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+/** 导出文件名：recruitment-applications-YYYYMMDD-HHmm.csv（本地时区）。 */
+function csvFileName(now: Date): string {
+  const pad = (input: number) => String(input).padStart(2, '0');
+  return `recruitment-applications-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(
+    now.getDate()
+  )}-${pad(now.getHours())}${pad(now.getMinutes())}.csv`;
+}
+
+/** CSV 字段转义：一律用双引号包裹，内部双引号翻倍；逗号与换行由引号包裹。 */
+function csvField(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function buildCsv(rows: string[][]): string {
+  // 前置 BOM，避免 Excel 打开中文 CSV 乱码。
+  return `\uFEFF${rows.map((row) => row.map(csvField).join(',')).join('\r\n')}`;
+}
+
+function downloadCsv(content: string, filename: string): void {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const CSV_COLUMNS: ReadonlyArray<string> = [
+  '申请ID',
+  '职位',
+  '申请人',
+  '专属ID',
+  '联系方式',
+  '状态',
+  '提交时间',
+  '处理时间',
+  '处理备注',
+  'answers',
+];
 
 /** 生成页码按钮：当前页前后各 2 页 + 首尾页，中间用省略号连接。 */
 function buildPageItems(currentPage: number, totalPages: number): PageItem[] {
@@ -513,6 +607,26 @@ function toProfileMap(data: unknown): Record<string, ProfileInfo> {
   }
 
   return map;
+}
+
+/** 导出一行：列顺序与 CSV_COLUMNS 一致；职位名缺失时回退申请记录里的原始职位字段。 */
+function buildCsvRow(
+  application: ApplicationRow,
+  profile: ProfileInfo | null,
+  positionName: string
+): string[] {
+  return [
+    application.id,
+    positionName,
+    profile?.display_name?.trim() || '未命名用户',
+    profile?.custom_id ?? '',
+    application.contact ?? '',
+    STATUS_META[application.status].label,
+    formatCsvTime(application.created_at),
+    formatCsvTime(application.updated_at),
+    application.handle_note ?? '',
+    JSON.stringify(application.answers) ?? '',
+  ];
 }
 
 function formatAnswer(value: unknown): string {
@@ -722,6 +836,12 @@ export default function AdminRecruitmentPage() {
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
   const [applicationsReloadToken, setApplicationsReloadToken] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  // 统计卡片：null 表示加载中或查询失败，界面统一显示 -。
+  const [stats, setStats] = useState<Record<StatKey, number | null>>(() => emptyStats());
+  const [statsLoading, setStatsLoading] = useState(false);
+  // CSV 导出：导出中禁用按钮，结果用独立提示（成功绿字 / 失败红字）。
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportNotice, setExportNotice] = useState<Notice | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('all');
   const [page, setPage] = useState(1);
@@ -735,9 +855,10 @@ export default function AdminRecruitmentPage() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [listNotice, setListNotice] = useState<Notice | null>(null);
 
-  const fetchProfiles = useCallback(async (ids: string[]) => {
+  /** 按 id 分块查询 profiles，返回 id -> 资料 的映射；失败的分块只记录日志，不抛错。 */
+  const fetchProfileMap = useCallback(async (ids: string[]): Promise<Record<string, ProfileInfo>> => {
     const unique = Array.from(new Set(ids.filter((id) => typeof id === 'string' && id !== '')));
-    if (unique.length === 0) return;
+    if (unique.length === 0) return {};
 
     const merged: Record<string, ProfileInfo> = {};
     // 分块查询，避免把多行 UUID 的 PostgREST URL 拉得过长。
@@ -757,9 +878,17 @@ export default function AdminRecruitmentPage() {
       Object.assign(merged, toProfileMap(data));
     }
 
-    if (Object.keys(merged).length === 0) return;
-    setProfiles((previous) => ({ ...previous, ...merged }));
+    return merged;
   }, []);
+
+  const fetchProfiles = useCallback(
+    async (ids: string[]) => {
+      const merged = await fetchProfileMap(ids);
+      if (Object.keys(merged).length === 0) return;
+      setProfiles((previous) => ({ ...previous, ...merged }));
+    },
+    [fetchProfileMap]
+  );
 
   // 1. 权限：未登录 -> /login；非 Lv.40+ -> alert + /admin
   useEffect(() => {
@@ -1012,6 +1141,55 @@ export default function AdminRecruitmentPage() {
     };
   }, [checking, userId, statusFilter, positionFilter, page, applicationsReloadToken, fetchProfiles]);
 
+  // 4.1 申请统计：6 个并发 head count（总申请不加 status 条件）。
+  //     与列表解耦：失败只把对应卡片置为 -，不阻塞列表；刷新/审核后随 applicationsReloadToken 重算。
+  useEffect(() => {
+    if (checking || !userId) return;
+
+    let cancelled = false;
+
+    const loadStats = async () => {
+      setStatsLoading(true);
+
+      try {
+        const results = await Promise.all(
+          STAT_CARDS.map((card) => {
+            const query = supabase
+              .from('recruitment_applications')
+              .select('id', { count: 'exact', head: true });
+            return card.status === null ? query : query.eq('status', card.status);
+          })
+        );
+        if (cancelled) return;
+
+        const next = emptyStats();
+        results.forEach((result, index) => {
+          const card = STAT_CARDS[index];
+          if (result.error) {
+            console.error(`加载「${card.label}」统计失败:`, result.error.message);
+            next[card.key] = null;
+            return;
+          }
+          next[card.key] = typeof result.count === 'number' ? result.count : null;
+        });
+        setStats(next);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('加载申请统计失败:', errorMessage(error));
+          setStats(emptyStats());
+        }
+      } finally {
+        if (!cancelled) setStatsLoading(false);
+      }
+    };
+
+    void loadStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checking, userId, applicationsReloadToken]);
+
   const sortedPositions = useMemo(
     () => [...positions].sort((left, right) => left.sort_order - right.sort_order || left.id - right.id),
     [positions]
@@ -1067,6 +1245,59 @@ export default function AdminRecruitmentPage() {
     const profile = profiles[id];
     if (!profile) return '未知用户';
     return profile.display_name?.trim() || '未命名用户';
+  };
+
+  // 4.2 导出 CSV：当前状态/职位筛选下最多 1000 条，按 created_at 倒序；
+  //     导出集的 user_id 分块补查 profiles（昵称/专属 ID），再拼 Blob 触发下载。
+  const exportApplications = async () => {
+    if (exportBusy) return;
+
+    setExportBusy(true);
+    setExportNotice(null);
+
+    try {
+      let query = supabase
+        .from('recruitment_applications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(CSV_EXPORT_LIMIT);
+
+      if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+      if (positionFilter !== 'all') query = query.eq('position_id', positionFilter);
+
+      const { data, error } = await query;
+      if (error) {
+        setExportNotice({ kind: 'error', text: `导出失败：${error.message}` });
+        return;
+      }
+
+      const rows = toApplicationRows(data);
+      if (rows.length === 0) {
+        setExportNotice({ kind: 'error', text: '导出失败：当前筛选条件下没有可导出的申请。' });
+        return;
+      }
+
+      const profileMap = await fetchProfileMap(rows.map((row) => row.user_id));
+      const csvRows: string[][] = [Array.from(CSV_COLUMNS)];
+      for (const row of rows) {
+        const position =
+          row.position_id !== null ? positionById.get(row.position_id) ?? null : null;
+        const positionName = position?.name ?? (row.position.trim() || '未知职位');
+        csvRows.push(buildCsvRow(row, profileMap[row.user_id] ?? null, positionName));
+      }
+
+      downloadCsv(buildCsv(csvRows), csvFileName(new Date()));
+      setExportNotice({
+        kind: 'success',
+        text: `✅ 已导出 ${rows.length} 条申请（CSV）${
+          rows.length >= CSV_EXPORT_LIMIT ? `，已达 ${CSV_EXPORT_LIMIT} 条上限` : ''
+        }。`,
+      });
+    } catch (error) {
+      setExportNotice({ kind: 'error', text: `导出失败：${errorMessage(error)}` });
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   // 5. 总开关：乐观更新，失败回滚；写入 updated_by。
@@ -2563,6 +2794,27 @@ export default function AdminRecruitmentPage() {
           </div>
         </section>
 
+        {/* ================= 申请统计 ================= */}
+        <section
+          aria-label="申请统计"
+          className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
+        >
+          {STAT_CARDS.map((card) => {
+            const value = stats[card.key];
+            return (
+              <div
+                key={card.key}
+                className="rounded-lg border border-gray-700 bg-[#2c2d31] p-3 shadow-lg"
+              >
+                <p className="text-xs text-gray-500">{card.label}</p>
+                <p className={`mt-1 text-xl font-bold ${card.valueClassName}`}>
+                  {statsLoading || value === null ? '-' : value}
+                </p>
+              </div>
+            );
+          })}
+        </section>
+
         {/* ================= 申请列表 ================= */}
         <section className="mb-4 flex flex-col gap-3 rounded-lg border border-gray-700 bg-[#2c2d31] p-4 md:flex-row md:items-end">
           <div className="w-full md:w-44">
@@ -2629,6 +2881,15 @@ export default function AdminRecruitmentPage() {
           <div className="flex flex-wrap items-center gap-3 md:ml-auto">
             <button
               type="button"
+              onClick={() => void exportApplications()}
+              disabled={exportBusy}
+              title={`按当前筛选导出，最多 ${CSV_EXPORT_LIMIT} 条`}
+              className="rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exportBusy ? '导出中...' : '⬇️ 导出 CSV'}
+            </button>
+            <button
+              type="button"
               onClick={reloadApplications}
               disabled={applicationsLoading}
               className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
@@ -2640,6 +2901,8 @@ export default function AdminRecruitmentPage() {
             </span>
           </div>
         </section>
+
+        <NoticeLine notice={exportNotice} className="mb-4" />
 
         {applicationsError && (
           <ErrorBox
