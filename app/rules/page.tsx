@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import Navbar from '../../components/Navbar'; // 引入顶部导航栏
+import Navbar from '../../components/Navbar';
 import Link from 'next/link';
 
 const supabase = createClient(
@@ -15,9 +15,24 @@ export default function RulesPage() {
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 🌟 新增：用于存储当前用户的权限等级
+  const [currentUserLevel, setCurrentUserLevel] = useState<number>(0);
+
   useEffect(() => {
     const fetchRules = async () => {
-      // 只拉取已发布的条款，并按章节和编号排序
+      // 0. 获取当前用户权限（用于控制编辑按钮显示）
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
+        // 最高开发者邮箱直接给 100 级
+        if (user.email === '420075623@qq.com') {
+          setCurrentUserLevel(100);
+        } else {
+          setCurrentUserLevel(profile?.role_level || 0);
+        }
+      }
+
+      // 1. 拉取已发布的条款
       const { data } = await supabase
         .from('rules_articles')
         .select('*')
@@ -46,11 +61,24 @@ export default function RulesPage() {
       
       <div className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8">
         {/* 页面头部 */}
-        <div className="mb-8 border-b border-gray-700 pb-4">
-          <h1 className="text-3xl font-bold text-white mb-2">社区规则</h1>
-          <p className="text-gray-500 text-sm">
-            最后更新时间：{articles.length > 0 ? new Date(articles[0].updated_at).toLocaleString() : '暂无更新'}
-          </p>
+        <div className="mb-8 border-b border-gray-700 pb-4 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-white mb-2">社区规则</h1>
+            <p className="text-gray-500 text-sm">
+              最后更新时间：{articles.length > 0 ? new Date(articles[0].updated_at).toLocaleString() : '暂无更新'}
+            </p>
+          </div>
+          
+          {/* 🌟 核心逻辑：只有高级社区经理 (Lv.90) 及以上才能看到编辑入口 */}
+          {currentUserLevel >= 90 && (
+            <Link 
+              href="/admin/rules" 
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center gap-2 text-sm whitespace-nowrap"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+              编辑规则
+            </Link>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">

@@ -1,3 +1,4 @@
+// app/forum/[id]/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -22,12 +23,30 @@ export default function CategoryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
+  // 🌟 新增：用于存储当前用户的权限等级
+  const [currentUserLevel, setCurrentUserLevel] = useState<number>(0);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+
+      // 0. 获取当前登录用户的权限等级
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
+        // 特殊照顾最高开发者邮箱
+        if (user.email === '420075623@qq.com') {
+          setCurrentUserLevel(100);
+        } else {
+          setCurrentUserLevel(profile?.role_level || 0);
+        }
+      }
+
+      // 1. 获取版块信息
       const { data: catData } = await supabase.from('forum_categories').select('*').eq('id', id).single();
       if (catData) setCategory(catData);
 
+      // 2. 获取帖子数量
       const { count } = await supabase
         .from('forum_topics')
         .select('*', { count: 'exact', head: true })
@@ -35,6 +54,7 @@ export default function CategoryPage() {
       
       if (count !== null) setTotalCount(count);
 
+      // 3. 分页获取帖子列表
       const from = (currentPage - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
@@ -56,6 +76,10 @@ export default function CategoryPage() {
   if (loading && !category) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;
   if (!category) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">版块不存在</div>;
 
+  // 🌟 核心逻辑：判断当前用户是否有权限在这个版块发帖
+  // 规则：如果是“官方公告”版块 (假设 ID 为 '1')，则需要经理级别 (Lv.70) 以上；如果是其他版块，暂时不限制。
+  const canPost = (id !== '1') || (currentUserLevel >= 70);
+
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
       <Navbar />
@@ -64,7 +88,7 @@ export default function CategoryPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent"></div>
         <div className="absolute inset-0 flex flex-col justify-center max-w-5xl mx-auto w-full px-4 md:px-8">
           <div className="text-sm text-gray-400 mb-2">
-            <Link href="/forum" className="hover:text-white transition">RCT MP 论坛</Link>
+            <Link href="/forum" className="hover:text-white transition">CRT MP 论坛</Link>
             <span className="mx-2">/</span>
             <span className="text-white font-bold">{category.name}</span>
           </div>
@@ -75,9 +99,13 @@ export default function CategoryPage() {
       <div className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-8">
         <div className="flex justify-between items-center mb-6 bg-[#2c2d31] p-4 rounded-lg border border-gray-700 shadow-lg">
           <p className="text-gray-400 text-sm">{category.description}</p>
-          <Link href={`/forum/${id}/new`} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition shadow-lg flex items-center gap-2">
-            <span>+</span> 发布新帖
-          </Link>
+          
+          {/* 🌟 权限控制：只有 canPost 为 true 时才显示发布按钮 */}
+          {canPost && (
+            <Link href={`/forum/${id}/new`} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition shadow-lg flex items-center gap-2">
+              <span>+</span> 发布新帖
+            </Link>
+          )}
         </div>
 
         <div className="space-y-2">
