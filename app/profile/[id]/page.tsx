@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
+import { canAccessAdmin, levelOf, roleLabel } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,7 +24,7 @@ export default function ProfilePage() {
   
   // 🌟 新增：动态存储职位名称和等级
   const [roleDisplayName, setRoleDisplayName] = useState('注册司机');
-  const [roleLevel, setRoleLevel] = useState(10);
+  const [roleLevel, setRoleLevel] = useState(0);
 
   const [myTopics, setMyTopics] = useState<any[]>([]);
   const [myRepliesCount, setMyRepliesCount] = useState(0);
@@ -63,18 +64,21 @@ export default function ProfilePage() {
         }
 
         setProfile({ ...profileData, vtc_info: vtcInfo });
-        setRoleLevel(profileData.role_level || 10); // 🌟 同步等级
+        // 🌟 同步等级：判权只依据 role_level，非法值归一化为 0
+        const profileLevel = levelOf(profileData.role_level);
+        setRoleLevel(profileLevel);
 
-        // 🌟 核心修改 1：去 roles 表里查中文名字，替代死代码
+        // 🌟 展示名：优先 roles 表的 display_name，其次 ROLE_LABELS / 原始 role 字符串，最后回退等级标签
+        let label = roleLabel(profileData.role, profileLevel);
         if (profileData.role) {
           const { data: roleData } = await supabase
             .from('roles')
             .select('display_name')
             .eq('name', profileData.role)
             .single();
-          if (roleData) setRoleDisplayName(roleData.display_name);
-          else setRoleDisplayName(profileData.role); // 兜底
+          if (roleData?.display_name) label = roleData.display_name;
         }
+        setRoleDisplayName(label);
       } else {
         router.push('/forum');
         return;
@@ -109,8 +113,8 @@ export default function ProfilePage() {
   
   const isOwnProfile = currentUser?.id === profile.id;
   
-  // 🌟 核心修改 2：用动态等级来判断能不能看后台入口（大于等于 40 级即可）
-  const canAccessAdmin = (roleLevel >= 40 || currentUser?.email === '420075623@qq.com') && isOwnProfile;
+  // 🌟 核心修改 2：用动态等级来判断能不能看后台入口（Lv.40 工作人员及以上，且只能看自己的）
+  const showAdminEntry = canAccessAdmin(roleLevel) && isOwnProfile;
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -154,7 +158,7 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {canAccessAdmin && (
+            {showAdminEntry && (
               <div className="bg-[#2c2d31] rounded-md border border-gray-700 p-4 shadow-lg">
                 <h3 className="text-xs text-gray-500 font-bold mb-3 uppercase tracking-wider">管理员特权</h3>
                 <Link href="/admin" className="bg-blue-600 hover:bg-blue-700 text-white text-center w-full block py-2 rounded-md text-sm font-bold transition shadow">
@@ -185,7 +189,7 @@ export default function ProfilePage() {
                     <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">{profile.languages || 'Chinese (Simplified)'}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile.steam_id || '未绑定'}</span></p>
                     {/* 🌟 替换：动态职位 */}
-                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={roleLevel >= 60 ? 'text-red-400 font-bold' : 'text-green-400'}>{roleDisplayName}</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={canAccessAdmin(roleLevel) ? 'text-red-400 font-bold' : 'text-green-400'}>{roleDisplayName}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">0</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Linked games:</span> <span className="text-white">Euro Truck Simulator 2</span></p>
                     <p><span className="text-gray-500 inline-block w-28">In-game status:</span> <span className="text-gray-500">Offline</span></p>
@@ -211,10 +215,10 @@ export default function ProfilePage() {
                         <p className="text-gray-400 flex justify-between"><span>Discord:</span> <span className="text-white">{profile.discord_id || '未绑定'}</span></p>
                         <p className="text-gray-400 flex justify-between"><span>Steam:</span> <span className="text-white">{profile.steam_id || '未绑定'}</span></p>
                         
-                        {profile.twitch_url && <p className="text-gray-400 flex justify-between"><span>Twitch:</span> <a href={profile.twitch_url} target="_blank" className="text-purple-400 hover:underline">前往频道</a></p>}
-                        {profile.twitter_url && <p className="text-gray-400 flex justify-between"><span>Twitter:</span> <a href={profile.twitter_url} target="_blank" className="text-blue-400 hover:underline">前往主页</a></p>}
-                        {profile.youtube_url && <p className="text-gray-400 flex justify-between"><span>YouTube:</span> <a href={profile.youtube_url} target="_blank" className="text-red-400 hover:underline">前往频道</a></p>}
-                        {profile.wot_url && <p className="text-gray-400 flex justify-between"><span>World of Trucks:</span> <a href={profile.wot_url} target="_blank" className="text-orange-400 hover:underline">前往资料</a></p>}
+                        {profile.twitch_url && <p className="text-gray-400 flex justify-between"><span>Twitch:</span> <a href={profile.twitch_url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">前往频道</a></p>}
+                        {profile.twitter_url && <p className="text-gray-400 flex justify-between"><span>Twitter:</span> <a href={profile.twitter_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">前往主页</a></p>}
+                        {profile.youtube_url && <p className="text-gray-400 flex justify-between"><span>YouTube:</span> <a href={profile.youtube_url} target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline">前往频道</a></p>}
+                        {profile.wot_url && <p className="text-gray-400 flex justify-between"><span>World of Trucks:</span> <a href={profile.wot_url} target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:underline">前往资料</a></p>}
                      </div>
                   </div>
                 </div>

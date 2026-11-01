@@ -5,16 +5,15 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { canEditRules, levelOf, roleLabelFromLevel } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const ROLE_WEIGHTS: any = { developer: 100, director: 80, manager: 60, staff: 40, member: 10 };
-
 export default function AdminRulesPage() {
-  const [userRole, setUserRole] = useState<string>('member');
+  const [userLevel, setUserLevel] = useState<number>(0);
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,15 +42,16 @@ export default function AdminRulesPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return router.push('/login');
 
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-      const role = profile?.role || 'member';
-      
-      if (ROLE_WEIGHTS[role] < ROLE_WEIGHTS['director'] && user.email !== '420075623@qq.com') {
-        alert('🚫 权限不足：只有论坛总经理及以上级别才能编辑规则。');
+      const { data: profile } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
+      const level = levelOf(profile?.role_level);
+
+      // 规则编辑统一为 Lv.90 高级社区经理及以上（不再使用自建权重 / 邮箱提权）
+      if (!canEditRules(level)) {
+        alert('🚫 权限不足：只有高级社区经理 (Lv.90) 及以上级别才能编辑规则。');
         router.push('/admin');
         return;
       }
-      setUserRole(role);
+      setUserLevel(level);
       await fetchArticles();
       setLoading(false);
     };
@@ -134,7 +134,7 @@ export default function AdminRulesPage() {
         <div className="flex justify-between items-center border-b border-gray-700 pb-4">
           <div>
             <h1 className="text-2xl font-bold text-white">📜 社区规则管理</h1>
-            <p className="text-xs text-gray-500 mt-1">当前身份：{userRole === 'developer' ? '开发者' : '论坛总经理'}</p>
+            <p className="text-xs text-gray-500 mt-1">当前身份：{roleLabelFromLevel(userLevel)} (Lv.{userLevel})</p>
           </div>
           <Link href="/admin" className="text-blue-400 hover:underline text-sm">返回控制台</Link>
         </div>

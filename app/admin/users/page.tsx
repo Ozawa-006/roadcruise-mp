@@ -5,6 +5,13 @@ import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import {
+  ROLE_LABELS,
+  ROLE_LEVEL,
+  canManageUsers,
+  levelOf,
+  roleLabel,
+} from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,22 +56,21 @@ export default function UserManagementPage() {
 
     const { data: profile } = await supabase.from('profiles').select('role, role_level').eq('id', user.id).single();
     
-    const isDev = user.email === '420075623@qq.com' || profile?.role === 'developer';
-    const myLevel = isDev ? 100 : (profile?.role_level || 10);
+    // 人员管理要求经理 (Lv.70) 及以上；判权只依据 role_level，不再用邮箱或 role 字符串提权
+    const myLevel = levelOf(profile?.role_level);
     
-    if (myLevel < 60 && !isDev) {
-      alert('🚫 权限不足：只有组长及以上级别才能访问人员管理。');
+    if (!canManageUsers(myLevel)) {
+      alert('🚫 权限不足：只有经理 (Lv.70) 及以上级别才能访问人员管理。');
       router.push('/admin');
       return;
     }
-    setCurrentUser({ ...profile, id: user.id, email: user.email }); 
+    setCurrentUser({ ...profile, id: user.id });
 
-    // 🌟 修复：拉取职位库，并加上错误日志打印
+    // 拉取职位库
     const { data: rolesData, error: rolesError } = await supabase.from('roles').select('*').order('level', { ascending: false });
     if (rolesError) {
       console.error("拉取职位失败，请检查 Supabase roles 表是否创建并开放权限：", rolesError);
     } else if (rolesData) {
-      console.log("拉取到的职位库：", rolesData);
       setRoles(rolesData);
     }
 
@@ -103,39 +109,75 @@ export default function UserManagementPage() {
   const handleEditClick = (user: any) => {
     setEditingId(user.id);
     setEditRole(user.role || 'member');
-    setEditLevel(user.role_level || 10);
+    setEditLevel(levelOf(user.role_level));
     setEditCustomId(user.custom_id || '');
     setRoleSearch('');
   };
 
   const handleSave = async (targetUser: any) => {
-    const isDev = currentUser?.email === '420075623@qq.com' || currentUser?.role === 'developer';
-    const myLevel = isDev ? 100 : (currentUser?.role_level || 0);
-    const targetLevel = targetUser.role_level || 0;
+    const myLevel = levelOf(currentUser?.role_level);
+    const targetLevel = levelOf(targetUser.role_level);
+    const isSelf = targetUser.id === currentUser?.id;
+    // 开发者 (Lv.100) 可操作除自己以外的所有人
+    const isDeveloper = myLevel >= ROLE_LEVEL.DEVELOPER;
 
-    if (!isDev) {
-      if (myLevel <= targetLevel) {
-        alert('❌ 权限不足：你不能修改同级或上级的职位！');
-        return;
-      }
-      if (myLevel < editLevel) {
-        alert('❌ 权限不足：你不能赋予别人比自己更高的职位！');
-        return;
-      }
-    }
-
-    if (targetUser.email === '420075623@qq.com' && editLevel !== 100) {
-      alert('❌ 无法降级：不能修改最高开发者的权限。');
+    // 1) 禁止修改自己的职位/等级：
+    //    把自己从 100 降级会直接让社区失去最高管理员（且无法再改回来），属于不可逆误操作。
+    //    这里仍允许改自己的靓号，但 role / role_level 必须保持不变；开发者权限转移请由另一位开发者操作。
+    if (isSelf && (editRole !== (targetUser.role || 'member') || editLevel !== targetLevel)) {
+      alert('❌ 不能修改自己的职位或等级（防止误操作导致失去管理权限）。如需变更请联系其他开发者。');
       return;
     }
 
+    // 2) role 与 role_level 必须保持一致：改职位/等级时以 roles 表的 level 为准，
+    //    避免出现 role=developer 但 role_level=40 这类「显示开发者、实际无权限」的组合。
+    const currentRole = targetUser.role || 'member';
+    const roleChanged = editRole !== currentRole;
+    const levelChanged = editLevel !== targetLevel;
+    const roleDef = roles.find((r) => r.name === editRole);
+
+    // roles 表未加载或该职位不存在时，禁止改职位（避免写入任意 role 字符串造成脏数据）
+    if (!roleDef && roleChanged) {
+      alert('❌ 职位列表未加载或该职位不存在，暂时无法修改职位，请刷新页面后重试。');
+      return;
+    }
+
+    // 只改靓号（职位与等级都没变）时保持原等级不动，避免误改历史数据；
+    // 只要动过职位或等级，role_level 就跟随 roles.level。
+    const nextRole = roleDef ? roleDef.name : currentRole;
+    const nextLevel = roleDef && (roleChanged || levelChanged) ? levelOf(roleDef.level) : targetLevel;
+
+    if (!isSelf) {
+      // 3) 不能修改同级或上级；开发者除外
+      if (!isDeveloper && targetLevel >= myLevel) {
+        alert('❌ 权限不足：你不能修改同级或上级的职位！');
+        return;
+      }
+
+      // 4) 不能授予同级或更高职位；开发者除外
+      if (!isDeveloper && nextLevel >= myLevel) {
+        alert('❌ 权限不足：你不能授予别人同级或更高的职位！');
+        return;
+      }
+
+      // 5) 降级另一位开发者属于高危操作，要求二次确认
+      if (targetLevel >= ROLE_LEVEL.DEVELOPER && nextLevel < targetLevel) {
+        if (!confirm('⚠️ 你正在降级另一位开发者，确定继续吗？此操作可能影响社区最高管理权限。')) {
+          return;
+        }
+      }
+    }
+
+    // 自己的记录只更新靓号，绝不回写 role / role_level：
+    // 即使 roles 表中的等级与历史脏数据不一致，也不会因为改靓号而意外改变自己的权限。
+    const customId = editCustomId.trim() === '' ? null : editCustomId.trim();
+    const updatePayload = isSelf
+      ? { custom_id: customId }
+      : { role: nextRole, role_level: nextLevel, custom_id: customId };
+
     const { error } = await supabase
       .from('profiles')
-      .update({ 
-        role: editRole,
-        role_level: editLevel,
-        custom_id: editCustomId.trim() === '' ? null : editCustomId.trim()
-      })
+      .update(updatePayload)
       .eq('id', targetUser.id);
 
     if (error) {
@@ -148,12 +190,19 @@ export default function UserManagementPage() {
 
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载权限数据中...</div>;
 
-  const isGlobalDev = currentUser?.email === '420075623@qq.com' || currentUser?.role === 'developer';
-  const myLevel = isGlobalDev ? 100 : (currentUser?.role_level || 0);
-  
-  const allowedRoles = roles.filter(r => r.level <= myLevel || isGlobalDev);
+  const myLevel = levelOf(currentUser?.role_level);
+  const isDeveloper = myLevel >= ROLE_LEVEL.DEVELOPER;
+
+  // 展示用职位名：优先 ROLE_LABELS 标准中文名，其次 roles 表的 display_name，最后回退原始 role / 等级标签
+  const labelForRole = (role: string | null | undefined, level: number | null | undefined) =>
+    (role ? ROLE_LABELS[role] : undefined) ||
+    roles.find((r) => r.name === role)?.display_name ||
+    roleLabel(role, level);
+
+  // 非开发者最多只能授予「严格低于自己」的职位，避免越级提拔
+  const allowedRoles = roles.filter((r) => isDeveloper || levelOf(r.level) < myLevel);
   const filteredRoles = allowedRoles.filter(r => 
-    r.display_name.toLowerCase().includes(roleSearch.toLowerCase()) || 
+    (ROLE_LABELS[r.name] || r.display_name || '').toLowerCase().includes(roleSearch.toLowerCase()) ||
     r.name.toLowerCase().includes(roleSearch.toLowerCase())
   );
 
@@ -166,7 +215,7 @@ export default function UserManagementPage() {
             <h1 className="text-2xl font-bold text-white">👑 人员与职位管理</h1>
             <p className="text-xs text-gray-500 mt-1">
               当前登录身份：<span className="text-blue-400 font-bold">
-                {roles.find(r => r.name === currentUser?.role)?.display_name || '开发者'}
+                {labelForRole(currentUser?.role, myLevel)}
               </span>
             </p>
           </div>
@@ -222,7 +271,10 @@ export default function UserManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {users.map((u) => {
+                  const rowLevel = levelOf(u.role_level);
+                  const isSelfRow = u.id === currentUser?.id;
+                  return (
                   <tr key={u.id} className="border-b border-gray-700/50 hover:bg-[#3a3b40] transition">
                     <td className="p-4 text-white font-bold">{u.display_name || '未命名'}</td>
                     <td className="p-4 font-mono text-gray-500">{u.random_id || '-'}</td>
@@ -242,14 +294,21 @@ export default function UserManagementPage() {
                         <td className="p-4">
                           <div className="relative" ref={dropdownRef}>
                             <button 
-                              onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                              className="bg-[#18191c] border border-blue-500 rounded px-3 py-1.5 w-48 text-white text-sm text-left flex justify-between items-center"
+                              onClick={() => !isSelfRow && setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                              disabled={isSelfRow}
+                              title={isSelfRow ? '不能修改自己的职位/等级' : undefined}
+                              className={`bg-[#18191c] border border-blue-500 rounded px-3 py-1.5 w-48 text-white text-sm text-left flex justify-between items-center ${isSelfRow ? 'opacity-60 cursor-not-allowed' : ''}`}
                             >
-                              <span className="truncate">{roles.find(r => r.name === editRole)?.display_name || '选择职位...'}</span>
+                              <span className="truncate">
+                                {(editRole ? ROLE_LABELS[editRole] : undefined) || roles.find(r => r.name === editRole)?.display_name || editRole || '选择职位...'}
+                              </span>
                               <span className="text-xs text-gray-500">▼</span>
                             </button>
+                            {isSelfRow && (
+                              <p className="text-[10px] text-yellow-500/80 mt-1">不能修改自己的职位/等级（可改靓号）</p>
+                            )}
 
-                            {isRoleDropdownOpen && (
+                            {isRoleDropdownOpen && !isSelfRow && (
                               <div className="absolute z-50 top-full left-0 mt-1 w-64 bg-[#222] border border-gray-600 rounded shadow-2xl flex flex-col overflow-hidden">
                                 <div className="p-2 border-b border-gray-700">
                                   <input 
@@ -270,14 +329,15 @@ export default function UserManagementPage() {
                                         key={r.name}
                                         onClick={() => {
                                           setEditRole(r.name);
-                                          setEditLevel(r.level);
+                                          // role_level 直接取 roles.level，保证 role 与 role_level 一致
+                                          setEditLevel(levelOf(r.level));
                                           setIsRoleDropdownOpen(false);
                                         }}
                                         className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-600 hover:text-white transition ${editRole === r.name ? 'bg-[#333] text-blue-400 font-bold' : 'text-gray-300'}`}
                                       >
                                         <div className="flex justify-between">
-                                          <span>{r.display_name}</span>
-                                          <span className="text-xs opacity-50">Lv.{r.level}</span>
+                                          <span>{ROLE_LABELS[r.name] || r.display_name}</span>
+                                          <span className="text-xs opacity-50">Lv.{levelOf(r.level)}</span>
                                         </div>
                                         <span className="text-[10px] opacity-40">{r.department}</span>
                                       </div>
@@ -305,17 +365,17 @@ export default function UserManagementPage() {
                         </td>
                         <td className="p-4">
                           <span className={`px-2 py-1 rounded text-xs border ${
-                            u.role_level >= 90 ? 'bg-red-900/30 text-red-500 border-red-700' :
-                            u.role_level >= 70 ? 'bg-purple-900/30 text-purple-400 border-purple-700' :
-                            u.role_level >= 60 ? 'bg-yellow-900/30 text-yellow-400 border-yellow-700' :
-                            u.role_level >= 30 ? 'bg-blue-900/30 text-blue-400 border-blue-700' :
+                            rowLevel >= ROLE_LEVEL.SENIOR_MANAGER ? 'bg-red-900/30 text-red-500 border-red-700' :
+                            rowLevel >= ROLE_LEVEL.MANAGER ? 'bg-purple-900/30 text-purple-400 border-purple-700' :
+                            rowLevel >= ROLE_LEVEL.STAFF ? 'bg-yellow-900/30 text-yellow-400 border-yellow-700' :
+                            rowLevel >= ROLE_LEVEL.MEMBER ? 'bg-blue-900/30 text-blue-400 border-blue-700' :
                             'bg-gray-800 text-gray-400 border-gray-600'
                           }`}>
-                            {roles.find(r => r.name === u.role)?.display_name || u.role || '未分配'}
+                            {labelForRole(u.role, rowLevel)}
                           </span>
                         </td>
                         <td className="p-4">
-                          {(myLevel > (u.role_level || 0) || isGlobalDev) && u.email !== '420075623@qq.com' ? (
+                          {(isSelfRow || isDeveloper || myLevel > rowLevel) ? (
                             <button onClick={() => handleEditClick(u)} className="text-blue-400 hover:text-blue-300 font-bold text-sm">编辑</button>
                           ) : (
                             <span className="text-gray-600 text-sm">不可操作</span>
@@ -324,7 +384,8 @@ export default function UserManagementPage() {
                       </>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

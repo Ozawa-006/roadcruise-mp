@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { canManageAnnouncements, levelOf } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,18 +22,25 @@ export default function AdminNewsPage() {
   
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
   const router = useRouter();
 
-  // 安全验证
+  // 安全验证：只依据 profiles.role_level；发布新闻/公告要求工作人员 (Lv.40) 及以上
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.push('/login');
-      
-      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-      if (!data || data.role === 'member') {
-        router.push('/');
+      if (!user) {
+        router.push('/login');
+        return;
       }
+      
+      const { data } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
+      if (!canManageAnnouncements(levelOf(data?.role_level))) {
+        alert('🚫 权限不足：只有工作人员 (Lv.40) 及以上级别才能发布新闻与公告。');
+        router.push('/');
+        return;
+      }
+      setChecking(false);
     };
     checkAuth();
   }, [router]);
@@ -62,6 +70,10 @@ export default function AdminNewsPage() {
     }
     setLoading(false);
   };
+
+  if (checking) {
+    return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">验证权限中...</div>;
+  }
 
   return (
     <main className="min-h-screen bg-[#18191c] text-white p-10 flex flex-col items-center font-sans">

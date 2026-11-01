@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
 import Link from 'next/link';
+import { ROLE_LEVEL, levelOf } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,7 +24,7 @@ export default function TopicDetailPage() {
   
   // 用户与权限状态
   const [user, setUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<string>('member');
+  const [currentLevel, setCurrentLevel] = useState<number>(0);
   
   const [replyContent, setReplyContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -59,14 +60,14 @@ export default function TopicDetailPage() {
   useEffect(() => {
     fetchTopicAndReplies();
     
-    // 检查当前用户是否登录，并获取角色
+    // 检查当前用户是否登录，并获取权限等级（只依据 role_level）
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       
       if (user) {
-        const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-        if (data) setUserRole(data.role);
+        const { data } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
+        setCurrentLevel(levelOf(data?.role_level));
       }
     };
     getUser();
@@ -91,10 +92,8 @@ export default function TopicDetailPage() {
     });
 
     if (!error) {
-      await supabase.from('forum_topics')
-        .update({ replies_count: (topic.replies_count || 0) + 1 })
-        .eq('id', topicId);
-
+      // 注意：回复数 replies_count 由数据库触发器维护，客户端不再“读改写”该字段，
+      // 避免并发回帖时互相覆盖导致计数丢失。
       setReplyContent('');
       setQuoteUser('');
       setQuoteContent('');
@@ -164,7 +163,7 @@ export default function TopicDetailPage() {
               <span>发表于：{new Date(topic.created_at).toLocaleString()}</span>
               <div className="flex items-center gap-4">
                 <span>#1</span>
-                {user && (user.id === topic.author_id || ['developer', 'director', 'manager'].includes(userRole)) && (
+                {user && (user.id === topic.author_id || currentLevel >= ROLE_LEVEL.MANAGER) && (
                   <button 
                     onClick={handleDeleteTopic} 
                     className="bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1 rounded transition border border-red-700/50"
@@ -203,9 +202,11 @@ export default function TopicDetailPage() {
                 {/* 动态徽章 */}
                 <div className="mt-2 text-center">
                   {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ 开发者</span>}
+                  {reply.profiles?.role === 'senior_manager' && <span className="text-xs font-bold text-orange-400">🧭 高级社区经理</span>}
                   {reply.profiles?.role === 'director' && <span className="text-xs font-bold text-purple-400">👑 论坛总经理</span>}
                   {reply.profiles?.role === 'manager' && <span className="text-xs font-bold text-blue-400">🛡️ 社区经理</span>}
                   {reply.profiles?.role === 'staff' && <span className="text-xs font-bold text-green-400">🔧 工作人员</span>}
+                  {reply.profiles?.role === 'community_moderator' && <span className="text-xs font-bold text-cyan-400">🧹 社区版主</span>}
                   {(!reply.profiles?.role || reply.profiles?.role === 'member') && <span className="text-xs text-gray-500">成员</span>}
                 </div>
               </div>

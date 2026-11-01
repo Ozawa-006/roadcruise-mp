@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
+import { canEditRules, levelOf } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,16 +21,11 @@ export default function RulesPage() {
 
   useEffect(() => {
     const fetchRules = async () => {
-      // 0. 获取当前用户权限（用于控制编辑按钮显示）
+      // 0. 获取当前用户权限（用于控制编辑按钮显示，只依据 role_level）
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: profile } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
-        // 最高开发者邮箱直接给 100 级
-        if (user.email === '420075623@qq.com') {
-          setCurrentUserLevel(100);
-        } else {
-          setCurrentUserLevel(profile?.role_level || 0);
-        }
+        setCurrentUserLevel(levelOf(profile?.role_level));
       }
 
       // 1. 拉取已发布的条款
@@ -70,7 +66,7 @@ export default function RulesPage() {
           </div>
           
           {/* 🌟 核心逻辑：只有高级社区经理 (Lv.90) 及以上才能看到编辑入口 */}
-          {currentUserLevel >= 90 && (
+          {canEditRules(currentUserLevel) && (
             <Link 
               href="/admin/rules" 
               className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center gap-2 text-sm whitespace-nowrap"

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../../components/Navbar';
 import Link from 'next/link';
+import { canPostOfficialTopic, levelOf } from '../../../../lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,6 +22,55 @@ export default function NewTopicPage() {
   const [tag, setTag] = useState('综合讨论'); 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
+  // null = 权限检查中；false = 无权发帖；true = 可以发帖
+  const [canPost, setCanPost] = useState<boolean | null>(null);
+  const [blockReason, setBlockReason] = useState('');
+
+  // 页面级兜底：列表页隐藏按钮不等于拦截，必须在本页也校验一次（最终仍由数据库 RLS 兜底）
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkPermission = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        if (!cancelled) {
+          setCanPost(false);
+          setBlockReason('请先登录再发帖。');
+        }
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role_level, steam_verified')
+        .eq('id', user.id)
+        .single();
+
+      if (cancelled) return;
+
+      if (!profile?.steam_verified) {
+        setCanPost(false);
+        setBlockReason('您的账号尚未完成 Steam 正版验证，请先到「账号设置」绑定 Steam 后再发帖。');
+        return;
+      }
+
+      if (String(id) === '1' && !canPostOfficialTopic(levelOf(profile.role_level))) {
+        setCanPost(false);
+        setBlockReason('官方公告版块仅限经理 (Lv.70) 及以上发布，您当前没有该版块的发帖权限。');
+        return;
+      }
+
+      setCanPost(true);
+    };
+
+    void checkPermission();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,8 +84,22 @@ export default function NewTopicPage() {
       return;
     }
 
+    // 提交前再校验一次官方公告版块权限（避免仅在页面加载时判断带来的绕过）
+    if (String(id) === '1') {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role_level')
+        .eq('id', user.id)
+        .single();
+      if (!canPostOfficialTopic(levelOf(profile?.role_level))) {
+        setMsg('❌ 官方公告版块仅限经理 (Lv.70) 及以上发布。');
+        setLoading(false);
+        return;
+      }
+    }
+
     // 🌟 核心修改：如果是官方公告版块 (ID为1)，强制标签设为"官方公告"
-    const finalTag = id === '1' ? '官方公告' : tag;
+    const finalTag = String(id) === '1' ? '官方公告' : tag;
 
     const { error } = await supabase.from('forum_topics').insert({
       category_id: id,
@@ -77,6 +141,18 @@ export default function NewTopicPage() {
 
       {/* 表单区域 */}
       <div className="flex-1 max-w-4xl mx-auto w-full p-4 md:p-8 -mt-6 relative z-10">
+        {canPost === null ? (
+          <div className="bg-[#2c2d31] border border-gray-700 p-8 rounded-lg text-center text-gray-400">
+            正在检查发帖权限...
+          </div>
+        ) : canPost === false ? (
+          <div className="bg-[#2c2d31] border border-red-900/50 p-8 rounded-lg text-center space-y-4">
+            <p className="text-red-400 font-bold">{blockReason}</p>
+            <Link href={`/forum/${id}`} className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold transition">
+              返回版块
+            </Link>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="bg-[#2c2d31] border border-gray-700 p-6 md:p-8 rounded-lg shadow-2xl space-y-6">
           
           {/* 🌟 优化：只有非官方公告版块 (ID不为1) 才显示分类下拉框 */}
@@ -142,6 +218,7 @@ export default function NewTopicPage() {
             </button>
           </div>
         </form>
+        )}
       </div>
     </main>
   );

@@ -39,8 +39,22 @@ function SettingsForm() {
 
   useEffect(() => {
     const success = searchParams.get('success');
+    const errorCode = searchParams.get('error');
     if (success === 'steam_verified') {
       setMsg('🎉 Steam 账号验证成功！');
+      window.history.replaceState({}, '', '/settings');
+    }
+    if (errorCode) {
+      const errorMessages: Record<string, string> = {
+        steam_already_bound: '❌ 该账号已绑定其它 Steam 账号，如需换绑请联系管理员。',
+        steam_in_use: '❌ 该 Steam 账号已被其它社区账号绑定。',
+        steam_bind_failed: '❌ Steam 绑定失败，请稍后重试或联系管理员。',
+        steam_state_invalid: '❌ 验证会话已过期或无效，请重新发起 Steam 验证。',
+        steam_api_failed: '❌ Steam 接口暂时不可用，请稍后再试。',
+        no_ets2: '❌ 该 Steam 账号不满足正版 ETS2 / 2 小时门槛。',
+        steam_private: '❌ 无法读取 Steam 游戏库，请把个人资料与游戏详情设为公开。',
+      };
+      setMsg(errorMessages[errorCode] ?? '❌ Steam 绑定失败，请稍后重试。');
       window.history.replaceState({}, '', '/settings');
     }
 
@@ -85,6 +99,21 @@ function SettingsForm() {
         setAvatarUrl(finalAvatarUrl);
       }
 
+      // 社交链接只允许 http(s)：防止写入 data:/javascript:/vbscript: 等协议
+      const socialLinks: Array<[string, string]> = [
+        ['Twitch', twitchUrl],
+        ['Twitter', twitterUrl],
+        ['YouTube', youtubeUrl],
+        ['World of Trucks', wotUrl],
+      ];
+      for (const [label, value] of socialLinks) {
+        const trimmed = value.trim();
+        if (trimmed && !/^https?:\/\/[^\s]+$/i.test(trimmed)) {
+          setMsg(`保存失败：${label} 链接必须以 http:// 或 https:// 开头。`);
+          return;
+        }
+      }
+
       // 更新所有字段
       const { error } = await supabase.from('profiles').update({
         display_name: displayName,
@@ -108,9 +137,37 @@ function SettingsForm() {
     }
   };
 
-  const handleSteamBind = () => {
+  const handleSteamBind = async () => {
     if (!user) return;
-    window.location.href = `/api/auth/steam/verify?source=settings&userId=${user.id}`;
+    setMsg('正在跳转 Steam 验证...');
+    try {
+      // 必须先用会话 token 向服务端证明“我是谁”，服务端会把 userId 写进签名 state Cookie，
+      // 回调时不再信任 URL 里的 userId（旧实现存在越权绑定风险）。
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setMsg('登录状态已失效，请重新登录后再绑定 Steam。');
+        return;
+      }
+
+      const res = await fetch('/api/auth/steam/verify?source=settings', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: 'no-store',
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { redirectUrl?: string; message?: string }
+        | null;
+
+      if (!res.ok || !data?.redirectUrl) {
+        setMsg(data?.message || '无法发起 Steam 验证，请稍后重试。');
+        return;
+      }
+
+      window.location.href = data.redirectUrl;
+    } catch {
+      setMsg('网络错误，无法发起 Steam 验证，请稍后重试。');
+    }
   };
 
   if (loading) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">加载中...</div>;

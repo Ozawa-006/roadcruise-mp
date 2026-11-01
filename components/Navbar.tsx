@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { attemptSteamBind } from '../lib/steam-bind-client';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,13 +46,24 @@ export default function Navbar() {
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('role, display_name') 
+          .select('role, display_name, steam_verified')
           .eq('id', user.id)
           .single();
-          
+
         setUserRole(profile?.role || 'member');
         setDisplayName(profile?.display_name || user.email?.split('@')[0] || '玩家');
-        
+
+        // 已登录但还未绑定 Steam 的账号：如果浏览器持有服务端签名的验证凭证，
+        // 自动完成绑定（覆盖“邮箱确认后直接落到任意页面”的情况）。
+        if (profile && profile.steam_verified === false) {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session) {
+            void attemptSteamBind(session.access_token);
+          }
+        }
+
         // 获取未读通知
         fetchNotifications(user.id);
       }
@@ -63,14 +75,13 @@ export default function Navbar() {
       if (session?.user) fetchNotifications(session.user.id);
     });
 
-    // 2. 获取实时在线人数
-    fetch('https://api.truckersmp.com/v2/servers')
+    // 2. 从站内代理获取游戏服务器在线人数（不再直连 TruckersMP API）
+    fetch('/api/servers/status', { cache: 'no-store' })
       .then((res) => res.json())
-      .then((data) => {
-        if (data && data.response) {
-          const ets2Servers = data.response.filter((s: any) => s.game === 'ETS2');
-          const total = ets2Servers.reduce((sum: number, server: any) => sum + (server.players || 0), 0);
-          setPlayers(total);
+      .then((data: { servers?: { online?: number | null }[] }) => {
+        const list = data?.servers ?? [];
+        if (list.length > 0) {
+          setPlayers(list.reduce((sum, server) => sum + (server.online ?? 0), 0));
         }
       })
       .catch(() => {});
@@ -151,6 +162,14 @@ export default function Navbar() {
             <span>|</span>
             <span>{timeZone}: <span className="text-gray-300 font-mono">{currentTime.toLocaleTimeString('en-GB')}</span></span>
           </div>
+
+          {/* 游戏服务器在线人数（来自站内代理 /api/servers/status） */}
+          {players !== null && (
+            <span className="hidden md:flex items-center space-x-1.5 border-r border-gray-700 pr-4">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+              <span>在线 <span className="text-green-400 font-mono">{players}</span></span>
+            </span>
+          )}
 
           {user && (
             <div className="flex items-center space-x-4 border-r border-gray-700 pr-4">
@@ -269,6 +288,7 @@ export default function Navbar() {
           </div>
           
           <Link href="/map" className="hover:text-white transition flex items-center gap-1">实时地图</Link>
+          <Link href="/servers" className="hover:text-white transition">服务器列表</Link>
           <Link href="/vtc" className="hover:text-white transition">车队 (VTC)</Link>
           <Link href="/rules" className="hover:text-white transition">社区规则</Link>
           <Link href="#" className="hover:text-white transition">帮助与支持</Link>

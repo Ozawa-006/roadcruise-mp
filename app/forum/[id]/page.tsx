@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
+import { canPostOfficialTopic, levelOf } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,16 +31,11 @@ export default function CategoryPage() {
     const fetchData = async () => {
       setLoading(true);
 
-      // 0. 获取当前登录用户的权限等级
+      // 0. 获取当前登录用户的权限等级（只依据 profile.role_level）
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: profile } = await supabase.from('profiles').select('role_level').eq('id', user.id).single();
-        // 特殊照顾最高开发者邮箱
-        if (user.email === '420075623@qq.com') {
-          setCurrentUserLevel(100);
-        } else {
-          setCurrentUserLevel(profile?.role_level || 0);
-        }
+        setCurrentUserLevel(levelOf(profile?.role_level));
       }
 
       // 1. 获取版块信息
@@ -77,8 +73,10 @@ export default function CategoryPage() {
   if (!category) return <div className="min-h-screen bg-[#18191c] text-white flex justify-center items-center">版块不存在</div>;
 
   // 🌟 核心逻辑：判断当前用户是否有权限在这个版块发帖
-  // 规则：如果是“官方公告”版块 (假设 ID 为 '1')，则需要经理级别 (Lv.70) 以上；如果是其他版块，暂时不限制。
-  const canPost = (id !== '1') || (currentUserLevel >= 70);
+  // 规则：官方公告版块（category_id 为 1，兼容数字和字符串）需要经理 Lv.70 及以上；其他版块不限制。
+  const categoryId = Array.isArray(id) ? id[0] : id;
+  const isOfficialBoard = String(categoryId) === '1';
+  const canPost = !isOfficialBoard || canPostOfficialTopic(currentUserLevel);
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">

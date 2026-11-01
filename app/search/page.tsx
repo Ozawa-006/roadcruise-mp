@@ -31,6 +31,9 @@ function SearchResults() {
       const searchTopics = type === 'all' || type === 'topics';
       const searchUsers = type === 'all' || type === 'members';
 
+      // 防止把用户输入直接拼进 PostgREST 的 .or() 过滤器语法（逗号/括号会改变表达式）
+      const safeQuery = query.replace(/[%_,()]/g, ' ').trim();
+
       // 1. 搜索帖子 (匹配标题或内容)
       if (searchTopics) {
         const { data: topicData } = await supabase
@@ -39,7 +42,7 @@ function SearchResults() {
             id, title, category_id, created_at,
             profiles:author_id (display_name)
           `)
-          .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+          .or(`title.ilike.%${safeQuery}%,content.ilike.%${safeQuery}%`)
           .order('created_at', { ascending: false })
           .limit(20);
         if (topicData) setTopics(topicData);
@@ -58,7 +61,7 @@ function SearchResults() {
         
         if (isNumeric) {
           // 如果是数字，同时搜名字、专属 ID、随机 ID
-          queryBuilder = queryBuilder.or(`display_name.ilike.%${query}%,custom_id.eq.${query},random_id.eq.${query}`);
+          queryBuilder = queryBuilder.or(`display_name.ilike.%${safeQuery}%,custom_id.eq.${safeQuery},random_id.eq.${safeQuery}`);
         } else {
           // 如果是文字，只搜名字
           queryBuilder = queryBuilder.ilike('display_name', `%${query}%`);
