@@ -8,6 +8,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import { canAccessAdmin, levelOf } from '@/lib/permissions';
 import { useLocale, useTr } from '@/components/I18nProvider';
 import { formatMessage, type Locale } from '@/lib/i18n';
+import { plainTextExcerpt } from '@/lib/rich-text';
 
 // 英文文案：键为中文原文，缺失时回退中文；活动标题/简介/地点等数据库内容不翻译。
 const EN: Record<string, string> = {
@@ -115,6 +116,69 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+/** 与 /api/discord/notify 的请求体保持一致。 */
+interface DiscordNotifyPayload {
+  type: 'announcement' | 'event';
+  title: string;
+  path?: string;
+  description?: string;
+  time?: string;
+}
+
+/**
+ * 活动发布成功后，尽力而为地推送到 Discord。
+ *
+ * - 用当前 session 的 access_token 调服务端 /api/discord/notify，webhook 地址不会进入客户端；
+ * - 无 session、网络异常、服务端拒绝都只 console.warn，绝不影响站点保存结果与界面提示。
+ */
+async function notifyDiscord(payload: DiscordNotifyPayload): Promise<void> {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.warn('Discord 通知已跳过：未取得登录会话。');
+      return;
+    }
+
+    const response = await fetch('/api/discord/notify', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.warn('Discord 通知失败，HTTP 状态:', response.status);
+    }
+  } catch (error) {
+    console.warn('Discord 通知异常:', error);
+  }
+}
+
+/** 组织一条「已发布活动」的推送（仅 status === 'published' 时调用方才会走到这里）。 */
+function notifyEventPublished(params: {
+  id: number;
+  title: string;
+  description: string;
+  location: string | null;
+  startLabel: string | null;
+}): void {
+  const title = params.title.trim();
+  if (!title) return;
+
+  const excerpt = plainTextExcerpt(params.description, 200);
+  void notifyDiscord({
+    type: 'event',
+    title,
+    path: `/events/${params.id}`,
+    description: excerpt || params.location?.trim() || undefined,
+    time: params.startLabel ?? undefined,
+  });
+}
 
 interface EventRow {
   id: number;
@@ -518,14 +582,28 @@ export default function AdminEventsPage() {
 
     try {
       if (editingId === null) {
-        const { error } = await supabase
+        // 取回新活动 id，用于站内详情页链接（/events/{id}）与 Discord 推送。
+        const { data, error } = await supabase
           .from('events')
-          .insert({ ...payload, created_by: userId });
+          .insert({ ...payload, created_by: userId })
+          .select('id')
+          .single();
         if (error) {
           setNotice({ kind: 'error', text: tr(errorMessage(error)) });
           return;
         }
         setNotice({ kind: 'success', text: tr('🎉 活动已创建。') });
+
+        const newId: number | null = typeof data?.id === 'number' ? data.id : null;
+        if (newId !== null && payload.status === 'published') {
+          notifyEventPublished({
+            id: newId,
+            title,
+            description: payload.description,
+            location: payload.location,
+            startLabel: startDate.toLocaleString('zh-CN'),
+          });
+        }
       } else {
         const { error } = await supabase.from('events').update(payload).eq('id', editingId);
         if (error) {
@@ -533,6 +611,17 @@ export default function AdminEventsPage() {
           return;
         }
         setNotice({ kind: 'success', text: tr('活动已更新。') });
+
+        // 仅已发布活动推送；草稿 / 取消发布不推送，推送失败也不影响保存结果。
+        if (payload.status === 'published') {
+          notifyEventPublished({
+            id: editingId,
+            title,
+            description: payload.description,
+            location: payload.location,
+            startLabel: startDate.toLocaleString('zh-CN'),
+          });
+        }
       }
 
       setForm(emptyEventForm());
@@ -571,6 +660,21 @@ export default function AdminEventsPage() {
             ? tr('已发布「{title}」。', { title: titleOf(event, tr) })
             : tr('已取消发布「{title}」（状态改为草稿）。', { title: titleOf(event, tr) }),
       });
+
+      // 从列表把活动切换为「已发布」同样算一次发布；取消发布（改回草稿）不推送。
+      if (nextStatus === 'published') {
+        const startDate = event.start_at ? new Date(event.start_at) : null;
+        notifyEventPublished({
+          id: event.id,
+          title: event.title ?? '',
+          description: event.description ?? '',
+          location: event.location ?? null,
+          startLabel:
+            startDate && !Number.isNaN(startDate.getTime())
+              ? startDate.toLocaleString('zh-CN')
+              : null,
+        });
+      }
     } catch (error) {
       setNotice({ kind: 'error', text: tr(errorMessage(error)) });
     } finally {

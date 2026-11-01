@@ -672,6 +672,66 @@ function downloadCsv(content: string, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// —— 招募开放 Discord 推送 ——
+// 只在「关闭 -> 开启」且数据库保存成功之后调用一次：关闭不推，保存失败不推。
+// 推送走服务端 POST /api/discord/notify（服务端再校验 Lv.40+，Webhook 地址不下发客户端）。
+const RECRUITMENT_NOTIFY_PATH = '/recruitment';
+const NOTIFY_DESCRIPTION_MAX_LENGTH = 200;
+
+/** 与 POST /api/discord/notify 约定的 body 一致。 */
+interface RecruitmentNotifyPayload {
+  type: 'recruitment';
+  title: string;
+  path: string;
+  description?: string;
+}
+
+/**
+ * best-effort 推送：取当前 session 的 access_token 调 notify。
+ * 无 session、网络错误或非 2xx 都只 console.warn，不抛出、不影响开关保存与页面提示。
+ */
+async function notifyRecruitmentOpen(payload: RecruitmentNotifyPayload): Promise<void> {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      console.warn('Discord 招募推送已跳过：当前没有登录会话。');
+      return;
+    }
+
+    const response = await fetch('/api/discord/notify', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.warn('Discord 招募推送失败：HTTP', response.status);
+    }
+  } catch (error) {
+    console.warn('Discord 招募推送失败：', error);
+  }
+}
+
+/** 职位推送描述：「部门 · 说明」，两者都为空时省略 description。 */
+function positionNotifyDescription(position: PositionRow): string | undefined {
+  const department = position.department.trim();
+  const description = position.description.trim();
+  const text =
+    department !== '' && description !== ''
+      ? `${department} · ${description}`
+      : department || description;
+
+  if (text === '') return undefined;
+  return text.length > NOTIFY_DESCRIPTION_MAX_LENGTH
+    ? `${text.slice(0, NOTIFY_DESCRIPTION_MAX_LENGTH)}…`
+    : text;
+}
+
 const CSV_COLUMNS: ReadonlyArray<string> = [
   '申请ID',
   '职位',
@@ -1676,6 +1736,16 @@ export default function AdminRecruitmentPage() {
           ? tr('✅ 已开启招募总开关，公开页现在可以提交申请（还需对应职位已开启）。')
           : tr('⏸️ 已关闭招募总开关，所有职位都不可申请。'),
       });
+
+      // 仅在「关闭 -> 开启」保存成功后推送一次；关闭不推，推送失败不影响上面的提示。
+      if (next) {
+        void notifyRecruitmentOpen({
+          type: 'recruitment',
+          title: 'RCT MP 招募已开启',
+          path: RECRUITMENT_NOTIFY_PATH,
+          description: '前往网站查看开放职位并提交申请',
+        });
+      }
     } catch (error) {
       setIsOpen(previous);
       setSettingsNotice({
@@ -1825,6 +1895,16 @@ export default function AdminRecruitmentPage() {
           state: next ? tr('开启') : tr('关闭'),
         }),
       });
+
+      // 仅在该职位「关闭 -> 开启」保存成功后推送一次；关闭不推、重复保存不推。
+      if (next) {
+        void notifyRecruitmentOpen({
+          type: 'recruitment',
+          title: `招募开放：${position.name}`,
+          path: RECRUITMENT_NOTIFY_PATH,
+          description: positionNotifyDescription(position),
+        });
+      }
     } catch (error) {
       rollback();
       setPositionsNotice({

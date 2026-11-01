@@ -7,11 +7,54 @@ import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
 import { useTr } from '@/components/I18nProvider';
 import { canManageAnnouncements, levelOf } from '@/lib/permissions';
+import { plainTextExcerpt } from '@/lib/rich-text';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+/** 与 /api/discord/notify 的请求体保持一致。 */
+interface DiscordNotifyPayload {
+  type: 'announcement' | 'event';
+  title: string;
+  path?: string;
+  description?: string;
+  time?: string;
+}
+
+/**
+ * 公告发布成功后，尽力而为地推送到 Discord。
+ *
+ * - 用当前 session 的 access_token 调服务端 /api/discord/notify，webhook 地址不会进入客户端；
+ * - 无 session、网络异常、服务端拒绝都只 console.warn，绝不影响站点发布结果与界面提示。
+ */
+async function notifyDiscord(payload: DiscordNotifyPayload): Promise<void> {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.warn('Discord 通知已跳过：未取得登录会话。');
+      return;
+    }
+
+    const response = await fetch('/api/discord/notify', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.warn('Discord 通知失败，HTTP 状态:', response.status);
+    }
+  } catch (error) {
+    console.warn('Discord 通知异常:', error);
+  }
+}
 
 /** 正文编辑器占位提示（中文原文作为翻译 key）。 */
 const CONTENT_PLACEHOLDER =
@@ -141,20 +184,28 @@ export default function AdminNewsPage() {
     setMsg('');
 
     // 🌟 直接把链接存入数据库；英文为空时写 null，英文界面自动回退中文。
-    const { error } = await supabase.from('announcements').insert([{ 
-      title, 
-      content, 
-      title_en: titleEn.trim() || null,
-      content_en: contentEn.trim() || null,
-      type, 
-      image_url: imageUrl, 
-      link_url: linkUrl 
-    }]);
+    // 同时取回新公告 id，用于站内详情页链接（/news/{id}）与 Discord 推送。
+    const { data, error } = await supabase
+      .from('announcements')
+      .insert([{ 
+        title, 
+        content, 
+        title_en: titleEn.trim() || null,
+        content_en: contentEn.trim() || null,
+        type, 
+        image_url: imageUrl, 
+        link_url: linkUrl 
+      }])
+      .select('id')
+      .single();
 
     if (error) {
       setMsg(tr('发布失败: {msg}', { msg: error.message }));
       setMsgError(true);
     } else {
+      const newId: number | null = typeof data?.id === 'number' ? data.id : null;
+      const notifyTitle = title.trim();
+
       setMsg(tr('🎉 已发布，去新闻页查看。'));
       setMsgError(false);
       setTitle('');
@@ -163,6 +214,19 @@ export default function AdminNewsPage() {
       setContentEn('');
       setImageUrl('');
       setLinkUrl('');
+
+      // 标题为空或没拿到 id 时不推送；推送结果不影响上面的发布成功提示。
+      if (notifyTitle && newId !== null) {
+        const excerpt = plainTextExcerpt(content, 200);
+        void notifyDiscord({
+          type: 'announcement',
+          title: notifyTitle,
+          path: `/news/${newId}`,
+          description: excerpt || undefined,
+          time: new Date().toLocaleString('zh-CN'),
+        });
+      }
+
       await loadRecent();
     }
     setLoading(false);

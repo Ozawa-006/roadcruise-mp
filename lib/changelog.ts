@@ -27,11 +27,42 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.49v',
+    date: '2026-11-02',
+    title: 'Discord 消息推送',
+    title_en: 'Discord webhook notifications',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '网站公告发布后自动推送到 Discord（标题、摘要、链接、发布人）',
+      },
+      {
+        kind: 'feature',
+        text: '活动发布后自动推送（标题、时间、链接）；招募总开关或职位开放时推送招募开放通知',
+      },
+      {
+        kind: 'feature',
+        text: '新增 `POST /api/discord/notify`：服务端校验 Lv.40+，Webhook 地址仅存于环境变量，不暴露给浏览器',
+      },
+      {
+        kind: 'chore',
+        text: 'Vercel 环境变量新增 `DISCORD_WEBHOOK_URL`（production/preview）；已发送测试消息验证连通',
+      },
+    ],
+    items_en: [
+      'Announcements are pushed to Discord automatically after publishing (title, summary, link, author)',
+      'Published events are pushed automatically (title, time, link); recruitment openings are pushed when the master switch or a position is opened',
+      'Added `POST /api/discord/notify`: server-side Lv.40+ check; the webhook URL lives only in environment variables and is never exposed to the browser',
+      'Added `DISCORD_WEBHOOK_URL` to Vercel environment variables (production/preview); connectivity verified with a test message',
+    ],
+  },
+  {
     version: '0.0.48v',
     date: '2026-11-02',
     title: '公告收尾与运营概览',
     title_en: 'Announcement cleanup and admin overview',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'fix',
