@@ -3,10 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 import { requireStaff } from '@/lib/request-auth';
 import {
   DISCORD_GUILD_ID,
+  PERM,
+  createDiscordChannel,
   createDiscordRole,
   discordBotConfigured,
   discordOAuthConfigured,
+  fetchDiscordGuildChannels,
   fetchDiscordGuildRoles,
+  setDiscordChannelPermission,
 } from '@/lib/discord-oauth';
 import { syncUserDiscordRoles } from '@/lib/discord-sync';
 
@@ -134,6 +138,157 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .eq('site_role', siteRole);
     if (error) return NextResponse.json({ ok: false, error: 'delete_failed' }, { status: 500 });
     return NextResponse.json({ ok: true });
+  }
+
+  if (action === 'setup_structure') {
+    if (!discordBotConfigured()) {
+      return NextResponse.json({ ok: false, error: 'bot_not_configured' }, { status: 503 });
+    }
+
+    const { data: setting } = await supabase
+      .from('discord_settings')
+      .select('value')
+      .eq('key', 'verified_role_id')
+      .maybeSingle();
+    const verifiedRoleId = setting?.value?.trim();
+    if (!verifiedRoleId) {
+      return NextResponse.json({ ok: false, error: 'verified_role_not_set' }, { status: 400 });
+    }
+
+    try {
+      const [channels, mappingsResult] = await Promise.all([
+        fetchDiscordGuildChannels(),
+        supabase.from('discord_role_mappings').select('discord_role_id, enabled'),
+      ]);
+
+      const mappings = mappingsResult.data ?? [];
+      const roleIds = new Set<string>(
+        mappings
+          .filter((m) => m.enabled)
+          .map((m) => m.discord_role_id as string)
+      );
+      roleIds.add(verifiedRoleId);
+
+      const byName = (name: string, type: number) =>
+        channels.find((channel) => channel.name === name && channel.type === type) ?? null;
+
+      const created: string[] = [];
+      const reused: string[] = [];
+      const errors: string[] = [];
+
+      const ensureCategory = async (name: string): Promise<string | null> => {
+        const existing = byName(name, 4);
+        if (existing) {
+          reused.push(name);
+          return existing.id;
+        }
+        try {
+          const id = await createDiscordChannel({ name, type: 4 });
+          created.push(name);
+          return id;
+        } catch (error) {
+          errors.push(`${name}: ${error instanceof Error ? error.message : 'create_failed'}`);
+          return null;
+        }
+      };
+
+      const ensureTextChannel = async (name: string, parentId: string | null) => {
+        const existing = byName(name, 0);
+        if (existing) {
+          reused.push(name);
+          return;
+        }
+        try {
+          await createDiscordChannel({ name, type: 0, parent_id: parentId });
+          created.push(name);
+        } catch (error) {
+          errors.push(`${name}: ${error instanceof Error ? error.message : 'create_failed'}`);
+        }
+      };
+
+      const startId = await ensureCategory('START HERE');
+      if (startId) {
+        await ensureTextChannel('规则', startId);
+        await ensureTextChannel('公告', startId);
+        try {
+          await setDiscordChannelPermission(
+            startId,
+            DISCORD_GUILD_ID,
+            PERM.VIEW_CHANNEL,
+            PERM.SEND_MESSAGES
+          );
+          await setDiscordChannelPermission(
+            startId,
+            verifiedRoleId,
+            PERM.VIEW_CHANNEL,
+            PERM.SEND_MESSAGES
+          );
+        } catch (error) {
+          errors.push(`START HERE 权限: ${error instanceof Error ? error.message : 'perm_failed'}`);
+        }
+      }
+
+      const communityId = await ensureCategory('COMMUNITY');
+      if (communityId) {
+        for (const name of ['综合讨论', '截图分享', '活动', '车队']) {
+          await ensureTextChannel(name, communityId);
+        }
+        const communityAllow =
+          PERM.VIEW_CHANNEL | PERM.SEND_MESSAGES | PERM.READ_MESSAGE_HISTORY;
+        try {
+          await setDiscordChannelPermission(
+            communityId,
+            DISCORD_GUILD_ID,
+            0,
+            PERM.VIEW_CHANNEL
+          );
+          await setDiscordChannelPermission(
+            communityId,
+            verifiedRoleId,
+            communityAllow,
+            0
+          );
+        } catch (error) {
+          errors.push(`COMMUNITY 权限: ${error instanceof Error ? error.message : 'perm_failed'}`);
+        }
+      }
+
+      const staffId = await ensureCategory('STAFF');
+      if (staffId) {
+        await ensureTextChannel('staff-chat', staffId);
+        await ensureTextChannel('staff-announcements', staffId);
+        try {
+          await setDiscordChannelPermission(
+            staffId,
+            DISCORD_GUILD_ID,
+            0,
+            PERM.VIEW_CHANNEL
+          );
+          await setDiscordChannelPermission(staffId, verifiedRoleId, 0, PERM.VIEW_CHANNEL);
+          for (const roleId of roleIds) {
+            if (roleId === verifiedRoleId) continue;
+            await setDiscordChannelPermission(
+              staffId,
+              roleId,
+              PERM.VIEW_CHANNEL | PERM.SEND_MESSAGES | PERM.READ_MESSAGE_HISTORY,
+              0
+            );
+          }
+        } catch (error) {
+          errors.push(`STAFF 权限: ${error instanceof Error ? error.message : 'perm_failed'}`);
+        }
+      }
+
+      return NextResponse.json({ ok: errors.length === 0, created, reused, errors });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : 'setup_failed',
+        },
+        { status: 502 }
+      );
+    }
   }
 
   if (action === 'create_role') {

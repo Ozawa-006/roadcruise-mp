@@ -187,3 +187,71 @@ export async function createDiscordRole(input: {
   const role = (await response.json()) as { id: string };
   return role.id;
 }
+
+// ---------------------------------------------------------------------------
+// 频道与权限（用于一键创建 TMP 风格频道结构）
+// ---------------------------------------------------------------------------
+
+export interface DiscordChannel {
+  id: string;
+  name: string;
+  type: number;
+  parent_id: string | null;
+}
+
+export const PERM = {
+  VIEW_CHANNEL: 1024,
+  SEND_MESSAGES: 2048,
+  READ_MESSAGE_HISTORY: 65536,
+  CONNECT: 1048576,
+  SPEAK: 2097152,
+} as const;
+
+export async function fetchDiscordGuildChannels(): Promise<DiscordChannel[]> {
+  const response = await discordBotFetch(`/guilds/${DISCORD_GUILD_ID}/channels`);
+  if (!response.ok) throw new Error(`discord_channels_${response.status}`);
+  return (await response.json()) as DiscordChannel[];
+}
+
+export async function createDiscordChannel(input: {
+  name: string;
+  type: 0 | 2 | 4;
+  parent_id?: string | null;
+}): Promise<string> {
+  const response = await discordBotFetch(`/guilds/${DISCORD_GUILD_ID}/channels`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: input.name.slice(0, 100),
+      type: input.type,
+      parent_id: input.parent_id ?? undefined,
+    }),
+  });
+  if (!response.ok) throw new Error(`discord_create_channel_${response.status}`);
+  const channel = (await response.json()) as { id: string };
+  return channel.id;
+}
+
+/** 设置频道对某个角色（或 @everyone，overwriteId=guildId）的权限覆盖。 */
+export async function setDiscordChannelPermission(
+  channelId: string,
+  overwriteId: string,
+  allow: number,
+  deny: number
+): Promise<void> {
+  const response = await discordBotFetch(
+    `/channels/${channelId}/permissions/${overwriteId}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        allow: allow.toString(),
+        deny: deny.toString(),
+        type: 0,
+      }),
+    }
+  );
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`discord_channel_perm_${response.status}`);
+  }
+}

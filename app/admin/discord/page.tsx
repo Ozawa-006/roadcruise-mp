@@ -102,6 +102,23 @@ const EN: Record<string, string> = {
     'No “Verified” role found. You can create one in a single click.',
   '有未保存的更改': 'Unsaved changes',
 
+  // ---------- 频道结构 ----------
+  '频道结构': 'Channel structure',
+  '按 TMP 风格创建分类/频道并设置验证权限；已存在的会复用；不会删除现有频道；需要 Bot 有「管理频道」权限。':
+    'Creates TMP-style categories and channels with verification permissions. Existing ones are reused, nothing is deleted, and the bot needs the “Manage Channels” permission.',
+  '将创建：START HERE（规则、公告）· COMMUNITY（综合讨论、截图分享、活动、车队）· STAFF（staff-chat、staff-announcements）':
+    'Creates: START HERE (rules, announcements) · COMMUNITY (general, screenshots, events, convoys) · STAFF (staff-chat, staff-announcements)',
+  '一键创建 TMP 频道结构': 'Create TMP channel structure',
+  '创建频道结构中...': 'Creating channel structure...',
+  '请先设置已验证身份组': 'Set a verified role first',
+  '验证设置有未保存的更改，将使用已保存的身份组。':
+    'Verification settings have unsaved changes; the saved role will be used.',
+  '将按 TMP 风格创建多个分类与频道（已存在的会复用），不会删除任何现有频道。确定继续吗？':
+    'This creates multiple TMP-style categories and channels (existing ones are reused) and deletes nothing. Continue?',
+  '新建 {created} 个 / 复用 {reused} 个 / 失败 {failed} 个':
+    'Created {created} / reused {reused} / failed {failed}',
+  '创建频道结构失败：': 'Failed to create the channel structure: ',
+
   // ---------- 身份组映射 ----------
   '身份组映射': 'Role mappings',
   '把站点角色映射到 Discord 身份组，同步时按映射分配或移除身份组。':
@@ -280,6 +297,19 @@ interface CreateRolesOutcome {
   failed: number;
   errors: string[];
 }
+
+/**
+ * setup_structure 的返回：服务端在部分失败时仍返回 ok:false + created/reused/errors，
+ * 所以结果里同时保留 ok，便于区分「全部成功」与「部分失败」。
+ */
+interface SetupStructureData {
+  ok: boolean;
+  created: string[];
+  reused: string[];
+  errors: string[];
+}
+
+type SetupStructureResult = { ok: true; data: SetupStructureData } | { ok: false; error: string };
 
 type Notice = { tone: 'success' | 'error'; text: string };
 
@@ -479,6 +509,27 @@ function normalizeCreateRolesData(payload: unknown): CreateRolesData | null {
   };
 }
 
+/**
+ * setup_structure：只要带结构字段就当成结果（部分失败时 ok 为 false），
+ * 没有结构字段时才回落到顶层错误。
+ */
+function normalizeSetupStructureData(payload: unknown): SetupStructureData | null {
+  if (!isRecord(payload)) return null;
+  if (
+    !Array.isArray(payload.created) &&
+    !Array.isArray(payload.reused) &&
+    !Array.isArray(payload.errors)
+  ) {
+    return null;
+  }
+  return {
+    ok: payload.ok === true,
+    created: asStringArray(payload.created),
+    reused: asStringArray(payload.reused),
+    errors: asStringArray(payload.errors),
+  };
+}
+
 /** 同步接口的 results 里取第一条失败原因，用于单用户同步的提示。 */
 function firstSyncError(raw: unknown): string | null {
   for (const item of asArray(raw)) {
@@ -622,6 +673,35 @@ async function postCreateRole(name: string): Promise<CreateRoleResult> {
   }
 }
 
+/** setup_structure：按 TMP 风格创建/复用频道结构，并设置验证权限。 */
+async function postSetupStructure(): Promise<SetupStructureResult> {
+  try {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: 'no_session' };
+
+    const response = await fetch('/api/discord/admin', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'setup_structure' }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+
+    // 部分失败时服务端仍带 created/reused/errors（ok=false），优先展示结构结果。
+    const data = normalizeSetupStructureData(payload);
+    if (data) return { ok: true, data };
+
+    if (!response.ok) {
+      return { ok: false, error: readErrorCode(payload) ?? `http_${response.status}` };
+    }
+    return { ok: false, error: readErrorCode(payload) ?? 'invalid_response' };
+  } catch {
+    return { ok: false, error: 'network_error' };
+  }
+}
+
 /* ------------------------------ 展示工具 ------------------------------ */
 
 /** 接口错误码 -> 双语提示；未知错误保留原文，便于排查 Discord API 返回。 */
@@ -634,6 +714,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_response: '服务端返回了无效数据。',
   supabase_not_configured: '服务端未配置 Supabase Service Role。',
   bot_not_configured: 'Discord Bot 未配置（DISCORD_BOT_TOKEN）。',
+  verified_role_not_set: '请先设置已验证身份组',
   forbidden: '无权访问（需要 Lv.90 及以上）。',
   save_failed: '保存映射失败。',
   delete_failed: '删除映射失败。',
@@ -648,6 +729,16 @@ function describeError(code: string | null, tr: Translate): string {
   const message = ERROR_MESSAGES[code];
   if (message) return tr(message);
   return tr('未知错误：{code}', { code });
+}
+
+/**
+ * setup_structure 的顶层错误可能是已知错误码，也可能是 Discord 返回的原始报错：
+ * 已知码翻译，其余原样展示，方便直接看到缺哪项权限。
+ */
+function describeRawError(message: string | null, tr: Translate): string {
+  if (!message) return tr('未知错误：{code}', { code: '—' });
+  const known = ERROR_MESSAGES[message];
+  return known ? tr(known) : message;
 }
 
 /** 站点角色展示：数据库 display_name + lib/permissions 的英文名。 */
@@ -923,6 +1014,11 @@ export default function AdminDiscordPage() {
   // 新建角色后、reload 完成前用它补上角色名，避免下拉里短暂出现「未匹配」。
   const [verifiedCreatedName, setVerifiedCreatedName] = useState<string | null>(null);
 
+  // 频道结构：结果里带 created/reused/errors，部分失败也要展示已创建的部分。
+  const [structureBusy, setStructureBusy] = useState(false);
+  const [structureOutcome, setStructureOutcome] = useState<SetupStructureData | null>(null);
+  const [structureError, setStructureError] = useState<string | null>(null);
+
   // 1. 权限门禁：未登录 -> /login；低于 Lv.90 -> 页面内展示无权限卡片（不跳走、不弹窗）。
   useEffect(() => {
     let active = true;
@@ -1156,6 +1252,29 @@ export default function AdminDiscordPage() {
     reload();
   };
 
+  const handleSetupStructure = async () => {
+    const confirmed = window.confirm(
+      tr('将按 TMP 风格创建多个分类与频道（已存在的会复用），不会删除任何现有频道。确定继续吗？')
+    );
+    if (!confirmed) return;
+
+    setStructureBusy(true);
+    setStructureError(null);
+    setStructureOutcome(null);
+
+    const result = await postSetupStructure();
+    setStructureBusy(false);
+
+    if (!result.ok) {
+      setStructureError(describeRawError(result.error, tr));
+      return;
+    }
+
+    setStructureOutcome(result.data);
+    // 即便部分失败也可能已建出频道/权限，统一刷新页面数据保持与 Discord 一致。
+    reload();
+  };
+
   if (phase === 'checking') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#18191c] text-white">
@@ -1217,6 +1336,17 @@ export default function AdminDiscordPage() {
     : tr('未设置');
   const verifiedRoleExists = (data?.roles ?? []).some((role) => role.name === VERIFIED_ROLE_NAME);
   const verifiedDirty = verifiedRoleId !== savedVerifiedRoleId;
+
+  // 频道结构的前置条件：接口读的是已保存的已验证身份组，这里也按已保存值判断。
+  const structureMissingVerified = savedVerifiedRoleId === '';
+  const structureHint =
+    data?.botConfigured !== true
+      ? tr('Discord Bot 未配置（DISCORD_BOT_TOKEN）。')
+      : structureMissingVerified
+        ? tr('请先设置已验证身份组')
+        : verifiedDirty
+          ? tr('验证设置有未保存的更改，将使用已保存的身份组。')
+          : null;
 
   const mappedSiteRoles = new Set((data?.mappings ?? []).map((mapping) => mapping.site_role));
   const availableSiteRoles = data
@@ -1698,6 +1828,89 @@ export default function AdminDiscordPage() {
                   {verifiedNotice.text}
                 </p>
               )}
+            </section>
+
+            {/* ------------------------- 频道结构 ------------------------- */}
+            <section
+              aria-labelledby="discord-structure-heading"
+              className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg sm:p-6"
+            >
+              <div className="mb-4">
+                <h2 id="discord-structure-heading" className="text-lg font-bold text-white">
+                  {tr('频道结构')}
+                </h2>
+                <p className="mt-1 max-w-3xl text-xs leading-relaxed text-gray-500">
+                  {tr(
+                    '按 TMP 风格创建分类/频道并设置验证权限；已存在的会复用；不会删除现有频道；需要 Bot 有「管理频道」权限。'
+                  )}
+                </p>
+              </div>
+
+              <p className="mb-3 rounded border border-gray-700/60 bg-[#232428] px-3 py-2 text-xs leading-relaxed text-gray-400">
+                {tr(
+                  '将创建：START HERE（规则、公告）· COMMUNITY（综合讨论、截图分享、活动、车队）· STAFF（staff-chat、staff-announcements）'
+                )}
+              </p>
+
+              {structureError && (
+                <p
+                  role="alert"
+                  className="mb-3 break-all rounded border border-red-700/60 bg-red-900/20 p-3 text-xs text-red-400"
+                >
+                  <span className="font-bold">{tr('创建频道结构失败：')}</span>
+                  {structureError}
+                </p>
+              )}
+
+              {structureOutcome && (
+                <div
+                  aria-live="polite"
+                  className={`mb-3 rounded border p-3 text-xs ${
+                    structureOutcome.ok && structureOutcome.errors.length === 0
+                      ? 'border-green-700/60 bg-green-900/20 text-green-400'
+                      : 'border-red-700/60 bg-red-900/20 text-red-400'
+                  }`}
+                >
+                  <p className="font-bold">
+                    {tr('新建 {created} 个 / 复用 {reused} 个 / 失败 {failed} 个', {
+                      created: structureOutcome.created.length,
+                      reused: structureOutcome.reused.length,
+                      failed: structureOutcome.errors.length,
+                    })}
+                  </p>
+                  {structureOutcome.errors.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc space-y-1 break-all text-red-300">
+                      {structureOutcome.errors.map((message, index) => (
+                        <li key={`${index}:${message}`}>{message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                {structureHint && (
+                  <p
+                    className={`text-xs ${
+                      data.botConfigured ? 'text-orange-300' : 'text-red-400'
+                    }`}
+                  >
+                    {structureHint}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleSetupStructure();
+                  }}
+                  disabled={
+                    structureBusy || loading || !data.botConfigured || structureMissingVerified
+                  }
+                  className="rounded bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto"
+                >
+                  {structureBusy ? tr('创建频道结构中...') : tr('一键创建 TMP 频道结构')}
+                </button>
+              </div>
             </section>
 
             {/* ------------------------- 身份组映射 ------------------------- */}
