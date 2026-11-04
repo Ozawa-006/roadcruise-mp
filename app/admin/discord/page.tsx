@@ -58,6 +58,30 @@ const EN: Record<string, string> = {
   'Bot 需要「管理身份组」权限，且 Bot 的角色层级高于要分配的身份组；同时开启 Server Members Intent。':
     'The bot needs the "Manage Roles" permission and its role must sit above the roles it assigns; enable Server Members Intent as well.',
 
+  // ---------- 批量创建身份组 ----------
+  '批量创建身份组': 'Bulk create roles',
+  'Discord 没有原生批量创建，此功能用 Bot API 按站点职位一键创建；已存在同名角色自动跳过。':
+    'Discord has no native bulk role creation. This uses the Bot API to create roles from site positions in one go; roles with existing names are skipped automatically.',
+  '待创建 {count} 个': '{count} to create',
+  '单次最多创建 60 个，超出部分会被服务器忽略。':
+    'Up to 60 roles per request; any extras are ignored by the server.',
+  '所有站点职位都已在 Discord 中存在，无需创建。':
+    'Every site role already exists on Discord. Nothing to create.',
+  '全选': 'Select all',
+  '全不选': 'Clear all',
+  '已选 {selected} / {total}': '{selected} of {total} selected',
+  '默认不勾选，请选择要创建的职位。':
+    'Nothing is selected by default. Choose the positions you want to create.',
+  '将创建 {count} 个身份组。': 'Will create {count} role(s).',
+  '创建选中身份组': 'Create selected roles',
+  '创建中...': 'Creating...',
+  '确定要创建 {count} 个 Discord 身份组吗？此操作会调用 Discord Bot API。':
+    'Create {count} Discord role(s)? This calls the Discord Bot API.',
+  '创建 {created} 个、跳过 {skipped} 个、失败 {failed} 个':
+    'Created {created}, skipped {skipped}, failed {failed}',
+  '创建身份组失败：': 'Failed to create roles: ',
+  'Bot 未配置，无法创建身份组。': 'The bot is not configured, so roles cannot be created.',
+
   // ---------- 身份组映射 ----------
   '身份组映射': 'Role mappings',
   '把站点角色映射到 Discord 身份组，同步时按映射分配或移除身份组。':
@@ -187,6 +211,39 @@ interface PostResult {
   total: number;
   synced: number;
   firstResultError: string | null;
+}
+
+interface CreatedDiscordRole {
+  siteRole: string;
+  name: string;
+  roleId: string;
+}
+
+interface SkippedDiscordRole {
+  siteRole: string;
+  name: string;
+  reason: string;
+}
+
+interface FailedDiscordRole {
+  siteRole: string;
+  name: string;
+  error: string;
+}
+
+interface CreateRolesData {
+  created: CreatedDiscordRole[];
+  skipped: SkippedDiscordRole[];
+  failed: FailedDiscordRole[];
+}
+
+type CreateRolesResult = { ok: true; data: CreateRolesData } | { ok: false; error: string };
+
+interface CreateRolesOutcome {
+  created: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
 }
 
 type Notice = { tone: 'success' | 'error'; text: string };
@@ -324,6 +381,51 @@ function normalizeAdminData(payload: unknown): DiscordAdminData | null {
   };
 }
 
+function normalizeCreatedRole(raw: unknown): CreatedDiscordRole | null {
+  if (!isRecord(raw)) return null;
+  const name = asString(raw.name);
+  const roleId = asString(raw.roleId);
+  if (!name || !roleId) return null;
+  return { siteRole: asString(raw.siteRole) ?? '', name, roleId };
+}
+
+function normalizeSkippedRole(raw: unknown): SkippedDiscordRole | null {
+  if (!isRecord(raw)) return null;
+  const name = asString(raw.name);
+  if (!name) return null;
+  return {
+    siteRole: asString(raw.siteRole) ?? '',
+    name,
+    reason: asString(raw.reason) ?? 'exists',
+  };
+}
+
+function normalizeFailedRole(raw: unknown): FailedDiscordRole | null {
+  if (!isRecord(raw)) return null;
+  const name = asString(raw.name);
+  if (!name) return null;
+  return {
+    siteRole: asString(raw.siteRole) ?? '',
+    name,
+    error: asString(raw.error) ?? 'create_failed',
+  };
+}
+
+function normalizeCreateRolesData(payload: unknown): CreateRolesData | null {
+  if (!isRecord(payload) || payload.ok !== true) return null;
+  return {
+    created: asArray(payload.created)
+      .map(normalizeCreatedRole)
+      .filter((role): role is CreatedDiscordRole => role !== null),
+    skipped: asArray(payload.skipped)
+      .map(normalizeSkippedRole)
+      .filter((role): role is SkippedDiscordRole => role !== null),
+    failed: asArray(payload.failed)
+      .map(normalizeFailedRole)
+      .filter((role): role is FailedDiscordRole => role !== null),
+  };
+}
+
 /** 同步接口的 results 里取第一条失败原因，用于单用户同步的提示。 */
 function firstSyncError(raw: unknown): string | null {
   for (const item of asArray(raw)) {
@@ -409,6 +511,33 @@ async function postAdminAction(body: Record<string, unknown>): Promise<PostResul
   }
 }
 
+async function postCreateRoles(siteRoles: string[]): Promise<CreateRolesResult> {
+  try {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: 'no_session' };
+
+    const response = await fetch('/api/discord/admin', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'create_roles', siteRoles }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      return { ok: false, error: readErrorCode(payload) ?? `http_${response.status}` };
+    }
+
+    const data = normalizeCreateRolesData(payload);
+    if (!data) return { ok: false, error: readErrorCode(payload) ?? 'invalid_response' };
+    return { ok: true, data };
+  } catch {
+    return { ok: false, error: 'network_error' };
+  }
+}
+
 /* ------------------------------ 展示工具 ------------------------------ */
 
 /** 接口错误码 -> 双语提示；未知错误保留原文，便于排查 Discord API 返回。 */
@@ -442,6 +571,11 @@ function siteRoleDisplay(role: SiteRole): string {
   const display = role.display_name ?? role.name;
   const english = roleLabelEn(role.name, role.level);
   return display === english ? display : `${display} · ${english}`;
+}
+
+/** 与接口 create_roles 保持一致：优先 display_name，截断到 Discord 角色名 100 字符上限。 */
+function createRoleName(role: SiteRole): string {
+  return (role.display_name ?? role.name).slice(0, 100);
 }
 
 function formatLinkedAt(iso: string, locale: Locale): string {
@@ -690,6 +824,10 @@ export default function AdminDiscordPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [syncSummary, setSyncSummary] = useState<{ total: number; synced: number } | null>(null);
 
+  const [createSelection, setCreateSelection] = useState<string[]>([]);
+  const [createOutcome, setCreateOutcome] = useState<CreateRolesOutcome | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   const [newSiteRole, setNewSiteRole] = useState('');
   const [newDiscordRoleId, setNewDiscordRoleId] = useState('');
   const [newEnabled, setNewEnabled] = useState(true);
@@ -927,6 +1065,65 @@ export default function AdminDiscordPage() {
     ? data.siteRoles.filter((role) => !mappedSiteRoles.has(role.name))
     : [];
 
+  // 批量创建：只列出 Discord 中尚不存在同名角色（按 display_name）的站点职位。
+  const discordRoleNames = new Set((data?.roles ?? []).map((role) => role.name));
+  const missingCreateRoles = (data?.siteRoles ?? []).filter(
+    (role) => !discordRoleNames.has(createRoleName(role))
+  );
+  const missingCreateRoleNames = new Set(missingCreateRoles.map((role) => role.name));
+  // reload 后已创建的角色会从待选列表消失，这里再过滤一次，避免勾选状态指向旧数据。
+  const selectedCreateRoleNames = createSelection.filter((name) =>
+    missingCreateRoleNames.has(name)
+  );
+  const allCreateRolesSelected =
+    missingCreateRoles.length > 0 && selectedCreateRoleNames.length === missingCreateRoles.length;
+
+  const toggleCreateRole = (name: string, checked: boolean) => {
+    setCreateError(null);
+    setCreateOutcome(null);
+    setCreateSelection((current) => {
+      if (checked) return current.includes(name) ? current : [...current, name];
+      return current.filter((item) => item !== name);
+    });
+  };
+
+  const toggleAllCreateRoles = (checked: boolean) => {
+    setCreateError(null);
+    setCreateOutcome(null);
+    setCreateSelection(checked ? missingCreateRoles.map((role) => role.name) : []);
+  };
+
+  const handleCreateRoles = async () => {
+    if (selectedCreateRoleNames.length === 0) return;
+    const count = selectedCreateRoleNames.length;
+    const confirmed = window.confirm(
+      tr('确定要创建 {count} 个 Discord 身份组吗？此操作会调用 Discord Bot API。', { count })
+    );
+    if (!confirmed) return;
+
+    setBusy('create_roles');
+    setCreateError(null);
+    setCreateOutcome(null);
+
+    const result = await postCreateRoles(selectedCreateRoleNames);
+    setBusy(null);
+
+    if (!result.ok) {
+      setCreateError(describeError(result.error, tr));
+      return;
+    }
+
+    setCreateOutcome({
+      created: result.data.created.length,
+      skipped: result.data.skipped.length,
+      failed: result.data.failed.length,
+      errors: result.data.failed.map((item) => `${item.name}: ${item.error}`),
+    });
+    // 清空勾选并重新 GET，让新建的角色出现在映射下拉中。
+    setCreateSelection([]);
+    reload();
+  };
+
   return (
     <main className="min-h-screen bg-[#18191c] p-4 font-sans text-gray-300 sm:p-6 lg:p-10">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -1065,6 +1262,166 @@ export default function AdminDiscordPage() {
                     </div>
                   </dl>
                 </div>
+              )}
+            </section>
+
+            {/* ------------------------- 批量创建身份组 ------------------------- */}
+            <section
+              aria-labelledby="discord-create-roles-heading"
+              className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg sm:p-6"
+            >
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2
+                    id="discord-create-roles-heading"
+                    className="text-lg font-bold text-white"
+                  >
+                    {tr('批量创建身份组')}
+                  </h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {tr(
+                      'Discord 没有原生批量创建，此功能用 Bot API 按站点职位一键创建；已存在同名角色自动跳过。'
+                    )}
+                  </p>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {tr('待创建 {count} 个', { count: missingCreateRoles.length })}
+                </span>
+              </div>
+
+              {createError && (
+                <p
+                  role="alert"
+                  className="mb-3 break-all rounded border border-red-700/60 bg-red-900/20 p-3 text-xs text-red-400"
+                >
+                  <span className="font-bold">{tr('创建身份组失败：')}</span>
+                  {createError}
+                </p>
+              )}
+
+              {createOutcome && (
+                <div
+                  aria-live="polite"
+                  className={`mb-3 rounded border p-3 text-xs ${
+                    createOutcome.failed > 0
+                      ? 'border-red-700/60 bg-red-900/20 text-red-400'
+                      : createOutcome.created === 0
+                        ? 'border-gray-600 bg-gray-800 text-gray-300'
+                        : 'border-green-700/60 bg-green-900/20 text-green-400'
+                  }`}
+                >
+                  <p className="font-bold">
+                    {tr('创建 {created} 个、跳过 {skipped} 个、失败 {failed} 个', {
+                      created: createOutcome.created,
+                      skipped: createOutcome.skipped,
+                      failed: createOutcome.failed,
+                    })}
+                  </p>
+                  {createOutcome.errors.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc space-y-1 break-all text-red-300">
+                      {createOutcome.errors.map((message, index) => (
+                        <li key={`${index}:${message}`}>{message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {missingCreateRoles.length === 0 ? (
+                <p className="rounded border border-gray-700/60 bg-[#232428] px-4 py-6 text-center text-sm text-gray-500">
+                  {tr('所有站点职位都已在 Discord 中存在，无需创建。')}
+                </p>
+              ) : (
+                <>
+                  <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <label className="inline-flex items-center gap-2 text-xs text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={allCreateRolesSelected}
+                        onChange={(event) => toggleAllCreateRoles(event.target.checked)}
+                        disabled={busy !== null || loading}
+                        className="h-4 w-4 accent-blue-500 disabled:cursor-not-allowed"
+                      />
+                      {tr('全选')}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => toggleAllCreateRoles(false)}
+                      disabled={busy !== null || loading || selectedCreateRoleNames.length === 0}
+                      className="text-xs text-blue-400 transition hover:text-blue-300 disabled:cursor-not-allowed disabled:text-gray-600"
+                    >
+                      {tr('全不选')}
+                    </button>
+                    <span className="text-xs text-gray-500">
+                      {tr('已选 {selected} / {total}', {
+                        selected: selectedCreateRoleNames.length,
+                        total: missingCreateRoles.length,
+                      })}
+                    </span>
+                    <span className="text-xs text-gray-600 sm:ml-auto">
+                      {tr('单次最多创建 60 个，超出部分会被服务器忽略。')}
+                    </span>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto rounded border border-gray-700/60 bg-[#232428]">
+                    {missingCreateRoles.map((role) => {
+                      const checked = selectedCreateRoleNames.includes(role.name);
+                      return (
+                        <label
+                          key={role.name}
+                          className="flex cursor-pointer items-center gap-3 border-b border-gray-700/40 px-3 py-2 last:border-b-0 hover:bg-[#2c2d31]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => toggleCreateRole(role.name, event.target.checked)}
+                            disabled={busy !== null || loading}
+                            className="h-4 w-4 shrink-0 accent-blue-500 disabled:cursor-not-allowed"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-white">
+                              {createRoleName(role)}
+                            </span>
+                            <span className="block truncate text-xs text-gray-500">
+                              {role.name} · Lv.{role.level}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p
+                      className={`text-xs ${
+                        data.botConfigured ? 'text-gray-500' : 'text-red-400'
+                      }`}
+                    >
+                      {data.botConfigured
+                        ? selectedCreateRoleNames.length === 0
+                          ? tr('默认不勾选，请选择要创建的职位。')
+                          : tr('将创建 {count} 个身份组。', {
+                              count: selectedCreateRoleNames.length,
+                            })
+                        : tr('Bot 未配置，无法创建身份组。')}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleCreateRoles();
+                      }}
+                      disabled={
+                        busy !== null ||
+                        loading ||
+                        !data.botConfigured ||
+                        selectedCreateRoleNames.length === 0
+                      }
+                      className="rounded bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busy === 'create_roles' ? tr('创建中...') : tr('创建选中身份组')}
+                    </button>
+                  </div>
+                </>
               )}
             </section>
 

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { requireStaff } from '@/lib/request-auth';
 import {
   DISCORD_GUILD_ID,
+  createDiscordRole,
   discordBotConfigured,
   discordOAuthConfigured,
   fetchDiscordGuildRoles,
@@ -130,6 +131,51 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .eq('site_role', siteRole);
     if (error) return NextResponse.json({ ok: false, error: 'delete_failed' }, { status: 500 });
     return NextResponse.json({ ok: true });
+  }
+
+  if (action === 'create_roles') {
+    if (!discordBotConfigured()) {
+      return NextResponse.json({ ok: false, error: 'bot_not_configured' }, { status: 503 });
+    }
+
+    const siteRoleNames = Array.isArray(body.siteRoles)
+      ? body.siteRoles.filter((item): item is string => typeof item === 'string').slice(0, 60)
+      : [];
+    if (siteRoleNames.length === 0) {
+      return NextResponse.json({ ok: false, error: 'invalid_payload' }, { status: 400 });
+    }
+
+    const [{ data: siteRoles }, existingRoles] = await Promise.all([
+      supabase.from('roles').select('name, display_name').in('name', siteRoleNames),
+      fetchDiscordGuildRoles(),
+    ]);
+
+    const existingNames = new Set(existingRoles.map((role) => role.name));
+    const created: Array<{ siteRole: string; name: string; roleId: string }> = [];
+    const skipped: Array<{ siteRole: string; name: string; reason: string }> = [];
+    const failed: Array<{ siteRole: string; name: string; error: string }> = [];
+
+    for (const row of siteRoles ?? []) {
+      const siteRole = row.name as string;
+      const name = ((row.display_name as string | null) ?? siteRole).slice(0, 100);
+      if (existingNames.has(name)) {
+        skipped.push({ siteRole, name, reason: 'exists' });
+        continue;
+      }
+      try {
+        const roleId = await createDiscordRole({ name });
+        existingNames.add(name);
+        created.push({ siteRole, name, roleId });
+      } catch (error) {
+        failed.push({
+          siteRole,
+          name,
+          error: error instanceof Error ? error.message : 'create_failed',
+        });
+      }
+    }
+
+    return NextResponse.json({ ok: true, created, skipped, failed });
   }
 
   if (action === 'sync_all' || action === 'sync_user') {

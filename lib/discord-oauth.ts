@@ -162,3 +162,28 @@ export async function removeDiscordRole(discordId: string, roleId: string): Prom
     throw new Error(`discord_remove_role_${response.status}`);
   }
 }
+
+/** 在服务器中创建身份组（Bot 需要「管理身份组」权限）。返回新角色 ID。 */
+export async function createDiscordRole(input: {
+  name: string;
+  color?: number;
+  hoist?: boolean;
+  mentionable?: boolean;
+}): Promise<string> {
+  const response = await discordBotFetch(`/guilds/${DISCORD_GUILD_ID}/roles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: input.name.slice(0, 100),
+      color: input.color ?? 0,
+      hoist: input.hoist ?? false,
+      mentionable: input.mentionable ?? false,
+      permissions: '0',
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`discord_create_role_${response.status}`);
+  }
+  const role = (await response.json()) as { id: string };
+  return role.id;
+}
