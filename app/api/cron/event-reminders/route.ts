@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { sendDiscordWebhook } from '@/lib/discord-webhook';
+import { sendDiscordWebhook, sendDiscordWebhookTo } from '@/lib/discord-webhook';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,6 +59,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: 'query_failed' }, { status: 500 });
   }
 
+  const { data: eventWebhookSetting } = await supabase
+    .from('discord_settings')
+    .select('value')
+    .eq('key', 'event_webhook_url')
+    .maybeSingle();
+  const eventWebhookUrl = eventWebhookSetting?.value?.trim();
+
   let sent = 0;
   for (const event of events ?? []) {
     const start = event.start_at ? new Date(event.start_at as string) : null;
@@ -69,7 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .filter(Boolean)
       .join('\n');
 
-    const ok = await sendDiscordWebhook({
+    const payload = {
       username: 'RCT MP',
       embeds: [
         {
@@ -81,7 +88,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           timestamp: new Date().toISOString(),
         },
       ],
-    });
+    };
+
+    const ok = eventWebhookUrl
+      ? await sendDiscordWebhookTo([eventWebhookUrl], payload)
+      : await sendDiscordWebhook(payload);
 
     if (ok) {
       await supabase

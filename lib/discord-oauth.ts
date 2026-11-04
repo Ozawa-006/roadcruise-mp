@@ -245,6 +245,20 @@ export async function moveDiscordChannel(
   if (!response.ok) throw new Error(`discord_move_channel_${response.status}`);
 }
 
+/** 在指定频道创建 Webhook（Bot 需要管理 Webhook 权限）。 */
+export async function createDiscordWebhook(
+  channelId: string,
+  name: string
+): Promise<{ id: string; url: string }> {
+  const response = await discordBotFetch(`/channels/${channelId}/webhooks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.slice(0, 80) }),
+  });
+  if (!response.ok) throw new Error(`discord_create_webhook_${response.status}`);
+  return (await response.json()) as { id: string; url: string };
+}
+
 /** 重命名频道（保留消息与历史）。 */
 export async function renameDiscordChannel(
   channelId: string,

@@ -7,7 +7,7 @@ export interface DiscordWebhookPayload {
   embeds?: Array<Record<string, unknown>>;
 }
 
-function webhookUrls(): string[] {
+function defaultWebhookUrls(): string[] {
   const raw = process.env.DISCORD_WEBHOOK_URL;
   if (!raw) return [];
   return raw
@@ -16,15 +16,18 @@ function webhookUrls(): string[] {
     .filter(Boolean);
 }
 
-/** 发送消息；失败只记录状态码，不打印 URL（避免泄露 secret）。 */
-export async function sendDiscordWebhook(payload: DiscordWebhookPayload): Promise<boolean> {
-  const urls = webhookUrls();
-  if (urls.length === 0) return false;
+/** 发送到指定 Webhook 列表；失败只记录状态码，不打印 URL（避免泄露）。 */
+export async function sendDiscordWebhookTo(
+  urls: string[],
+  payload: DiscordWebhookPayload
+): Promise<boolean> {
+  const targets = urls.map((item) => item.trim()).filter(Boolean);
+  if (targets.length === 0) return false;
 
   let anyOk = false;
 
   await Promise.all(
-    urls.map(async (url) => {
+    targets.map(async (url) => {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 6000);
@@ -50,4 +53,11 @@ export async function sendDiscordWebhook(payload: DiscordWebhookPayload): Promis
   );
 
   return anyOk;
+}
+
+/** 发送到默认 Webhook（DISCORD_WEBHOOK_URL）。 */
+export async function sendDiscordWebhook(
+  payload: DiscordWebhookPayload
+): Promise<boolean> {
+  return sendDiscordWebhookTo(defaultWebhookUrls(), payload);
 }

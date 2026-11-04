@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { sendDiscordWebhook } from '@/lib/discord-webhook';
+import { sendDiscordWebhook, sendDiscordWebhookTo } from '@/lib/discord-webhook';
 
 export const runtime = 'nodejs';
 
@@ -107,7 +107,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     inline: true,
   });
 
-  const ok = await sendDiscordWebhook({
+  let eventWebhookUrl = '';
+  if (type === 'event') {
+    const { data: eventWebhookSetting } = await supabase
+      .from('discord_settings')
+      .select('value')
+      .eq('key', 'event_webhook_url')
+      .maybeSingle();
+    eventWebhookUrl = eventWebhookSetting?.value?.trim() ?? '';
+  }
+
+  const payload = {
     username: 'RCT MP',
     embeds: [
       {
@@ -120,7 +130,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         timestamp: new Date().toISOString(),
       },
     ],
-  });
+  };
+
+  const ok = eventWebhookUrl
+    ? await sendDiscordWebhookTo([eventWebhookUrl], payload)
+    : await sendDiscordWebhook(payload);
 
   if (!ok) {
     return NextResponse.json({ ok: false, error: 'webhook_failed' }, { status: 502 });

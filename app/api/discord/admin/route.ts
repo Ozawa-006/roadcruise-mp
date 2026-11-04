@@ -6,6 +6,7 @@ import {
   PERM,
   createDiscordChannel,
   createDiscordRole,
+  createDiscordWebhook,
   discordBotConfigured,
   discordOAuthConfigured,
   fetchDiscordGuildChannels,
@@ -460,6 +461,45 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (error) {
       return NextResponse.json(
         { ok: false, error: error instanceof Error ? error.message : 'auto_map_failed' },
+        { status: 502 }
+      );
+    }
+  }
+
+  if (action === 'create_event_webhook' || action === 'save_event_webhook') {
+    if (!discordBotConfigured() && action === 'create_event_webhook') {
+      return NextResponse.json({ ok: false, error: 'bot_not_configured' }, { status: 503 });
+    }
+    try {
+      let url = '';
+      let channelName = '';
+      if (action === 'save_event_webhook') {
+        url = typeof body.url === 'string' ? body.url.trim() : '';
+        if (!/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[\w-]+$/.test(url)) {
+          return NextResponse.json({ ok: false, error: 'invalid_webhook_url' }, { status: 400 });
+        }
+      } else {
+        const channels = await fetchDiscordGuildChannels();
+        const channel =
+          channels.find((item) => item.type === 0 && item.name === 'events') ??
+          channels.find((item) => item.type === 0 && item.name === '活动');
+        if (!channel) {
+          return NextResponse.json({ ok: false, error: 'events_channel_not_found' }, { status: 404 });
+        }
+        const webhook = await createDiscordWebhook(channel.id, 'RCT MP Events');
+        url = webhook.url;
+        channelName = channel.name;
+      }
+
+      const { error } = await supabase.from('discord_settings').upsert(
+        { key: 'event_webhook_url', value: url, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      );
+      if (error) return NextResponse.json({ ok: false, error: 'save_failed' }, { status: 500 });
+      return NextResponse.json({ ok: true, url, channelName });
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : 'webhook_failed' },
         { status: 502 }
       );
     }
