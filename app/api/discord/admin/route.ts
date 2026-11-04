@@ -11,6 +11,7 @@ import {
   fetchDiscordGuildChannels,
   fetchDiscordGuildRoles,
   moveDiscordChannel,
+  renameDiscordChannel,
   setDiscordChannelPermission,
 } from '@/lib/discord-oauth';
 import { syncUserDiscordRoles } from '@/lib/discord-sync';
@@ -176,6 +177,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const created: string[] = [];
       const reused: string[] = [];
       const moved: string[] = [];
+      const renamed: string[] = [];
       const errors: string[] = [];
 
       const ensureCategory = async (name: string): Promise<string | null> => {
@@ -232,11 +234,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       };
 
+      const renameIfExists = async (oldName: string, newName: string) => {
+        const channel = channels.find((item) => item.name === oldName);
+        if (!channel) return;
+        if (channels.some((item) => item.name === newName)) return;
+        try {
+          await renameDiscordChannel(channel.id, newName);
+          channel.name = newName;
+          renamed.push(`${oldName} → ${newName}`);
+        } catch (error) {
+          errors.push(`${oldName} 改名: ${error instanceof Error ? error.message : 'rename_failed'}`);
+        }
+      };
+
       const startId = await ensureCategory('START HERE');
       if (startId) {
-        await ensureTextChannel('规则', startId);
-        await ensureTextChannel('公告', startId);
-        for (const name of ['欢迎', '官方公告']) {
+        await renameIfExists('规则', 'rules');
+        await renameIfExists('公告', 'announcements');
+        await renameIfExists('官方公告', 'official-announcements');
+        await renameIfExists('欢迎', 'welcome');
+        await ensureTextChannel('rules', startId);
+        await ensureTextChannel('announcements', startId);
+        await ensureTextChannel('official-announcements', startId);
+        for (const name of ['welcome', 'official-announcements']) {
           const channel = channels.find((item) => item.name === name);
           if (channel && channel.parent_id !== startId) {
             try {
@@ -267,15 +287,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const communityId = await ensureCategory('COMMUNITY');
       if (communityId) {
+        const renameMap: Array<[string, string]> = [
+          ['综合讨论', 'general-chat'],
+          ['截图分享', 'screenshots'],
+          ['活动', 'events'],
+          ['车队', 'convoys'],
+          ['新人报到', 'new-drivers'],
+          ['问题求助', 'help'],
+          ['建议反馈', 'suggestions'],
+          ['闲聊灌水', 'off-topic'],
+          ['联运语音 1', 'convoy-voice-1'],
+          ['联运语音 2', 'convoy-voice-2'],
+        ];
+        for (const [oldName, newName] of renameMap) {
+          await renameIfExists(oldName, newName);
+        }
+
         for (const name of [
-          '综合讨论',
-          '截图分享',
-          '活动',
-          '车队',
-          '新人报到',
-          '问题求助',
-          '建议反馈',
-          '闲聊灌水',
+          'general-chat',
+          'screenshots',
+          'events',
+          'convoys',
+          'new-drivers',
+          'help',
+          'suggestions',
+          'off-topic',
         ]) {
           await ensureTextChannel(name, communityId);
         }
@@ -298,7 +334,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           errors.push(`COMMUNITY 权限: ${error instanceof Error ? error.message : 'perm_failed'}`);
         }
 
-        for (const name of ['联运语音 1', '联运语音 2']) {
+        for (const name of ['convoy-voice-1', 'convoy-voice-2']) {
           const voiceId = await ensureVoiceChannel(name, communityId);
           if (!voiceId) continue;
           try {
@@ -347,7 +383,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       }
 
-      return NextResponse.json({ ok: errors.length === 0, created, reused, moved, errors });
+      return NextResponse.json({
+        ok: errors.length === 0,
+        created,
+        reused,
+        moved,
+        renamed,
+        errors,
+      });
     } catch (error) {
       return NextResponse.json(
         {

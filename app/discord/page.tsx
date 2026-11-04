@@ -22,7 +22,7 @@ const EN: Record<string, string> = {
   '联运与活动': 'Convoys & events',
   '点击「加入 Discord」，已有 Discord 账号可直接加入；没有账号会先引导注册（免费）。':
     'Click "Join Discord". If you already have a Discord account you can join directly; otherwise Discord will guide you through a free sign-up.',
-  '加入后请先阅读 #规则 / #公告 频道，遵守社区规范；违规同样会被处理。':
+  '加入后请先阅读 #rules / #announcements 频道，遵守社区规范；违规同样会被处理。':
     'After joining, read the #rules and #announcements channels first, and follow the community guidelines. Violations are handled the same way as on the site.',
   '联运集合、活动通知与临时车队信息会发布在 Discord；网站活动页仍会同步。':
     'Convoy meetups, event notices and temporary VTC info are posted on Discord. The website events page stays in sync.',
@@ -36,7 +36,7 @@ const EN: Record<string, string> = {
   '2. 打开网站「账号设置」并连接 Discord': '2. Open Account Settings on the website and connect Discord',
   '3. 绑定成功后会自动获得「已验证」，解锁社区频道。':
     '3. After linking, you automatically receive "Verified" and unlock the community channels.',
-  '未验证时在 Discord 只能查看 #欢迎 / #规则 / #公告；网站职位对应的身份组会在绑定后自动同步。':
+  '未验证时在 Discord 只能查看 #welcome / #rules / #announcements；网站职位对应的身份组会在绑定后自动同步。':
     'Before verification you can only view #welcome / #rules / #announcements on Discord; your site position roles sync automatically after linking.',
   '前往账号设置连接 Discord': 'Go to Account Settings to connect Discord',
   '常见问题': 'FAQ',
@@ -167,7 +167,7 @@ export default async function DiscordPage() {
             },
             {
               title: t('社区规则'),
-              body: t('加入后请先阅读 #规则 / #公告 频道，遵守社区规范；违规同样会被处理。'),
+              body: t('加入后请先阅读 #rules / #announcements 频道，遵守社区规范；违规同样会被处理。'),
               href: '/rules',
             },
             {
@@ -229,7 +229,7 @@ export default async function DiscordPage() {
           </ol>
           <p className="mt-3 text-xs leading-relaxed text-gray-400">
             {t(
-              '未验证时在 Discord 只能查看 #欢迎 / #规则 / #公告；网站职位对应的身份组会在绑定后自动同步。'
+              '未验证时在 Discord 只能查看 #welcome / #rules / #announcements；网站职位对应的身份组会在绑定后自动同步。'
             )}
           </p>
           <Link

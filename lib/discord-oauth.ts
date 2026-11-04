@@ -245,6 +245,19 @@ export async function moveDiscordChannel(
   if (!response.ok) throw new Error(`discord_move_channel_${response.status}`);
 }
 
+/** 重命名频道（保留消息与历史）。 */
+export async function renameDiscordChannel(
+  channelId: string,
+  name: string
+): Promise<void> {
+  const response = await discordBotFetch(`/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.slice(0, 100) }),
+  });
+  if (!response.ok) throw new Error(`discord_rename_channel_${response.status}`);
+}
+
 /** 设置频道对某个角色（或 @everyone，overwriteId=guildId）的权限覆盖。 */
 export async function setDiscordChannelPermission(
   channelId: string,
