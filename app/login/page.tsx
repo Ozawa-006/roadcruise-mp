@@ -129,6 +129,7 @@ interface PendingState {
 function LoginForm() {
   const searchParams = useSearchParams();
   const tr = useTr(EN);
+  const isLauncherLogin = searchParams.get('client') === 'rctmp-launcher';
 
   // 视图状态：login(登录) | guide(注册门槛提示) | register_form(填表) | forgot(找回密码)
   const [viewState, setViewState] = useState<'login' | 'guide' | 'register_form' | 'forgot'>('login');
@@ -316,7 +317,7 @@ function LoginForm() {
           setMessage('✅ 登录成功，Steam 绑定已完成！即将跳转...');
         }
         setTimeout(() => {
-          window.location.href = '/';
+          window.location.href = isLauncherLogin ? '/launcher-callback' : '/';
         }, 1500);
       }
     } catch (error) {
