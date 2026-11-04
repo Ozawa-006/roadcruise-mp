@@ -27,11 +27,27 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.52v',
+    date: '2026-11-05',
+    title: '移除个人主页遥测面板',
+    title_en: 'Removed the profile telemetry panel',
+    highlight: true,
+    items: [
+      {
+        kind: 'fix',
+        text: '个人主页移除「In-Game Telemetry（游戏遥测）」面板：游戏遥测尚未接入，避免显示 0 km/h / N 档等占位数据',
+      },
+    ],
+    items_en: [
+      'Removed the "In-Game Telemetry" panel from the profile page since telemetry is not connected yet, avoiding placeholder data such as 0 km/h or gear N',
+    ],
+  },
+  {
     version: '0.0.51v',
     date: '2026-11-05',
     title: '个人主页 Discord 绑定状态',
     title_en: 'Discord linking status on profile',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'fix',
