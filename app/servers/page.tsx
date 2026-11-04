@@ -420,7 +420,6 @@ function ServerCard({
                 : `${formatNumber(status.lastTickMs, 1)} ms`
             }
           />
-          <Stat label={tr('地址')} value={formatAddress(status)} mono />
         </div>
       </div>
 
