@@ -27,11 +27,42 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.54v',
+    date: '2026-11-05',
+    title: '启动器账号登录接口',
+    title_en: 'Launcher account login API',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '新增启动器登录：`/api/auth/login`、`/api/auth/refresh`、`/api/auth/me`，账号与网站打通',
+      },
+      {
+        kind: 'feature',
+        text: 'RS256 JWT + JWKS（`/api/auth/jwks`）供游戏服离线验签；`/api/game/verify` 提供实时校验',
+      },
+      {
+        kind: 'feature',
+        text: 'WebView2 登录：`/login?client=rctmp-launcher` → `/launcher-callback` 通过 postMessage 回传凭证',
+      },
+      {
+        kind: 'chore',
+        text: '封禁账号登录返回 403；新增 `docs/launcher-auth-website.md` 对接文档与测试账号',
+      },
+    ],
+    items_en: [
+      'Added launcher login endpoints: `/api/auth/login`, `/api/auth/refresh`, `/api/auth/me`, sharing the site account system',
+      'RS256 JWT + JWKS (`/api/auth/jwks`) for offline verification in the game server; `/api/game/verify` for real-time checks',
+      'WebView2 login: `/login?client=rctmp-launcher` → `/launcher-callback` returns credentials via postMessage',
+      'Banned accounts receive 403 on login; added `docs/launcher-auth-website.md` and test accounts',
+    ],
+  },
+  {
     version: '0.0.53v',
     date: '2026-11-05',
     title: '网站优化：移动端语言、作者身份与 SEO',
     title_en: 'Site optimization: mobile language, author roles and SEO',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
