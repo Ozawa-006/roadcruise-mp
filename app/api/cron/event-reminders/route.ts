@@ -24,6 +24,13 @@ function serviceClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+function formatUtc(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(
+    date.getUTCHours()
+  )}:${pad(date.getUTCMinutes())} UTC`;
+}
+
 /** 活动开始前 1 小时推送到 Discord（由 pg_cron 每小时调用，已发送的去重）。 */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!authorized(request)) {
@@ -55,12 +62,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let sent = 0;
   for (const event of events ?? []) {
     const start = event.start_at ? new Date(event.start_at as string) : null;
-    const timeText = start
-      ? start.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
-      : '时间待定';
     const description = [
-      `⏰ 开始时间：${timeText}（北京时间）`,
-      event.location ? `📍 地点：${event.location}` : null,
+      start ? `🕒 Start: ${formatUtc(start)}` : '🕒 Start: TBD',
+      event.location ? `📍 Location: ${event.location}` : null,
     ]
       .filter(Boolean)
       .join('\n');
@@ -69,11 +73,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       username: 'RCT MP',
       embeds: [
         {
-          title: `活动 1 小时后开始：${event.title ?? '未命名活动'}`,
+          title: `Event starts in 1 hour: ${event.title ?? 'Untitled event'}`,
           url: `${SITE_URL}/events/${event.id}`,
           description,
           color: 0xf97316,
-          footer: { text: 'RCT MP · 活动提醒' },
+          footer: { text: 'RCT MP · Event reminder' },
           timestamp: new Date().toISOString(),
         },
       ],

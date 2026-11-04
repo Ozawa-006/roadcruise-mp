@@ -328,6 +328,15 @@ function formatDateTime(value: string | null): string {
   return date.toLocaleString('zh-CN');
 }
 
+/** Discord 推送使用 UTC 英文时间（社区面向全球）。 */
+function formatUtcLabel(date: Date | null): string | null {
+  if (!date || Number.isNaN(date.getTime())) return null;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(
+    date.getUTCHours()
+  )}:${pad(date.getUTCMinutes())} UTC`;
+}
+
 function toDateTimeLocal(value: string | null): string {
   if (!value) return '';
   const date = new Date(value);
@@ -601,7 +610,7 @@ export default function AdminEventsPage() {
             title,
             description: payload.description,
             location: payload.location,
-            startLabel: startDate.toLocaleString('zh-CN'),
+            startLabel: formatUtcLabel(startDate),
           });
         }
       } else {
@@ -619,7 +628,7 @@ export default function AdminEventsPage() {
             title,
             description: payload.description,
             location: payload.location,
-            startLabel: startDate.toLocaleString('zh-CN'),
+            startLabel: formatUtcLabel(startDate),
           });
         }
       }
@@ -671,7 +680,7 @@ export default function AdminEventsPage() {
           location: event.location ?? null,
           startLabel:
             startDate && !Number.isNaN(startDate.getTime())
-              ? startDate.toLocaleString('zh-CN')
+              ? formatUtcLabel(startDate)
               : null,
         });
       }
