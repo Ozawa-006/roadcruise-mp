@@ -45,6 +45,7 @@ const EN: Record<string, string> = {
   '玩家': 'Player',
   '分配中...': 'Assigning...',
   '未绑定': 'Not linked',
+  '未入服': 'Not in server',
 
   // 左侧边栏
   '个人资料': 'Profile',
@@ -137,6 +138,11 @@ export default function ProfilePage() {
   // 我的话题状态和回复数量
   const [myTopics, setMyTopics] = useState<TopicRow[]>([]);
   const [myRepliesCount, setMyRepliesCount] = useState(0);
+  const [discordAccount, setDiscordAccount] = useState<{
+    username: string;
+    global_name: string | null;
+    guild_member: boolean;
+  } | null>(null);
   
   const router = useRouter();
   const tr = useTr(EN);
@@ -175,6 +181,14 @@ export default function ProfilePage() {
 
         setProfile({ ...profileData, vtc_info: vtcInfo });
       }
+
+      // Discord 绑定状态（RLS 允许读取自己的绑定）
+      const { data: discordData } = await supabase
+        .from('discord_accounts')
+        .select('username, global_name, guild_member')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (discordData) setDiscordAccount(discordData);
 
       // 获取我发布的最新 5 个话题
       const { data: topicsData } = await supabase
@@ -306,7 +320,20 @@ export default function ProfilePage() {
                      <div className="space-y-2 text-sm">
                         <p className="text-gray-400 flex justify-between">
                           <span>Discord:</span> 
-                          <span className="text-white">{profile?.discord_id || tr('未绑定')}</span>
+                          {discordAccount ? (
+                            <span className="text-white text-right">
+                              {discordAccount.global_name || discordAccount.username}
+                              {!discordAccount.guild_member && (
+                                <span className="ml-1 text-[11px] text-amber-400">
+                                  {tr('未入服')}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <Link href="/settings" className="text-blue-400 hover:underline">
+                              {tr('未绑定')} →
+                            </Link>
+                          )}
                         </p>
                         <p className="text-gray-400 flex justify-between">
                           <span>Steam:</span> 
