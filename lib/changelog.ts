@@ -27,11 +27,37 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.53v',
+    date: '2026-11-05',
+    title: '网站优化：移动端语言、作者身份与 SEO',
+    title_en: 'Site optimization: mobile language, author roles and SEO',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '移动端菜单新增语言切换；论坛版块列表与主题楼主显示角色徽章，颜色与站点职位一致',
+      },
+      {
+        kind: 'feature',
+        text: 'SEO：补全 OpenGraph/Twitter 分享卡片、robots.txt、manifest 与 1200×630 分享图 `/og.png`',
+      },
+      {
+        kind: 'chore',
+        text: '数据库新增公告、未读通知、论坛主题、OAuth state 索引；`supabase/perf-indexes.sql`',
+      },
+    ],
+    items_en: [
+      'Added a language switcher to the mobile menu; forum board lists and topic authors now show role badges colored by site position',
+      'SEO: complete OpenGraph/Twitter cards, robots.txt, manifest and a 1200×630 share image at `/og.png`',
+      'Added database indexes for announcements, unread notifications, forum topics and OAuth states; `supabase/perf-indexes.sql`',
+    ],
+  },
+  {
     version: '0.0.52v',
     date: '2026-11-05',
     title: '移除个人主页遥测面板',
     title_en: 'Removed the profile telemetry panel',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'fix',
