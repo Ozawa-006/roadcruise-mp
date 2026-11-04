@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '@/components/Navbar';
 import { canAccessAdmin, levelOf } from '@/lib/permissions';
+import { formatUtcDateTime } from '@/lib/time';
 import { useTr } from '@/components/I18nProvider';
 
 // 英文文案：键为中文原文，缺失时回退中文。
@@ -84,10 +85,7 @@ function timeOf(value: string | null): number {
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '——';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '——';
-  return date.toLocaleString('zh-CN');
+  return formatUtcDateTime(value);
 }
 
 function titleOf(event: EventRow, tr: (zh: string) => string): string {

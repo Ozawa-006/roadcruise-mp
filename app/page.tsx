@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { plainTextExcerpt } from '@/lib/rich-text';
 import { DISCORD_INVITE_URL } from '@/lib/discord';
 import { useLocale, useTr } from '@/components/I18nProvider';
+import { formatUtcDateTime } from '@/lib/time';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -416,7 +417,7 @@ export default function Home() {
                     <div className="space-y-2 text-sm text-gray-400">
                       <p className="flex items-start gap-2">
                         <span className="text-blue-400">🕒</span>
-                        <span>{new Date(event.start_at).toLocaleString('zh-CN')}</span>
+                        <span>{formatUtcDateTime(event.start_at)}</span>
                       </p>
                       <p className="flex items-start gap-2">
                         <span className="text-blue-400">📍</span>
