@@ -232,6 +232,19 @@ export async function createDiscordChannel(input: {
   return channel.id;
 }
 
+/** 移动频道到指定分类（parent_id），返回是否成功。 */
+export async function moveDiscordChannel(
+  channelId: string,
+  parentId: string
+): Promise<void> {
+  const response = await discordBotFetch(`/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent_id: parentId }),
+  });
+  if (!response.ok) throw new Error(`discord_move_channel_${response.status}`);
+}
+
 /** 设置频道对某个角色（或 @everyone，overwriteId=guildId）的权限覆盖。 */
 export async function setDiscordChannelPermission(
   channelId: string,

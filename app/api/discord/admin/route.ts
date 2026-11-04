@@ -10,6 +10,7 @@ import {
   discordOAuthConfigured,
   fetchDiscordGuildChannels,
   fetchDiscordGuildRoles,
+  moveDiscordChannel,
   setDiscordChannelPermission,
 } from '@/lib/discord-oauth';
 import { syncUserDiscordRoles } from '@/lib/discord-sync';
@@ -174,6 +175,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const created: string[] = [];
       const reused: string[] = [];
+      const moved: string[] = [];
       const errors: string[] = [];
 
       const ensureCategory = async (name: string): Promise<string | null> => {
@@ -192,17 +194,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       };
 
-      const ensureTextChannel = async (name: string, parentId: string | null) => {
+      const ensureTextChannel = async (
+        name: string,
+        parentId: string | null
+      ): Promise<string | null> => {
         const existing = byName(name, 0);
         if (existing) {
           reused.push(name);
-          return;
+          return existing.id;
         }
         try {
-          await createDiscordChannel({ name, type: 0, parent_id: parentId });
+          const id = await createDiscordChannel({ name, type: 0, parent_id: parentId });
           created.push(name);
+          return id;
         } catch (error) {
           errors.push(`${name}: ${error instanceof Error ? error.message : 'create_failed'}`);
+          return null;
+        }
+      };
+
+      const ensureVoiceChannel = async (
+        name: string,
+        parentId: string | null
+      ): Promise<string | null> => {
+        const existing = byName(name, 2);
+        if (existing) {
+          reused.push(name);
+          return existing.id;
+        }
+        try {
+          const id = await createDiscordChannel({ name, type: 2, parent_id: parentId });
+          created.push(name);
+          return id;
+        } catch (error) {
+          errors.push(`${name}: ${error instanceof Error ? error.message : 'create_failed'}`);
+          return null;
         }
       };
 
@@ -210,6 +236,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (startId) {
         await ensureTextChannel('规则', startId);
         await ensureTextChannel('公告', startId);
+        for (const name of ['欢迎', '官方公告']) {
+          const channel = channels.find((item) => item.name === name);
+          if (channel && channel.parent_id !== startId) {
+            try {
+              await moveDiscordChannel(channel.id, startId);
+              moved.push(name);
+            } catch (error) {
+              errors.push(`移动 ${name}: ${error instanceof Error ? error.message : 'move_failed'}`);
+            }
+          }
+        }
         try {
           await setDiscordChannelPermission(
             startId,
@@ -230,7 +267,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const communityId = await ensureCategory('COMMUNITY');
       if (communityId) {
-        for (const name of ['综合讨论', '截图分享', '活动', '车队']) {
+        for (const name of [
+          '综合讨论',
+          '截图分享',
+          '活动',
+          '车队',
+          '新人报到',
+          '问题求助',
+          '建议反馈',
+          '闲聊灌水',
+        ]) {
           await ensureTextChannel(name, communityId);
         }
         const communityAllow =
@@ -251,12 +297,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         } catch (error) {
           errors.push(`COMMUNITY 权限: ${error instanceof Error ? error.message : 'perm_failed'}`);
         }
+
+        for (const name of ['联运语音 1', '联运语音 2']) {
+          const voiceId = await ensureVoiceChannel(name, communityId);
+          if (!voiceId) continue;
+          try {
+            await setDiscordChannelPermission(
+              voiceId,
+              DISCORD_GUILD_ID,
+              PERM.VIEW_CHANNEL,
+              PERM.CONNECT | PERM.SPEAK
+            );
+            await setDiscordChannelPermission(
+              voiceId,
+              verifiedRoleId,
+              PERM.VIEW_CHANNEL | PERM.CONNECT | PERM.SPEAK,
+              0
+            );
+          } catch (error) {
+            errors.push(`${name} 权限: ${error instanceof Error ? error.message : 'perm_failed'}`);
+          }
+        }
       }
 
       const staffId = await ensureCategory('STAFF');
       if (staffId) {
         await ensureTextChannel('staff-chat', staffId);
         await ensureTextChannel('staff-announcements', staffId);
+        await ensureTextChannel('staff-discussion', staffId);
         try {
           await setDiscordChannelPermission(
             staffId,
@@ -279,7 +347,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       }
 
-      return NextResponse.json({ ok: errors.length === 0, created, reused, errors });
+      return NextResponse.json({ ok: errors.length === 0, created, reused, moved, errors });
     } catch (error) {
       return NextResponse.json(
         {
