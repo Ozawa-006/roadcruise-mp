@@ -7,7 +7,7 @@ import Navbar from '../../../../components/Navbar';
 import RichText from '@/components/RichText';
 import RichTextEditor from '@/components/RichTextEditor';
 import Link from 'next/link';
-import { ROLE_LEVEL, levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
+import { ROLE_LEVEL, levelOf, roleColor, roleLabel, roleLabelEn } from '@/lib/permissions';
 import { useLocale, useTr } from '@/components/I18nProvider';
 import type { Locale } from '@/lib/i18n';
 
@@ -103,6 +103,15 @@ function localizedText(
 /** 当前是否正在显示英文内容（用于展示「EN translation」徽章）。 */
 function showsEnglish(locale: Locale, en: string | null | undefined): boolean {
   return locale === 'en' && !!en?.trim();
+}
+
+/**
+ * 回复作者徽章配色：只依据角色名取色（统一走 lib/permissions 的 ROLE_COLORS）。
+ * senior_manager 是历史别名、未收录在 ROLE_COLORS 中，按 Lv.90 高级管理回退，
+ * 避免它在页面上退化成「成员」灰色。
+ */
+function roleBadgeColor(role: string | null | undefined): string {
+  return roleColor(role, role === 'senior_manager' ? ROLE_LEVEL.SENIOR_MANAGER : null);
 }
 
 /** 回复列表查询字段：保持原有 profiles embed 不变 */
@@ -1078,15 +1087,15 @@ export default function TopicDetailPage() {
                   </div>
                   <h4 className="font-bold text-white text-center text-sm break-all">{reply.profiles?.display_name || tr('未知用户')}</h4>
 
-                  {/* 动态徽章 */}
+                  {/* 动态徽章：保留原有结构与图标，只把颜色换成角色颜色 */}
                   <div className="mt-2 text-center">
-                    {reply.profiles?.role === 'developer' && <span className="text-xs font-bold text-red-500">🛠️ {roleText('developer')}</span>}
-                    {reply.profiles?.role === 'senior_manager' && <span className="text-xs font-bold text-orange-400">🧭 {roleText('senior_manager')}</span>}
-                    {reply.profiles?.role === 'director' && <span className="text-xs font-bold text-purple-400">👑 {roleText('director')}</span>}
-                    {reply.profiles?.role === 'manager' && <span className="text-xs font-bold text-blue-400">🛡️ {roleText('manager')}</span>}
-                    {reply.profiles?.role === 'staff' && <span className="text-xs font-bold text-green-400">🔧 {roleText('staff')}</span>}
-                    {reply.profiles?.role === 'community_moderator' && <span className="text-xs font-bold text-cyan-400">🧹 {roleText('community_moderator')}</span>}
-                    {(!reply.profiles?.role || reply.profiles?.role === 'member') && <span className="text-xs text-gray-500">{tr('成员')}</span>}
+                    {reply.profiles?.role === 'developer' && <span className="text-xs font-bold" style={{ color: roleBadgeColor('developer') }}>🛠️ {roleText('developer')}</span>}
+                    {reply.profiles?.role === 'senior_manager' && <span className="text-xs font-bold" style={{ color: roleBadgeColor('senior_manager') }}>🧭 {roleText('senior_manager')}</span>}
+                    {reply.profiles?.role === 'director' && <span className="text-xs font-bold" style={{ color: roleBadgeColor('director') }}>👑 {roleText('director')}</span>}
+                    {reply.profiles?.role === 'manager' && <span className="text-xs font-bold" style={{ color: roleBadgeColor('manager') }}>🛡️ {roleText('manager')}</span>}
+                    {reply.profiles?.role === 'staff' && <span className="text-xs font-bold" style={{ color: roleBadgeColor('staff') }}>🔧 {roleText('staff')}</span>}
+                    {reply.profiles?.role === 'community_moderator' && <span className="text-xs font-bold" style={{ color: roleBadgeColor('community_moderator') }}>🧹 {roleText('community_moderator')}</span>}
+                    {(!reply.profiles?.role || reply.profiles?.role === 'member') && <span className="text-xs" style={{ color: roleBadgeColor(reply.profiles?.role) }}>{tr('成员')}</span>}
                   </div>
                 </div>
                 <div className="flex-1 p-6">

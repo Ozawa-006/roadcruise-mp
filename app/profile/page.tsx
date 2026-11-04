@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Navbar from '../../components/Navbar';
 import Link from 'next/link';
 import { useTr, useLocale } from '@/components/I18nProvider';
-import { canAccessAdmin, levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
+import { canAccessAdmin, levelOf, roleColor, roleLabel, roleLabelEn } from '@/lib/permissions';
 import type { Locale } from '@/lib/i18n';
 
 const supabase = createClient(
@@ -224,6 +224,8 @@ export default function ProfilePage() {
   const displayRole =
     locale === 'en' ? roleLabelEn(userRole, userLevel) : roleLabel(userRole, userLevel);
   const showAdminEntry = canAccessAdmin(userLevel);
+  // 身份展示配色：与数据库 roles.color / Discord 身份组保持一致。
+  const roleAccent = roleColor(userRole, userLevel);
 
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans">
@@ -242,7 +244,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="mt-8">
                   <h2 className="text-white font-bold text-lg">{displayName}</h2>
-                  <p className="text-xs text-gray-500">{displayRole}</p>
+                  <p className="text-xs" style={{ color: roleAccent }}>{displayRole}</p>
                 </div>
               </div>
             </div>
@@ -285,7 +287,7 @@ export default function ProfilePage() {
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <div className="mb-4 flex items-center gap-3">
-                    <h1 className="text-2xl text-green-500 font-bold">{displayName}</h1>
+                    <h1 className="text-2xl font-bold" style={{ color: roleAccent }}>{displayName}</h1>
                     <span className="bg-[#1e1f23] text-gray-400 text-xs px-2 py-1 rounded border border-gray-700 font-mono">
                       ID: {profile?.custom_id || profile?.random_id || tr('分配中...')}
                     </span>
@@ -294,7 +296,7 @@ export default function ProfilePage() {
                   <div className="text-sm space-y-3">
                     <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">{profile?.languages || 'Chinese (Simplified)'}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile?.steam_id || tr('未绑定')}</span></p>
-                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={showAdminEntry ? 'text-red-400 font-bold' : 'text-green-400'}>{displayRole}</span></p>
+                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className="font-bold" style={{ color: roleAccent }}>{displayRole}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">0</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Linked games:</span> <span className="text-white">Euro Truck Simulator 2</span></p>
                     <p><span className="text-gray-500 inline-block w-28">In-game status:</span> <span className="text-gray-500">Offline</span></p>

@@ -35,6 +35,57 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 /**
+ * 角色颜色（与数据库 roles.color 保持一致）。
+ * 站点与 Discord 身份组共用这套配色。
+ */
+export const ROLE_COLORS: Record<string, string> = {
+  developer: '#ef4444',
+  game_producer: '#ef4444',
+  project_manager: '#ef4444',
+  senior_community_manager: '#f59e0b',
+  senior_event_manager: '#f59e0b',
+  senior_game_moderation_manager: '#f59e0b',
+  director: '#f59e0b',
+  support_manager: '#3b82f6',
+  game_developer: '#3b82f6',
+  web_developer: '#3b82f6',
+  community_moderation_manager: '#3b82f6',
+  event_manager: '#3b82f6',
+  game_moderation_manager: '#3b82f6',
+  media_manager: '#3b82f6',
+  translation_manager: '#3b82f6',
+  manager: '#3b82f6',
+  community_moderation_leader: '#8b5cf6',
+  event_planner: '#8b5cf6',
+  game_moderation_leader: '#8b5cf6',
+  support_team_leader: '#8b5cf6',
+  test_coordinator: '#8b5cf6',
+  community_moderator: '#22c55e',
+  event_team: '#22c55e',
+  game_moderator: '#22c55e',
+  staff: '#22c55e',
+  support: '#22c55e',
+  translator: '#22c55e',
+  report_moderator: '#14b8a6',
+  community_moderation_trainee: '#94a3b8',
+  event_trainee: '#94a3b8',
+  game_moderation_trainee: '#94a3b8',
+  support_trainee: '#94a3b8',
+  translator_trainee: '#94a3b8',
+  member: '#94a3b8',
+};
+
+/** 按角色名取颜色；未知角色按等级回退。 */
+export function roleColor(role: string | null | undefined, level: number | null | undefined): string {
+  if (role && ROLE_COLORS[role]) return ROLE_COLORS[role];
+  const normalized = levelOf(level);
+  if (normalized >= 90) return '#f59e0b';
+  if (normalized >= 70) return '#3b82f6';
+  if (normalized >= 40) return '#22c55e';
+  return '#94a3b8';
+}
+
+/**
  * 把数据库里的 role_level 归一化为合法等级。
  * 非法值（null / undefined / NaN / Infinity / 非数字）返回 0（视为无任何管理权限），
  * 负数返回 0，超过 100 的值按 100（开发者）处理并向下取整。

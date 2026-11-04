@@ -13,6 +13,7 @@ import {
   fetchDiscordGuildRoles,
   moveDiscordChannel,
   renameDiscordChannel,
+  editDiscordRole,
   setDiscordChannelPermission,
 } from '@/lib/discord-oauth';
 import { syncUserDiscordRoles } from '@/lib/discord-sync';
@@ -500,6 +501,56 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (error) {
       return NextResponse.json(
         { ok: false, error: error instanceof Error ? error.message : 'webhook_failed' },
+        { status: 502 }
+      );
+    }
+  }
+
+  if (action === 'sync_role_styles') {
+    if (!discordBotConfigured()) {
+      return NextResponse.json({ ok: false, error: 'bot_not_configured' }, { status: 503 });
+    }
+    try {
+      const [discordRoles, mappingsResult, rolesResult] = await Promise.all([
+        fetchDiscordGuildRoles(),
+        supabase.from('discord_role_mappings').select('site_role, discord_role_id'),
+        supabase.from('roles').select('name, display_name, level, color'),
+      ]);
+
+      const discordById = new Map(discordRoles.map((role) => [role.id, role]));
+      const siteByName = new Map(
+        (rolesResult.data ?? []).map((role) => [role.name as string, role])
+      );
+      const updated: string[] = [];
+      const errors: string[] = [];
+
+      for (const mapping of mappingsResult.data ?? []) {
+        const siteRole = siteByName.get(mapping.site_role as string);
+        const discordRole = discordById.get(mapping.discord_role_id as string);
+        if (!siteRole || !discordRole) continue;
+
+        const hex = typeof siteRole.color === 'string' ? siteRole.color : '#9ca3af';
+        const color = /^#[0-9a-fA-F]{6}$/.test(hex) ? parseInt(hex.slice(1), 16) : 0x9ca3af;
+        const displayName = ((siteRole.display_name as string | null) ?? '').slice(0, 100);
+
+        try {
+          await editDiscordRole(discordRole.id, {
+            name: displayName || discordRole.name,
+            color,
+            hoist: (siteRole.level as number) >= 40,
+          });
+          updated.push(mapping.site_role as string);
+        } catch (error) {
+          errors.push(
+            `${mapping.site_role}: ${error instanceof Error ? error.message : 'update_failed'}`
+          );
+        }
+      }
+
+      return NextResponse.json({ ok: errors.length === 0, updated, errors });
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : 'sync_style_failed' },
         { status: 502 }
       );
     }

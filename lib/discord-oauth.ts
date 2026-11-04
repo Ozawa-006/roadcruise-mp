@@ -188,6 +188,23 @@ export async function createDiscordRole(input: {
   return role.id;
 }
 
+/** 修改身份组名称/颜色/是否单独显示。 */
+export async function editDiscordRole(
+  roleId: string,
+  input: { name?: string; color?: number; hoist?: boolean }
+): Promise<void> {
+  const response = await discordBotFetch(`/guilds/${DISCORD_GUILD_ID}/roles/${roleId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...(input.name ? { name: input.name.slice(0, 100) } : {}),
+      ...(typeof input.color === 'number' ? { color: input.color } : {}),
+      ...(typeof input.hoist === 'boolean' ? { hoist: input.hoist } : {}),
+    }),
+  });
+  if (!response.ok) throw new Error(`discord_edit_role_${response.status}`);
+}
+
 // ---------------------------------------------------------------------------
 // 频道与权限（用于一键创建 TMP 风格频道结构）
 // ---------------------------------------------------------------------------

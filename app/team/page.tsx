@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useTr, useLocale } from '../../components/I18nProvider';
 import Navbar from '../../components/Navbar';
 import { DISCORD_INVITE_URL } from '../../lib/discord';
-import { roleLabelEn } from '../../lib/permissions';
+import { roleColor, roleLabelEn } from '../../lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -396,12 +396,13 @@ function StatPill({ label, value }: { label: string; value: string }) {
   );
 }
 
-function LevelBadge({ level }: { level: number }) {
+function LevelBadge({ level, color }: { level: number; color: string }) {
   const tr = useTr(EN);
   const tier = tierOf(level);
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold ${tier.className}`}
+      className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold"
+      style={{ borderColor: `${color}66`, backgroundColor: `${color}1a`, color }}
     >
       <span className="font-mono">Lv.{level}</span>
       <span className="opacity-80">{tr(tier.label)}</span>
@@ -424,6 +425,8 @@ function SteamBadge() {
 function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: string }) {
   const tr = useTr(EN);
   const name = member.display_name?.trim() || tr('未命名成员');
+  // 身份展示配色：部门职位文字与角色徽章边框 / 文字使用同一个角色颜色。
+  const accent = roleColor(member.role, member.role_level);
 
   return (
     <article className="rounded-lg border border-gray-700 bg-[#2c2d31] p-3 transition hover:border-blue-500/50">
@@ -448,14 +451,14 @@ function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: strin
 
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-black text-white">{name}</p>
-          <p className="mt-0.5 truncate text-xs text-blue-300">{roleLabel}</p>
+          <p className="mt-0.5 truncate text-xs" style={{ color: accent }}>{roleLabel}</p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {member.role_level == null ? (
               <span className="rounded border border-gray-600 bg-[#18191c] px-1.5 py-0.5 text-[10px] font-bold text-gray-400">
                 {tr('未定级')}
               </span>
             ) : (
-              <LevelBadge level={member.role_level} />
+              <LevelBadge level={member.role_level} color={accent} />
             )}
             {member.steam_verified === true && <SteamBadge />}
             {member.vtc_id != null && (

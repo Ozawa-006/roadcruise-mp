@@ -7,7 +7,7 @@ import Navbar from '../../components/Navbar';
 import Link from 'next/link';
 import { useLocale, useTr } from '@/components/I18nProvider';
 import type { Locale } from '@/lib/i18n';
-import { roleLabelEn } from '@/lib/permissions';
+import { ROLE_LEVEL, roleColor, roleLabelEn } from '@/lib/permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -166,6 +166,14 @@ interface ProfileRow {
 
 function changeTypeMetaOf(changeType: string | null): ChangeTypeMeta {
   return (changeType ? CHANGE_TYPE_META[changeType] : undefined) ?? DEFAULT_CHANGE_TYPE_META;
+}
+
+/**
+ * 职位变更卡片里 old/new 职位的颜色：统一走 lib/permissions 的角色色。
+ * senior_manager 是历史别名、未收录在 ROLE_COLORS 中，按 Lv.90 回退，避免显示成成员灰。
+ */
+function roleChangeColor(role: string | null): string {
+  return roleColor(role, role === 'senior_manager' ? ROLE_LEVEL.SENIOR_MANAGER : null);
 }
 
 function teamMemberNameOf(change: TeamChangeRow, fallback: string): string {
@@ -508,9 +516,21 @@ export default function ForumHome() {
                             <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}>{tr(badge.label)}</span>
                           </div>
                           <p className="mt-1 flex items-center gap-1 text-[11px]">
-                            <span className="min-w-0 truncate text-gray-500" title={oldRoleLabel}>{oldRoleLabel}</span>
+                            <span
+                              className="min-w-0 truncate text-gray-500"
+                              style={change.old_role ? { color: roleChangeColor(change.old_role) } : undefined}
+                              title={oldRoleLabel}
+                            >
+                              {oldRoleLabel}
+                            </span>
                             <span className="shrink-0 text-gray-600">→</span>
-                            <span className="min-w-0 truncate font-bold text-gray-300" title={newRoleLabel}>{newRoleLabel}</span>
+                            <span
+                              className="min-w-0 truncate font-bold text-gray-300"
+                              style={change.new_role ? { color: roleChangeColor(change.new_role) } : undefined}
+                              title={newRoleLabel}
+                            >
+                              {newRoleLabel}
+                            </span>
                           </p>
                           <time dateTime={change.created_at} className="mt-1 block text-[10px] text-gray-500">
                             {formatChangeTime(change.created_at)}

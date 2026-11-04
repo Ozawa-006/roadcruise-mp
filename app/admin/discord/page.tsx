@@ -144,6 +144,13 @@ const EN: Record<string, string> = {
   '没有可用的 Discord 角色。': 'No Discord roles available.',
   '不在角色列表中': 'not in the role list',
   '无法读取身份组列表': 'role list unavailable',
+  '同步身份组名称/颜色': 'Sync role names & colors',
+  '按站点职位同步 Discord 身份组的名称、颜色与 hoist；不会修改成员。':
+    'Syncs the name, color, and hoist of Discord roles from site positions; members are not changed.',
+  '将按站点职位同步已映射身份组的名称、颜色与 hoist（Lv.40+ 显示在成员列表上方），不会修改任何成员。确定继续吗？':
+    'This updates the names, colors, and hoist of mapped Discord roles from site positions (Lv.40+ appear above members) and changes no members. Continue?',
+  '已同步 {count} 个身份组': 'Synced {count} role(s)',
+  '同步身份组名称/颜色失败：': 'Failed to sync role names/colors: ',
 
   // ---------- 已绑定账号与同步 ----------
   '已绑定账号': 'Linked accounts',
@@ -310,6 +317,18 @@ interface SetupStructureData {
 }
 
 type SetupStructureResult = { ok: true; data: SetupStructureData } | { ok: false; error: string };
+
+/**
+ * sync_role_styles 的返回：部分失败时服务端返回 ok:false + updated/errors，
+ * 与 setup_structure 一样保留结果，便于展示「已同步 N 个」与逐条错误。
+ */
+interface SyncRoleStylesData {
+  ok: boolean;
+  updated: string[];
+  errors: string[];
+}
+
+type SyncRoleStylesResult = { ok: true; data: SyncRoleStylesData } | { ok: false; error: string };
 
 type Notice = { tone: 'success' | 'error'; text: string };
 
@@ -541,6 +560,20 @@ function firstSyncError(raw: unknown): string | null {
   return null;
 }
 
+/**
+ * sync_role_styles：只要带 updated/errors 数组就当成结果（部分失败时 ok 为 false），
+ * 没有这两个字段时才回落到顶层错误。
+ */
+function normalizeSyncRoleStylesData(payload: unknown): SyncRoleStylesData | null {
+  if (!isRecord(payload)) return null;
+  if (!Array.isArray(payload.updated) && !Array.isArray(payload.errors)) return null;
+  return {
+    ok: payload.ok === true,
+    updated: asStringArray(payload.updated),
+    errors: asStringArray(payload.errors),
+  };
+}
+
 /* ------------------------------ 接口调用 ------------------------------ */
 
 async function getAccessToken(): Promise<string | null> {
@@ -691,6 +724,35 @@ async function postSetupStructure(): Promise<SetupStructureResult> {
 
     // 部分失败时服务端仍带 created/reused/errors（ok=false），优先展示结构结果。
     const data = normalizeSetupStructureData(payload);
+    if (data) return { ok: true, data };
+
+    if (!response.ok) {
+      return { ok: false, error: readErrorCode(payload) ?? `http_${response.status}` };
+    }
+    return { ok: false, error: readErrorCode(payload) ?? 'invalid_response' };
+  } catch {
+    return { ok: false, error: 'network_error' };
+  }
+}
+
+/** sync_role_styles：按站点职位同步已映射身份组的名称、颜色与 hoist。 */
+async function postSyncRoleStyles(): Promise<SyncRoleStylesResult> {
+  try {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: 'no_session' };
+
+    const response = await fetch('/api/discord/admin', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'sync_role_styles' }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+
+    // 部分失败时服务端仍带 updated/errors（ok=false），优先展示同步结果。
+    const data = normalizeSyncRoleStylesData(payload);
     if (data) return { ok: true, data };
 
     if (!response.ok) {
@@ -998,6 +1060,9 @@ export default function AdminDiscordPage() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [syncSummary, setSyncSummary] = useState<{ total: number; synced: number } | null>(null);
+  // 同步身份组名称/颜色：结果与账号同步分开展示，避免覆盖同步全部的汇总。
+  const [roleStyleOutcome, setRoleStyleOutcome] = useState<SyncRoleStylesData | null>(null);
+  const [roleStyleError, setRoleStyleError] = useState<string | null>(null);
 
   const [createSelection, setCreateSelection] = useState<string[]>([]);
   const [createOutcome, setCreateOutcome] = useState<CreateRolesOutcome | null>(null);
@@ -1182,6 +1247,31 @@ export default function AdminDiscordPage() {
     } else {
       setNotice({ tone: 'error', text: tr('部分用户同步失败，请检查 Bot 权限与角色层级。') });
     }
+    reload();
+  };
+
+  const handleSyncRoleStyles = async () => {
+    const confirmed = window.confirm(
+      tr(
+        '将按站点职位同步已映射身份组的名称、颜色与 hoist（Lv.40+ 显示在成员列表上方），不会修改任何成员。确定继续吗？'
+      )
+    );
+    if (!confirmed) return;
+
+    setBusy('sync_role_styles');
+    setRoleStyleOutcome(null);
+    setRoleStyleError(null);
+
+    const result = await postSyncRoleStyles();
+    setBusy(null);
+
+    if (!result.ok) {
+      setRoleStyleError(describeRawError(result.error, tr));
+      return;
+    }
+
+    setRoleStyleOutcome(result.data);
+    // 名称/颜色/hoist 变了，重新拉取角色列表保持展示与 Discord 一致。
     reload();
   };
 
@@ -1927,10 +2017,60 @@ export default function AdminDiscordPage() {
                     {tr('把站点角色映射到 Discord 身份组，同步时按映射分配或移除身份组。')}
                   </p>
                 </div>
-                <span className="text-xs text-gray-500">
-                  {tr('{count} 条映射', { count: data.mappings.length })}
-                </span>
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <span className="text-xs text-gray-500">
+                    {tr('{count} 条映射', { count: data.mappings.length })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleSyncRoleStyles();
+                    }}
+                    disabled={busy !== null || loading || !data.botConfigured}
+                    title={
+                      data.botConfigured
+                        ? undefined
+                        : tr('Discord Bot 未配置（DISCORD_BOT_TOKEN）。')
+                    }
+                    className="rounded border border-blue-700/60 bg-blue-900/20 px-3 py-2 text-xs font-bold text-blue-300 transition hover:bg-blue-900/40 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busy === 'sync_role_styles'
+                      ? tr('同步中...')
+                      : tr('同步身份组名称/颜色')}
+                  </button>
+                  <p className="max-w-xs text-[11px] leading-relaxed text-gray-500 sm:text-right">
+                    {tr('按站点职位同步 Discord 身份组的名称、颜色与 hoist；不会修改成员。')}
+                  </p>
+                </div>
               </div>
+
+              {roleStyleError && (
+                <p
+                  role="alert"
+                  className="mb-3 break-all rounded border border-red-700/60 bg-red-900/20 p-3 text-xs text-red-400"
+                >
+                  <span className="font-bold">{tr('同步身份组名称/颜色失败：')}</span>
+                  {roleStyleError}
+                </p>
+              )}
+
+              {roleStyleOutcome && (
+                <div
+                  aria-live="polite"
+                  className="mb-3 rounded border border-gray-700/60 bg-[#232428] p-3"
+                >
+                  <p className="text-xs font-bold text-green-400">
+                    {tr('已同步 {count} 个身份组', { count: roleStyleOutcome.updated.length })}
+                  </p>
+                  {roleStyleOutcome.errors.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc space-y-1 break-all text-xs text-red-400">
+                      {roleStyleOutcome.errors.map((message, index) => (
+                        <li key={`${index}:${message}`}>{message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_5.5rem_9rem] gap-4 border-b border-gray-700 bg-[#232428] px-4 py-2 text-[11px] font-bold text-gray-500 lg:grid">
                 <span>{tr('站点角色')}</span>
