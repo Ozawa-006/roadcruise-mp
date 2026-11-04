@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
-import { canManageAnnouncements, levelOf } from '@/lib/permissions';
+import { canManageAnnouncements, levelOf, roleColor, roleLabel, roleLabelEn } from '@/lib/permissions';
 import { useLocale, useTr } from '@/components/I18nProvider';
 import { plainTextExcerpt } from '@/lib/rich-text';
 import type { Locale } from '@/lib/i18n';
@@ -43,17 +43,26 @@ interface CategoryRow {
   description_en: string | null;
 }
 
+/** 帖子作者嵌入行（profiles）：只取展示所需的昵称与角色。 */
+interface TopicAuthorProfile {
+  display_name: string | null;
+  role: string | null;
+  role_level: number | null;
+}
+
 /** PostgREST 多对一嵌入既可能返回对象也可能返回数组。 */
-type TopicProfiles =
-  | { display_name: string | null }
-  | { display_name: string | null }[]
-  | null;
+type TopicProfiles = TopicAuthorProfile | TopicAuthorProfile[] | null;
+
+/** 统一取嵌入作者对象：数组取第一条，缺失返回 null。 */
+function topicAuthorProfile(profiles: TopicProfiles | undefined): TopicAuthorProfile | null {
+  if (!profiles) return null;
+  const profile = Array.isArray(profiles) ? profiles[0] : profiles;
+  return profile ?? null;
+}
 
 /** 统一取嵌入作者昵称：数组取第一条，缺失返回 null。 */
 function topicAuthorName(profiles: TopicProfiles | undefined): string | null {
-  if (!profiles) return null;
-  const profile = Array.isArray(profiles) ? profiles[0] : profiles;
-  return profile?.display_name ?? null;
+  return topicAuthorProfile(profiles)?.display_name ?? null;
 }
 
 /** 帖子列表行（forum_topics + profiles 嵌入）；title_en 为空时回退中文标题。 */
@@ -119,6 +128,7 @@ const EN: Record<string, string> = {
   '由': 'By',
   '发表于': 'on',
   '未知玩家': 'Unknown player',
+  '成员': 'Member',
   '{n} 回复': '{n} replies',
 
   // ---- 分页 ----
@@ -222,7 +232,7 @@ export default function CategoryPage() {
 
         const { data, error } = await supabase
           .from('forum_topics')
-          .select(`id, title, title_en, created_at, replies_count, profiles:author_id (display_name)`)
+          .select(`id, title, title_en, created_at, replies_count, profiles:author_id (display_name, role, role_level)`)
           .eq('category_id', categoryId)
           .order('created_at', { ascending: false })
           .range(from, to);
@@ -386,23 +396,49 @@ export default function CategoryPage() {
               {tr('这个版块还没有帖子，快来抢沙发吧！')}
             </div>
           ) : (
-            topics.map((topic) => (
-              <Link
-                key={topic.id}
-                href={`/forum/${id}/${topic.id}`}
-                className="flex items-center justify-between bg-[#2c2d31] border border-gray-700 p-4 rounded-md hover:border-blue-500 hover:bg-[#323338] transition group shadow-sm"
-              >
-                <div>
-                  <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{localizedText(locale, topic.title_en, topic.title)}</h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {tr('由')} <span className="text-gray-300 font-bold">{topicAuthorName(topic.profiles) || tr('未知玩家')}</span> {tr('发表于')} {new Date(topic.created_at).toLocaleString()}
-                  </p>
-                </div>
-                <div className="text-right text-sm text-gray-400">
-                  <p>{tr('{n} 回复', { n: topic.replies_count || 0 })}</p>
-                </div>
-              </Link>
-            ))
+            topics.map((topic) => {
+              const author = topicAuthorProfile(topic.profiles);
+              // 角色徽章：无 role 时统一显示「成员」，避免回退成「未分配」。
+              const authorRole = author?.role?.trim() ? author.role : null;
+              const authorLevel = levelOf(author?.role_level);
+              const authorRoleName = authorRole
+                ? locale === 'en'
+                  ? roleLabelEn(authorRole, authorLevel)
+                  : roleLabel(authorRole, authorLevel)
+                : tr('成员');
+              const authorColor = roleColor(authorRole, author?.role_level);
+
+              return (
+                <Link
+                  key={topic.id}
+                  href={`/forum/${id}/${topic.id}`}
+                  className="flex items-center justify-between bg-[#2c2d31] border border-gray-700 p-4 rounded-md hover:border-blue-500 hover:bg-[#323338] transition group shadow-sm"
+                >
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{localizedText(locale, topic.title_en, topic.title)}</h3>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-gray-500">
+                      <span>{tr('由')}</span>
+                      <span className="text-gray-300 font-bold">{topicAuthorName(topic.profiles) || tr('未知玩家')}</span>
+                      <span
+                        className="inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-bold"
+                        style={{
+                          color: authorColor,
+                          borderColor: `${authorColor}66`,
+                          backgroundColor: `${authorColor}1f`,
+                        }}
+                      >
+                        {authorRoleName}
+                      </span>
+                      <span>{tr('发表于')}</span>
+                      <time dateTime={topic.created_at}>{new Date(topic.created_at).toLocaleString()}</time>
+                    </p>
+                  </div>
+                  <div className="text-right text-sm text-gray-400">
+                    <p>{tr('{n} 回复', { n: topic.replies_count || 0 })}</p>
+                  </div>
+                </Link>
+              );
+            })
           )}
         </div>
 

@@ -1,15 +1,17 @@
 import type { MetadataRoute } from 'next';
 
-// 站点公开地址：优先使用环境变量，去掉末尾斜杠避免拼出 "//"。
-const BASE_URL = (process.env.NEXTAUTH_URL ?? 'https://www.roadcruise-mp.com').replace(/\/+$/, '');
+// 固定生产域名：robots.txt 会被构造成静态文件，不能让本地 .env.local 的
+// NEXTAUTH_URL=http://localhost:3000 写进线上文件。
+const SITE_URL = 'https://www.roadcruise-mp.com';
 
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin', '/api', '/settings', '/profile'],
+      // /profile 为需登录的私有页，原有限制保留。
+      disallow: ['/admin', '/api', '/settings', '/reset-password', '/profile'],
     },
-    sitemap: `${BASE_URL}/sitemap.xml`,
+    sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }

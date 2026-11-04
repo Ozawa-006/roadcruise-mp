@@ -14,11 +14,12 @@ import type { Locale } from '@/lib/i18n';
 interface TopicAuthorProfile {
   display_name: string | null;
   avatar_url: string | null;
+  role: string | null;
+  role_level: number | null;
 }
 
-interface ReplyAuthorProfile extends TopicAuthorProfile {
-  role: string | null;
-}
+/** 回复作者：回复查询只带 role，不额外查询等级（回复徽章逻辑保持不变）。 */
+type ReplyAuthorProfile = Omit<TopicAuthorProfile, 'role_level'>;
 
 interface ForumTopic {
   id: string | number;
@@ -106,12 +107,18 @@ function showsEnglish(locale: Locale, en: string | null | undefined): boolean {
 }
 
 /**
- * 回复作者徽章配色：只依据角色名取色（统一走 lib/permissions 的 ROLE_COLORS）。
- * senior_manager 是历史别名、未收录在 ROLE_COLORS 中，按 Lv.90 高级管理回退，
- * 避免它在页面上退化成「成员」灰色。
+ * 作者徽章配色：只依据角色名取色（统一走 lib/permissions 的 ROLE_COLORS）。
+ * senior_manager 是历史别名、未收录在 ROLE_COLORS 中：有 role_level 时按等级回退，
+ * 没有等级时按 Lv.90 高级管理回退，避免它在页面上退化成「成员」灰色。
  */
-function roleBadgeColor(role: string | null | undefined): string {
-  return roleColor(role, role === 'senior_manager' ? ROLE_LEVEL.SENIOR_MANAGER : null);
+function roleBadgeColor(
+  role: string | null | undefined,
+  level?: number | null
+): string {
+  return roleColor(
+    role,
+    level ?? (role === 'senior_manager' ? ROLE_LEVEL.SENIOR_MANAGER : null)
+  );
 }
 
 /** 回复列表查询字段：保持原有 profiles embed 不变 */
@@ -449,7 +456,7 @@ export default function TopicDetailPage() {
       .from('forum_topics')
       .select(`
         *,
-        profiles:author_id (display_name, avatar_url),
+        profiles:author_id (display_name, avatar_url, role, role_level),
         forum_categories:category_id (name, name_en)
       `)
       .eq('id', topicId)
@@ -851,6 +858,11 @@ export default function TopicDetailPage() {
   const roleText = (role: string): string =>
     locale === 'en' ? roleLabelEn(role, 0) : roleLabel(role, 0);
 
+  // 楼主身份徽章：名称/配色与回复作者徽章同口径；无 role 时显示「成员」。
+  const opRole = topic.profiles?.role?.trim() || null;
+  const opRoleName = opRole ? roleText(opRole) : tr('成员');
+  const opRoleColor = roleBadgeColor(opRole, topic.profiles?.role_level);
+
   return (
     <main className="min-h-screen bg-[#18191c] text-gray-300 flex flex-col font-sans pb-12">
       <Navbar />
@@ -883,7 +895,19 @@ export default function TopicDetailPage() {
             <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-3xl font-bold text-white mb-3 overflow-hidden shadow-lg border-2 border-gray-600">
               {topic.profiles?.avatar_url ? <img src={topic.profiles.avatar_url} className="w-full h-full object-cover" /> : topic.profiles?.display_name?.charAt(0).toUpperCase()}
             </div>
-            <h3 className="font-bold text-white text-center break-all">{topic.profiles?.display_name || tr('未知用户')}</h3>
+            <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5">
+              <h3 className="font-bold text-white text-center break-all">{topic.profiles?.display_name || tr('未知用户')}</h3>
+              <span
+                className="inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[11px] font-bold"
+                style={{
+                  color: opRoleColor,
+                  borderColor: `${opRoleColor}66`,
+                  backgroundColor: `${opRoleColor}1f`,
+                }}
+              >
+                {opRoleName}
+              </span>
+            </div>
             <p className="text-xs text-blue-400 mt-1">{tr('楼主')}</p>
           </div>
           <div className="flex-1 p-6 md:p-8">

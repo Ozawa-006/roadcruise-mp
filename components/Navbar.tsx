@@ -84,6 +84,7 @@ const EN = {
   '打开导航菜单': 'Open navigation menu',
   '关闭导航菜单': 'Close navigation menu',
   '移动端主导航': 'Mobile main navigation',
+  '语言 / Language': 'Language',
 } satisfies Record<string, string>;
 
 /** 通知下拉渲染所需的最小字段（数据来自 notifications 表，不翻译）。 */
@@ -604,6 +605,14 @@ export default function Navbar() {
                 </Link>
               )
             )}
+          </div>
+
+          {/* 移动端语言切换：桌面端语言入口在导航右侧，小屏收进菜单底部。 */}
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-800 pt-3">
+            <span className="text-xs font-bold uppercase tracking-widest text-gray-500">
+              {tr('语言 / Language')}
+            </span>
+            <LanguageSwitcher compact />
           </div>
         </nav>
       )}

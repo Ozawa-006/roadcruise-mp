@@ -15,9 +15,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// 站点公开地址：优先读取 NEXTAUTH_URL，本地/预览环境回退到生产域名。
-const SITE_URL = process.env.NEXTAUTH_URL ?? "https://www.roadcruise-mp.com";
+// 站点公开地址：SEO 与分享卡片必须输出绝对 URL，这里固定用生产域名，
+// 避免本地 .env.local 的 NEXTAUTH_URL=http://localhost:3000 污染 og:url / og:image。
+const SITE_URL = "https://www.roadcruise-mp.com";
 const SITE_NAME = "Road Cruise Transport MP";
+// 分享图：public/og.png（1200×630，品牌深色图）。
+const OG_IMAGE_PATH = "/og.png";
+const OG_IMAGE_ALT = `${SITE_NAME} — ETS2 community`;
 const SITE_DESCRIPTION = "欢迎来到属于卡友的公路世界！加入我们，体验最真实的欧卡2联运。";
 const SITE_DESCRIPTION_EN =
   "Welcome to the truckers' highway world! Join us for the most authentic Euro Truck Simulator 2 convoys.";
@@ -59,11 +63,14 @@ export async function generateMetadata(): Promise<Metadata> {
       locale: isEnglish ? "en_US" : "zh_CN",
       title,
       description,
+      url: "/",
+      images: [{ url: OG_IMAGE_PATH, alt: OG_IMAGE_ALT }],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title,
       description,
+      images: [OG_IMAGE_PATH],
     },
   };
 }
