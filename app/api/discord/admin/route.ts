@@ -378,6 +378,50 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  if (action === 'auto_map_roles') {
+    if (!discordBotConfigured()) {
+      return NextResponse.json({ ok: false, error: 'bot_not_configured' }, { status: 503 });
+    }
+    try {
+      const [discordRoles, siteRolesResult] = await Promise.all([
+        fetchDiscordGuildRoles(),
+        supabase.from('roles').select('name, display_name, level'),
+      ]);
+      const byName = new Map(discordRoles.map((role) => [role.name, role]));
+      const mapped: Array<{ siteRole: string; discordRoleName: string }> = [];
+      const unmatched: string[] = [];
+
+      for (const siteRole of siteRolesResult.data ?? []) {
+        const displayName = ((siteRole.display_name as string | null) ?? '').slice(0, 100);
+        const discordRole = byName.get(displayName);
+        if (!discordRole) {
+          unmatched.push(siteRole.name as string);
+          continue;
+        }
+        const { error } = await supabase.from('discord_role_mappings').upsert(
+          {
+            site_role: siteRole.name,
+            discord_role_id: discordRole.id,
+            discord_role_name: discordRole.name,
+            enabled: true,
+            updated_by: auth.user.id,
+          },
+          { onConflict: 'site_role' }
+        );
+        if (!error) {
+          mapped.push({ siteRole: siteRole.name as string, discordRoleName: discordRole.name });
+        }
+      }
+
+      return NextResponse.json({ ok: true, mapped, unmatched });
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : 'auto_map_failed' },
+        { status: 502 }
+      );
+    }
+  }
+
   if (action === 'save_settings') {
     const verifiedRoleId =
       typeof body.verifiedRoleId === 'string' ? body.verifiedRoleId.trim() : '';
