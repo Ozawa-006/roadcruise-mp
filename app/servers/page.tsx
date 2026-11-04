@@ -35,6 +35,8 @@ const EN: Record<string, string> = {
     'Server status is unknown, so connecting is unavailable. Please try again later.',
   '需要已安装 RCTMP 启动器': 'Requires the RCTMP launcher',
   '在线玩家': 'Online players',
+  '{count} / {capacity} 人': '{count} / {capacity} players',
+  '玩家列表已隐藏': 'Player list hidden',
   '容量未知': 'Capacity unknown',
   '{name} 在线人数': '{name} online players',
   '运行时长': 'Uptime',
@@ -424,139 +426,20 @@ function ServerCard({
       </div>
 
       <div className="p-5 md:p-6">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-bold text-gray-200">
             {tr('在线玩家')}
             <span className="ml-2 font-normal text-gray-500">
-              {tr('{snapshots} 条快照 / 在线 {online} 人', {
-                snapshots: status.players.length,
-                online: status.online,
+              {tr('{count} / {capacity} 人', {
+                count: status.online,
+                capacity: status.capacity,
               })}
             </span>
           </h3>
-          {canExpand ? (
-            <button
-              type="button"
-              onClick={onTogglePlayers}
-              className="rounded border border-gray-600 px-3 py-1 text-[11px] text-gray-300 transition hover:border-blue-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-            >
-              {expanded
-                ? tr('收起')
-                : tr('展开全部（{count}）', { count: status.players.length })}
-            </button>
-          ) : null}
+          <span className="rounded border border-gray-700 bg-[#232428] px-2.5 py-1 text-[11px] text-gray-500">
+            {tr('玩家列表已隐藏')}
+          </span>
         </div>
-
-        {status.players.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-700 bg-[#232428] px-4 py-8 text-center text-sm text-gray-500">
-            {tr('暂无可见的在线玩家')}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-gray-700/70 text-left text-[10px] uppercase tracking-wider text-gray-500">
-                  <th scope="col" className="px-2 py-2 font-medium">
-                    ID
-                  </th>
-                  <th scope="col" className="px-2 py-2 font-medium">
-                    {tr('名称')}
-                  </th>
-                  <th scope="col" className="px-2 py-2 font-medium">
-                    Tag
-                  </th>
-                  <th scope="col" className="px-2 py-2 font-medium">
-                    Ping
-                  </th>
-                  <th scope="col" className="px-2 py-2 font-medium">
-                    {tr('在线时长')}
-                  </th>
-                  <th scope="col" className="px-2 py-2 text-right font-medium">
-                    {tr('速度')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700/40">
-                {visiblePlayers.map((player, index) => {
-                  const playerName =
-                    typeof player.name === 'string' && player.name.trim()
-                      ? player.name
-                      : '—';
-                  const playerTag =
-                    typeof player.tag === 'string' && player.tag.trim()
-                      ? player.tag
-                      : null;
-                  const playerAddr =
-                    typeof player.addr === 'string' && player.addr
-                      ? player.addr
-                      : null;
-                  const rawId: unknown = player.id;
-                  const playerIdLabel =
-                    typeof rawId === 'number' && Number.isFinite(rawId)
-                      ? `#${rawId}`
-                      : typeof rawId === 'string' && rawId.trim()
-                        ? `#${rawId}`
-                        : '#—';
-                  const rowKey = `${status.id}-${index}-${
-                    typeof rawId === 'string' || typeof rawId === 'number'
-                      ? rawId
-                      : 'unknown'
-                  }`;
-
-                  return (
-                    <tr
-                      key={rowKey}
-                      className="transition hover:bg-white/[0.03]"
-                    >
-                      <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs text-gray-500">
-                        {playerIdLabel}
-                      </td>
-                      <td className="px-2 py-2.5">
-                        <span className="text-gray-200">{playerName}</span>
-                        {playerAddr ? (
-                          <span className="ml-2 font-mono text-[10px] text-gray-500">
-                            {playerAddr}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-2 py-2.5">
-                        {playerTag ? (
-                          <span className="inline-flex rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-300">
-                            {playerTag}
-                          </span>
-                        ) : (
-                          <span className="text-gray-600">—</span>
-                        )}
-                      </td>
-                      <td
-                        className={`whitespace-nowrap px-2 py-2.5 font-mono text-xs ${pingColor(
-                          player.ping
-                        )}`}
-                      >
-                        {formatPing(player.ping)}
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-2.5 font-mono text-xs text-gray-400">
-                        {humanizeDuration(player.connectedSec, tr)}
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-2.5 text-right font-mono text-xs text-gray-300">
-                        {formatSpeed(player.pos?.kmh)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {status.online > status.players.length ? (
-          <p className="mt-2 text-[11px] text-gray-500">
-            {tr('服务端返回了 {shown} 条玩家明细，少于在线人数 {online}。', {
-              shown: status.players.length,
-              online: status.online,
-            })}
-          </p>
-        ) : null}
       </div>
     </article>
   );
