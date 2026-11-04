@@ -82,6 +82,26 @@ const EN: Record<string, string> = {
   '创建身份组失败：': 'Failed to create roles: ',
   'Bot 未配置，无法创建身份组。': 'The bot is not configured, so roles cannot be created.',
 
+  // ---------- 验证设置 ----------
+  '验证设置': 'Verification settings',
+  '绑定 Discord 后自动给该身份组（类似 TruckersMP 的 Verified），解绑自动移除；频道权限需在 Discord 中把「已验证」角色设为可见。':
+    'Members automatically get this role when they link Discord (like TruckersMP’s Verified) and lose it when they unlink. Channel permissions must make the “Verified” role visible in Discord.',
+  '当前已验证角色': 'Current verified role',
+  '未设置': 'Not set',
+  '不设置': 'None',
+  '未匹配到的身份组': 'role not in the list',
+  '保存验证设置': 'Save verification settings',
+  '验证设置已保存。': 'Verification settings saved.',
+  '创建「已验证」角色': 'Create “Verified” role',
+  '创建角色中...': 'Creating role...',
+  '创建已验证角色失败：': 'Failed to create the verified role: ',
+  '已验证角色已创建并保存。': 'Verified role created and saved.',
+  '已验证角色已创建，但保存失败，请重新选择后保存。':
+    'The verified role was created but could not be saved. Please select it and save again.',
+  '没有找到「已验证」角色，可一键创建。':
+    'No “Verified” role found. You can create one in a single click.',
+  '有未保存的更改': 'Unsaved changes',
+
   // ---------- 身份组映射 ----------
   '身份组映射': 'Role mappings',
   '把站点角色映射到 Discord 身份组，同步时按映射分配或移除身份组。':
@@ -169,6 +189,18 @@ interface DiscordRoleMapping {
   enabled: boolean;
 }
 
+/** discord_settings 表的一行；value 为空表示「不设置」。 */
+interface DiscordSetting {
+  key: string;
+  value: string | null;
+}
+
+/** 验证身份组的设置项 key（与接口 save_settings 保持一致）。 */
+const VERIFIED_ROLE_SETTING_KEY = 'verified_role_id';
+
+/** 一键创建时使用的 Discord 角色名。 */
+const VERIFIED_ROLE_NAME = '已验证';
+
 interface SiteRole {
   name: string;
   display_name: string | null;
@@ -201,6 +233,7 @@ interface DiscordAdminData {
   mappings: DiscordRoleMapping[];
   accounts: DiscordAccount[];
   siteRoles: SiteRole[];
+  settings: DiscordSetting[];
 }
 
 type LoadResult = { ok: true; data: DiscordAdminData } | { ok: false; error: string };
@@ -238,6 +271,8 @@ interface CreateRolesData {
 }
 
 type CreateRolesResult = { ok: true; data: CreateRolesData } | { ok: false; error: string };
+
+type CreateRoleResult = { ok: true; roleId: string; name: string } | { ok: false; error: string };
 
 interface CreateRolesOutcome {
   created: number;
@@ -319,6 +354,19 @@ function normalizeSiteRole(raw: unknown): SiteRole | null {
   };
 }
 
+/** discord_settings：key 必须非空；value 允许为空（= 不设置），空白字符串收敛成 null。 */
+function normalizeSetting(raw: unknown): DiscordSetting | null {
+  if (!isRecord(raw)) return null;
+  const key = asString(raw.key);
+  if (!key) return null;
+  return { key, value: asString(raw.value) };
+}
+
+/** 从 settings 里取已验证身份组 ID；缺失或为空时返回空串。 */
+function readVerifiedRoleId(settings: DiscordSetting[]): string {
+  return settings.find((setting) => setting.key === VERIFIED_ROLE_SETTING_KEY)?.value ?? '';
+}
+
 /** Supabase 的嵌套关系可能返回对象或单元素数组，两种都接受。 */
 function normalizeAccountProfile(raw: unknown): AccountProfile | null {
   const record: unknown = Array.isArray(raw) ? raw[0] : raw;
@@ -369,6 +417,10 @@ function normalizeAdminData(payload: unknown): DiscordAdminData | null {
     .map((raw) => normalizeSiteRole(raw))
     .filter((role): role is SiteRole => role !== null);
 
+  const settings = asArray(payload.settings)
+    .map((raw) => normalizeSetting(raw))
+    .filter((setting): setting is DiscordSetting => setting !== null);
+
   return {
     oauthConfigured: payload.oauthConfigured === true,
     botConfigured: payload.botConfigured === true,
@@ -378,6 +430,7 @@ function normalizeAdminData(payload: unknown): DiscordAdminData | null {
     mappings,
     accounts,
     siteRoles,
+    settings,
   };
 }
 
@@ -533,6 +586,37 @@ async function postCreateRoles(siteRoles: string[]): Promise<CreateRolesResult> 
     const data = normalizeCreateRolesData(payload);
     if (!data) return { ok: false, error: readErrorCode(payload) ?? 'invalid_response' };
     return { ok: true, data };
+  } catch {
+    return { ok: false, error: 'network_error' };
+  }
+}
+
+/** create_role 只创建单个角色（用于「已验证」），返回新角色 ID。 */
+async function postCreateRole(name: string): Promise<CreateRoleResult> {
+  try {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: 'no_session' };
+
+    const response = await fetch('/api/discord/admin', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'create_role', name }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      return { ok: false, error: readErrorCode(payload) ?? `http_${response.status}` };
+    }
+    if (!isRecord(payload) || payload.ok !== true) {
+      return { ok: false, error: readErrorCode(payload) ?? 'invalid_response' };
+    }
+
+    const roleId = asString(payload.roleId);
+    if (!roleId) return { ok: false, error: 'invalid_response' };
+    return { ok: true, roleId, name: asString(payload.name) ?? name };
   } catch {
     return { ok: false, error: 'network_error' };
   }
@@ -832,6 +916,13 @@ export default function AdminDiscordPage() {
   const [newDiscordRoleId, setNewDiscordRoleId] = useState('');
   const [newEnabled, setNewEnabled] = useState(true);
 
+  // 验证设置：选择值先落成草稿，null 表示「跟随服务端」，避免异步加载覆盖用户选择。
+  const [verifiedDraft, setVerifiedDraft] = useState<string | null>(null);
+  const [verifiedBusy, setVerifiedBusy] = useState<'save' | 'create' | null>(null);
+  const [verifiedNotice, setVerifiedNotice] = useState<Notice | null>(null);
+  // 新建角色后、reload 完成前用它补上角色名，避免下拉里短暂出现「未匹配」。
+  const [verifiedCreatedName, setVerifiedCreatedName] = useState<string | null>(null);
+
   // 1. 权限门禁：未登录 -> /login；低于 Lv.90 -> 页面内展示无权限卡片（不跳走、不弹窗）。
   useEffect(() => {
     let active = true;
@@ -1009,6 +1100,62 @@ export default function AdminDiscordPage() {
     }
   };
 
+  const saveVerifiedRole = async (roleId: string) => {
+    setVerifiedBusy('save');
+    setVerifiedNotice(null);
+
+    const result = await postAdminAction({ action: 'save_settings', verifiedRoleId: roleId });
+    setVerifiedBusy(null);
+
+    if (!result.ok) {
+      setVerifiedNotice({ tone: 'error', text: describeError(result.error, tr) });
+      return;
+    }
+
+    setVerifiedDraft(roleId);
+    setVerifiedNotice({ tone: 'success', text: tr('验证设置已保存。') });
+    reload();
+  };
+
+  const createVerifiedRole = async () => {
+    setVerifiedBusy('create');
+    setVerifiedNotice(null);
+
+    const created = await postCreateRole(VERIFIED_ROLE_NAME);
+    if (!created.ok) {
+      setVerifiedBusy(null);
+      // create_role 的失败码可能是 Discord 原始报错，已知码才翻译，其余原样展示。
+      const known = ERROR_MESSAGES[created.error];
+      setVerifiedNotice({
+        tone: 'error',
+        text: tr('创建已验证角色失败：') + (known ? tr(known) : created.error),
+      });
+      return;
+    }
+
+    setVerifiedCreatedName(created.name);
+    setVerifiedDraft(created.roleId);
+
+    // 创建成功后直接落库，省掉用户再点一次保存；失败时保留草稿供手动保存。
+    const saved = await postAdminAction({
+      action: 'save_settings',
+      verifiedRoleId: created.roleId,
+    });
+    setVerifiedBusy(null);
+
+    if (!saved.ok) {
+      setVerifiedNotice({
+        tone: 'error',
+        text: tr('已验证角色已创建，但保存失败，请重新选择后保存。'),
+      });
+      reload();
+      return;
+    }
+
+    setVerifiedNotice({ tone: 'success', text: tr('已验证角色已创建并保存。') });
+    reload();
+  };
+
   if (phase === 'checking') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#18191c] text-white">
@@ -1059,6 +1206,17 @@ export default function AdminDiscordPage() {
       </main>
     );
   }
+
+  // 验证设置：草稿优先，未编辑时跟随服务端返回值。
+  const savedVerifiedRoleId = data ? readVerifiedRoleId(data.settings) : '';
+  const verifiedRoleId = verifiedDraft ?? savedVerifiedRoleId;
+  const verifiedRoleName = verifiedRoleId
+    ? (data?.roles.find((role) => role.id === verifiedRoleId)?.name ??
+      verifiedCreatedName ??
+      tr('未匹配到的身份组'))
+    : tr('未设置');
+  const verifiedRoleExists = (data?.roles ?? []).some((role) => role.name === VERIFIED_ROLE_NAME);
+  const verifiedDirty = verifiedRoleId !== savedVerifiedRoleId;
 
   const mappedSiteRoles = new Set((data?.mappings ?? []).map((mapping) => mapping.site_role));
   const availableSiteRoles = data
@@ -1422,6 +1580,123 @@ export default function AdminDiscordPage() {
                     </button>
                   </div>
                 </>
+              )}
+            </section>
+
+            {/* ------------------------- 验证设置 ------------------------- */}
+            <section
+              aria-labelledby="discord-verified-heading"
+              className="rounded-lg border border-gray-700 bg-[#2c2d31] p-4 shadow-lg sm:p-6"
+            >
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 id="discord-verified-heading" className="text-lg font-bold text-white">
+                    {tr('验证设置')}
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-xs leading-relaxed text-gray-500">
+                    {tr(
+                      '绑定 Discord 后自动给该身份组（类似 TruckersMP 的 Verified），解绑自动移除；频道权限需在 Discord 中把「已验证」角色设为可见。'
+                    )}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 text-xs">
+                  <span className="text-gray-500">{tr('当前已验证角色')}</span>
+                  <span
+                    className={`rounded border px-2 py-0.5 font-bold ${
+                      verifiedRoleId
+                        ? 'border-green-700/60 bg-green-900/20 text-green-400'
+                        : 'border-gray-600 bg-gray-800 text-gray-400'
+                    }`}
+                  >
+                    {verifiedRoleId ? `@${verifiedRoleName}` : tr('未设置')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <label className="block min-w-0">
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                    {tr('Discord 角色')}
+                  </span>
+                  <select
+                    value={verifiedRoleId}
+                    onChange={(event) => {
+                      setVerifiedDraft(event.target.value);
+                      setVerifiedCreatedName(null);
+                      setVerifiedNotice(null);
+                    }}
+                    disabled={verifiedBusy !== null || loading}
+                    className="w-full rounded border border-gray-600 bg-[#18191c] p-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">{tr('不设置')}</option>
+                    {verifiedRoleId !== '' &&
+                      !data.roles.some((role) => role.id === verifiedRoleId) && (
+                        <option value={verifiedRoleId}>{`@${verifiedRoleName}`}</option>
+                      )}
+                    {data.roles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        @{role.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {verifiedDirty && (
+                    <span className="text-xs text-orange-300">{tr('有未保存的更改')}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void saveVerifiedRole(verifiedRoleId);
+                    }}
+                    disabled={verifiedBusy !== null || loading}
+                    className="rounded bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {verifiedBusy === 'save' ? tr('保存中...') : tr('保存验证设置')}
+                  </button>
+                  {!verifiedRoleExists && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void createVerifiedRole();
+                      }}
+                      disabled={verifiedBusy !== null || loading || !data.botConfigured}
+                      title={
+                        data.botConfigured
+                          ? undefined
+                          : tr('Discord Bot 未配置（DISCORD_BOT_TOKEN）。')
+                      }
+                      className="rounded border border-blue-700/60 bg-blue-900/20 px-4 py-2 text-xs font-bold text-blue-300 transition hover:bg-blue-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {verifiedBusy === 'create' ? tr('创建角色中...') : tr('创建「已验证」角色')}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {!verifiedRoleExists && (
+                <p
+                  className={`mt-2 text-xs ${data.botConfigured ? 'text-gray-500' : 'text-red-400'}`}
+                >
+                  {data.botConfigured
+                    ? tr('没有找到「已验证」角色，可一键创建。')
+                    : tr('Bot 未配置，无法创建身份组。')}
+                </p>
+              )}
+
+              {verifiedNotice && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={`mt-3 break-all rounded border p-3 text-xs ${
+                    verifiedNotice.tone === 'success'
+                      ? 'border-green-700/60 bg-green-900/20 text-green-400'
+                      : 'border-red-700/60 bg-red-900/20 text-red-400'
+                  }`}
+                >
+                  {verifiedNotice.text}
+                </p>
               )}
             </section>
 

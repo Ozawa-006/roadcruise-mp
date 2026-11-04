@@ -31,6 +31,14 @@ const EN: Record<string, string> = {
   '联运组队：集合、语音协调、临时车队': 'Convoy planning: meetups, voice coordination, temporary VTCs',
   '公告优先：活动与更新第一时间推送': 'Announcements first: events and updates pushed instantly',
   '社区活动：截图分享、抽奖与语音活动': 'Community events: screenshot sharing, giveaways and voice events',
+  '如何获得「已验证」身份组？': 'How do I get the "Verified" role?',
+  '1. 加入 Discord 服务器': '1. Join the Discord server',
+  '2. 打开网站「账号设置」并连接 Discord': '2. Open Account Settings on the website and connect Discord',
+  '3. 绑定成功后会自动获得「已验证」，解锁社区频道。':
+    '3. After linking, you automatically receive "Verified" and unlock the community channels.',
+  '未验证时在 Discord 只能查看 #欢迎 / #规则 / #公告；网站职位对应的身份组会在绑定后自动同步。':
+    'Before verification you can only view #welcome / #rules / #announcements on Discord; your site position roles sync automatically after linking.',
+  '前往账号设置连接 Discord': 'Go to Account Settings to connect Discord',
   '常见问题': 'FAQ',
   '加入 Discord 需要付费吗？': 'Does joining Discord cost anything?',
   '不需要，Discord 账号与加入服务器都免费。': 'No. Both a Discord account and joining the server are free.',
@@ -202,6 +210,34 @@ export default async function DiscordPage() {
               </li>
             ))}
           </ul>
+        </section>
+
+        {/* 验证流程 */}
+        <section className="mt-6 rounded-xl border border-green-500/30 bg-green-500/5 p-6 shadow-lg">
+          <h2 className="text-lg font-bold text-white">{t('如何获得「已验证」身份组？')}</h2>
+          <ol className="mt-4 space-y-2 text-sm text-gray-300">
+            {[
+              t('1. 加入 Discord 服务器'),
+              t('2. 打开网站「账号设置」并连接 Discord'),
+              t('3. 绑定成功后会自动获得「已验证」，解锁社区频道。'),
+            ].map((line) => (
+              <li key={line} className="flex items-start gap-2">
+                <span className="mt-0.5 text-green-400">✓</span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-xs leading-relaxed text-gray-400">
+            {t(
+              '未验证时在 Discord 只能查看 #欢迎 / #规则 / #公告；网站职位对应的身份组会在绑定后自动同步。'
+            )}
+          </p>
+          <Link
+            href="/settings"
+            className="mt-4 inline-block rounded-lg bg-green-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-green-500"
+          >
+            {t('前往账号设置连接 Discord')} →
+          </Link>
         </section>
 
         {/* FAQ */}

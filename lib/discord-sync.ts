@@ -31,15 +31,17 @@ export async function syncUserDiscordRoles(userId: string): Promise<DiscordSyncR
   try {
     const supabase = serviceClient();
 
-    const [{ data: account }, { data: profile }, { data: mappings }] = await Promise.all([
-      supabase
-        .from('discord_accounts')
-        .select('user_id, discord_id, guild_member, guild_roles')
-        .eq('user_id', userId)
-        .maybeSingle(),
-      supabase.from('profiles').select('id, role, role_level').eq('id', userId).maybeSingle(),
-      supabase.from('discord_role_mappings').select('site_role, discord_role_id, enabled'),
-    ]);
+    const [{ data: account }, { data: profile }, { data: mappings }, { data: setting }] =
+      await Promise.all([
+        supabase
+          .from('discord_accounts')
+          .select('user_id, discord_id, guild_member, guild_roles')
+          .eq('user_id', userId)
+          .maybeSingle(),
+        supabase.from('profiles').select('id, role, role_level').eq('id', userId).maybeSingle(),
+        supabase.from('discord_role_mappings').select('site_role, discord_role_id, enabled'),
+        supabase.from('discord_settings').select('value').eq('key', 'verified_role_id').maybeSingle(),
+      ]);
 
     if (!account?.discord_id) {
       return { ...result, error: 'discord_not_linked' };
@@ -61,6 +63,18 @@ export async function syncUserDiscordRoles(userId: string): Promise<DiscordSyncR
     const enabledMappings = (mappings ?? []).filter((item) => item.enabled);
     const target = enabledMappings.find((item) => item.site_role === profile.role);
     const mappedRoleIds = new Set(enabledMappings.map((item) => item.discord_role_id));
+
+    // 已验证身份组（绑定后自动分配）
+    const verifiedRoleId = setting?.value?.trim();
+    if (verifiedRoleId && !currentRoles.has(verifiedRoleId)) {
+      try {
+        await addDiscordRole(account.discord_id, verifiedRoleId);
+        currentRoles.add(verifiedRoleId);
+        result.assigned.push(verifiedRoleId);
+      } catch {
+        /* 验证角色分配失败不阻塞站点角色同步 */
+      }
+    }
 
     // 分配目标角色
     if (target && !currentRoles.has(target.discord_role_id)) {

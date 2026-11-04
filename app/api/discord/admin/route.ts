@@ -50,15 +50,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const [{ data: mappings }, { data: accounts }, { data: siteRoles }] = await Promise.all([
-    supabase.from('discord_role_mappings').select('*').order('site_role'),
-    supabase
-      .from('discord_accounts')
-      .select('user_id, discord_id, username, global_name, guild_member, guild_roles, linked_at, profiles:user_id (display_name, role, role_level)')
-      .order('linked_at', { ascending: false })
-      .limit(100),
-    supabase.from('roles').select('name, display_name, level').order('level', { ascending: false }),
-  ]);
+  const [{ data: mappings }, { data: accounts }, { data: siteRoles }, { data: settings }] =
+    await Promise.all([
+      supabase.from('discord_role_mappings').select('*').order('site_role'),
+      supabase
+        .from('discord_accounts')
+        .select('user_id, discord_id, username, global_name, guild_member, guild_roles, linked_at, profiles:user_id (display_name, role, role_level)')
+        .order('linked_at', { ascending: false })
+        .limit(100),
+      supabase.from('roles').select('name, display_name, level').order('level', { ascending: false }),
+      supabase.from('discord_settings').select('key, value'),
+    ]);
 
   return NextResponse.json({
     ok: true,
@@ -70,6 +72,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     mappings: mappings ?? [],
     accounts: accounts ?? [],
     siteRoles: siteRoles ?? [],
+    settings: settings ?? [],
   });
 }
 
@@ -130,6 +133,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .delete()
       .eq('site_role', siteRole);
     if (error) return NextResponse.json({ ok: false, error: 'delete_failed' }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === 'create_role') {
+    if (!discordBotConfigured()) {
+      return NextResponse.json({ ok: false, error: 'bot_not_configured' }, { status: 503 });
+    }
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 100) : '';
+    if (!name) {
+      return NextResponse.json({ ok: false, error: 'invalid_payload' }, { status: 400 });
+    }
+    try {
+      const roleId = await createDiscordRole({ name });
+      return NextResponse.json({ ok: true, roleId, name });
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : 'create_failed' },
+        { status: 502 }
+      );
+    }
+  }
+
+  if (action === 'save_settings') {
+    const verifiedRoleId =
+      typeof body.verifiedRoleId === 'string' ? body.verifiedRoleId.trim() : '';
+    const { error } = await supabase.from('discord_settings').upsert(
+      {
+        key: 'verified_role_id',
+        value: verifiedRoleId || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    );
+    if (error) return NextResponse.json({ ok: false, error: 'save_failed' }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 

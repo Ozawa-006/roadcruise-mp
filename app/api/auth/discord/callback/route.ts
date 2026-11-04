@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
+  addDiscordRole,
   discordOAuthConfigured,
   exchangeDiscordCode,
   fetchDiscordMemberForUser,
@@ -82,7 +83,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     if (member) {
-      // 绑定成功后按映射同步一次身份组（失败不影响绑定）
+      // 绑定成功后：若配置了「已验证」身份组，自动分配
+      try {
+        const { data: verifiedSetting } = await supabase
+          .from('discord_settings')
+          .select('value')
+          .eq('key', 'verified_role_id')
+          .maybeSingle();
+        const verifiedRoleId = verifiedSetting?.value?.trim();
+        const currentRoles = member.roles ?? [];
+        if (verifiedRoleId && !currentRoles.includes(verifiedRoleId)) {
+          await addDiscordRole(user.id, verifiedRoleId);
+          await supabase
+            .from('discord_accounts')
+            .update({ guild_roles: [...currentRoles, verifiedRoleId] })
+            .eq('user_id', stateRow.user_id);
+        }
+      } catch {
+        /* 验证角色分配失败不影响绑定 */
+      }
+
+      // 按站点角色映射同步一次身份组（失败不影响绑定）
       try {
         await syncUserDiscordRoles(stateRow.user_id as string);
       } catch {

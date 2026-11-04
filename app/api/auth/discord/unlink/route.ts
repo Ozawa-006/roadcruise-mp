@@ -34,10 +34,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .maybeSingle();
 
   if (account && discordBotConfigured()) {
-    const { data: mappings } = await supabase
-      .from('discord_role_mappings')
-      .select('discord_role_id');
+    const [{ data: mappings }, { data: verifiedSetting }] = await Promise.all([
+      supabase.from('discord_role_mappings').select('discord_role_id'),
+      supabase.from('discord_settings').select('value').eq('key', 'verified_role_id').maybeSingle(),
+    ]);
     const mapped = new Set((mappings ?? []).map((item) => item.discord_role_id));
+    const verifiedRoleId = verifiedSetting?.value?.trim();
+    if (verifiedRoleId) mapped.add(verifiedRoleId);
     const roles: string[] = Array.isArray(account.guild_roles) ? account.guild_roles : [];
     for (const roleId of roles) {
       if (!mapped.has(roleId)) continue;
