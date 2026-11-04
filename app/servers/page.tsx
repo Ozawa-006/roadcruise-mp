@@ -334,13 +334,6 @@ function ServerCard({
                 <span className="font-mono text-gray-300">{status.version ?? '—'}</span>
               </span>
               <span className="text-gray-700">·</span>
-              <span>
-                {tr('协议')}{' '}
-                <span className="font-mono text-gray-300">
-                  {status.protocolVersion === null ? '—' : `v${status.protocolVersion}`}
-                </span>
-              </span>
-              <span className="text-gray-700">·</span>
               <span className="uppercase">{status.game ?? '—'}</span>
             </div>
 
