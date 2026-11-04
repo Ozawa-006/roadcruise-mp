@@ -27,11 +27,32 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.51v',
+    date: '2026-11-05',
+    title: '个人主页 Discord 绑定状态',
+    title_en: 'Discord linking status on profile',
+    highlight: true,
+    items: [
+      {
+        kind: 'fix',
+        text: '个人主页「Social Information」的 Discord 行改为读取真实绑定：显示 Discord 用户名、是否已加入服务器；未绑定显示「未绑定 →」并可跳转账号设置',
+      },
+      {
+        kind: 'feature',
+        text: 'Discord 身份组批量创建：后台 /admin/discord 可按站点职位一键创建 Discord 身份组，已存在自动跳过',
+      },
+    ],
+    items_en: [
+      'The Discord row in Social Information on your profile now reads the real link: shows the Discord username and guild membership; unlinked shows "Not linked →" with a link to settings',
+      'Discord role batch creation: /admin/discord can create Discord roles from site positions in one click, skipping existing names',
+    ],
+  },
+  {
     version: '0.0.50v',
     date: '2026-11-02',
     title: 'Discord 账号绑定与身份组同步',
     title_en: 'Discord account linking and role sync',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
