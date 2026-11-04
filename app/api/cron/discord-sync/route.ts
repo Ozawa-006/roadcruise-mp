@@ -53,3 +53,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     results,
   });
 }
+
+/** pg_net 用 POST 调用，Vercel Cron 用 GET；两者行为一致。 */
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  return GET(request);
+}
