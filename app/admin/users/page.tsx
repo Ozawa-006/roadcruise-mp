@@ -11,6 +11,7 @@ import {
   ROLE_LEVEL,
   canManageUsers,
   levelOf,
+  roleColor,
   roleLabel,
   roleLabelEn,
 } from '@/lib/permissions';
@@ -56,20 +57,26 @@ const EN: Record<string, string> = {
   '成员名称': 'Member',
   '原始 ID': 'Original ID',
   '专属靓号': 'Custom ID',
-  '当前职位': 'Role',
+  '当前职位': 'Roles',
   '操作': 'Actions',
   '未命名': 'Unnamed',
   '未分配': 'Unassigned',
   '留空撤回': 'Leave blank to clear',
 
-  // ---------- 编辑职位 ----------
-  '选择职位...': 'Select a role...',
-  '不能修改自己的职位/等级': 'You cannot change your own role or level',
-  '不能修改自己的职位/等级（可改靓号）':
-    'You cannot change your own role or level (the custom ID is still editable)',
+  // ---------- 编辑职位（多选，最多 MAX_ROLES 个） ----------
+  '职位': 'Roles',
+  '已选 {count}/{max}': 'Selected {count}/{max}',
+  '最多选择 {max} 个职位，至少保留 1 个':
+    'Select up to {max} roles; at least one is required.',
+  '最多选择 {max} 个职位': 'You can select up to {max} roles.',
+  '至少保留 1 个职位': 'At least one role is required.',
+  '该职位等级不低于你，无法授予': 'You cannot grant a role at or above your level.',
+  '不能修改自己的职位（可改靓号）':
+    'You cannot change your own roles (the custom ID is still editable)',
   '搜索职位...': 'Search roles...',
   '搜索职位': 'Search roles',
   '无匹配职位 (请检查 Supabase 数据库)': 'No matching roles (check the Supabase database)',
+  '保存中...': 'Saving...',
   '保存': 'Save',
   '取消': 'Cancel',
   '编辑': 'Edit',
@@ -81,8 +88,8 @@ const EN: Record<string, string> = {
 
   // ---------- 操作提示 / 确认框 ----------
   '靓号必须是 4-8 位数字': 'The custom ID must be 4-8 digits.',
-  '❌ 不能修改自己的职位或等级（防止误操作导致失去管理权限）。如需变更请联系其他开发者。':
-    '❌ You cannot change your own role or level (this prevents accidentally losing admin access). Ask another developer to make the change.',
+  '❌ 至少保留 1 个职位': '❌ At least one role is required.',
+  '❌ 一个账号最多只能拥有 4 个职位': '❌ An account can have at most 4 roles.',
   '❌ 职位列表未加载或该职位不存在，暂时无法修改职位，请刷新页面后重试。':
     '❌ The role list is not loaded or this role does not exist, so the role cannot be changed. Refresh the page and try again.',
   '❌ 权限不足：你不能修改同级或上级的职位！':
@@ -102,8 +109,16 @@ const supabase = createClient(
 const PAGE_SIZE = 50;
 // 页码窗口：当前页前后各 2 页，首尾页始终显示
 const PAGE_WINDOW = 2;
+// 一个用户最多拥有的职位数：与数据库 profile_roles 的 trg_profile_roles_max 保持一致
+const MAX_ROLES = 4;
 
-const ROLE_COLUMNS = 'name,display_name,level,department';
+const ROLE_COLUMNS = 'name,display_name,level,color';
+
+/** profiles.role / profiles.role_level 是「最高职位」，profile_roles 保存全部职位。 */
+interface UserRole {
+  role: string;
+  level: number;
+}
 
 interface UserRow {
   id: string;
@@ -112,13 +127,21 @@ interface UserRow {
   custom_id: string | null;
   role: string | null;
   role_level: number;
+  /** 全部职位（level 降序）；无 profile_roles 时回退为 profiles.role。 */
+  roles: UserRole[];
 }
 
 interface RoleRow {
   name: string;
   display_name: string;
   level: number;
-  department: string | null;
+  color: string | null;
+}
+
+interface ProfileRoleRow {
+  user_id: string;
+  role: string;
+  level: number;
 }
 
 interface CurrentProfile {
@@ -159,12 +182,43 @@ function toUserRow(raw: unknown): UserRow | null {
     custom_id: asText(raw.custom_id),
     role: asText(raw.role),
     role_level: asLevel(raw.role_level),
+    roles: [],
   };
 }
 
 function toUserRows(data: unknown): UserRow[] {
   if (!Array.isArray(data)) return [];
   return data.map(toUserRow).filter((row): row is UserRow => row !== null);
+}
+
+/** profile_roles 查询结果（仅取展示需要的字段）。 */
+function toProfileRoleRow(raw: unknown): ProfileRoleRow | null {
+  if (!isRecord(raw)) return null;
+
+  const userId = asText(raw.user_id);
+  const role = asText(raw.role);
+  if (!userId || !role) return null;
+
+  return { user_id: userId, role, level: asLevel(raw.level) };
+}
+
+function toProfileRoleRows(data: unknown): ProfileRoleRow[] {
+  if (!Array.isArray(data)) return [];
+  return data
+    .map(toProfileRoleRow)
+    .filter((row): row is ProfileRoleRow => row !== null);
+}
+
+/** 没有 profile_roles 记录时的回退：profiles.role 即最高职位。 */
+function primaryRolesOf(user: UserRow): UserRole[] {
+  return user.role ? [{ role: user.role, level: user.role_level }] : [];
+}
+
+/** 职位按等级降序；同等级按名称排序，保证展示顺序稳定。 */
+function sortRolesDesc(items: UserRole[]): UserRole[] {
+  return items
+    .slice()
+    .sort((left, right) => right.level - left.level || left.role.localeCompare(right.role));
 }
 
 function toRoleRow(raw: unknown): RoleRow | null {
@@ -177,7 +231,7 @@ function toRoleRow(raw: unknown): RoleRow | null {
     name,
     display_name: asText(raw.display_name) ?? name,
     level: asLevel(raw.level),
-    department: asText(raw.department),
+    color: asText(raw.color),
   };
 }
 
@@ -249,13 +303,12 @@ export default function UserManagementPage() {
   const [roleFilter, setRoleFilter] = useState('all');
 
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editRole, setEditRole] = useState('');
-  const [editLevel, setEditLevel] = useState(10);
+  // 多职位编辑：只保存职位名数组，等级一律由 roles.level 决定
+  const [editRoles, setEditRoles] = useState<string[]>([]);
   const [editCustomId, setEditCustomId] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [roleSearch, setRoleSearch] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const listTopRef = useRef<HTMLElement>(null);
 
   // 权限门禁：未登录 -> /login；低于 Lv.70 -> alert + /admin
@@ -332,18 +385,6 @@ export default function UserManagementPage() {
     };
   }, [router]);
 
-  // 点击外部关闭职位下拉
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsRoleDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // 服务端分页：只取当前页（50 条）+ 精确总数
   useEffect(() => {
     if (!currentUser) return;
@@ -390,8 +431,51 @@ export default function UserManagementPage() {
         }
 
         const rows = toUserRows(data);
+
+        // 第二次查询聚合全部职位：不依赖 PostgREST embed 的关系名，
+        // 避免 profiles / profile_roles 的关系推断在环境间不一致。
+        const rolesByUser = new Map<string, UserRole[]>();
+        if (rows.length > 0) {
+          const { data: roleData, error: roleError } = await supabase
+            .from('profile_roles')
+            .select('user_id,role,level')
+            .in(
+              'user_id',
+              rows.map((row) => row.id)
+            );
+
+          if (cancelled) return;
+
+          if (roleError) {
+            // 多职位查询失败时降级为 profiles.role，至少保证列表可用
+            console.error(
+              '拉取用户职位失败，将回退到 profiles.role：',
+              roleError.message
+            );
+          } else {
+            for (const item of toProfileRoleRows(roleData)) {
+              const list = rolesByUser.get(item.user_id) ?? [];
+              list.push({ role: item.role, level: item.level });
+              rolesByUser.set(item.user_id, list);
+            }
+          }
+        }
+
+        if (cancelled) return;
+
+        const enrichedRows = rows.map((row) => {
+          const profileRoles = rolesByUser.get(row.id);
+          return {
+            ...row,
+            roles:
+              profileRoles && profileRoles.length > 0
+                ? sortRolesDesc(profileRoles)
+                : primaryRolesOf(row),
+          };
+        });
+
         const nextTotal = typeof count === 'number' ? count : from + rows.length;
-        setUsers(rows);
+        setUsers(enrichedRows);
         setTotal(nextTotal);
 
         // 越界回退：删除/筛选导致总数变少时回到最后一页
@@ -453,13 +537,28 @@ export default function UserManagementPage() {
 
   const handleEditClick = (user: UserRow) => {
     setEditingId(user.id);
-    setEditRole(user.role || 'member');
-    setEditLevel(levelOf(user.role_level));
+    // 回填当前全部职位；历史数据没有 profile_roles 时回退 profiles.role
+    const currentRoles = user.roles.length > 0 ? user.roles.map((item) => item.role) : [];
+    setEditRoles(currentRoles.length > 0 ? currentRoles : [user.role || 'member']);
     setEditCustomId(user.custom_id || '');
     setRoleSearch('');
   };
 
+  /** 勾选/取消职位：最多 MAX_ROLES 个，至少保留 1 个。 */
+  const toggleEditRole = (name: string) => {
+    setEditRoles((previous) => {
+      if (previous.includes(name)) {
+        if (previous.length <= 1) return previous;
+        return previous.filter((item) => item !== name);
+      }
+      if (previous.length >= MAX_ROLES) return previous;
+      return [...previous, name];
+    });
+  };
+
   const handleSave = async (targetUser: UserRow) => {
+    if (saving) return;
+
     // 0) 靓号格式校验：非空时必须是 4-8 位数字（与数据库 profiles_custom_id_format 约束一致）
     const trimmedCustomId = editCustomId.trim();
     if (trimmedCustomId !== '' && !/^[0-9]{4,8}$/.test(trimmedCustomId)) {
@@ -472,72 +571,118 @@ export default function UserManagementPage() {
     const isSelf = targetUser.id === currentUser?.id;
     // 开发者 (Lv.100) 可操作除自己以外的所有人
     const isDeveloper = myLevel >= ROLE_LEVEL.DEVELOPER;
+    const nextCustomId = trimmedCustomId === '' ? null : trimmedCustomId;
+    const customIdChanged = (targetUser.custom_id ?? null) !== nextCustomId;
 
-    // 1) 禁止修改自己的职位/等级：
-    //    把自己从 100 降级会直接让社区失去最高管理员（且无法再改回来），属于不可逆误操作。
-    //    这里仍允许改自己的靓号，但 role / role_level 必须保持不变；开发者权限转移请由另一位开发者操作。
-    if (isSelf && (editRole !== (targetUser.role || 'member') || editLevel !== targetLevel)) {
-      alert(tr('❌ 不能修改自己的职位或等级（防止误操作导致失去管理权限）。如需变更请联系其他开发者。'));
-      return;
-    }
+    setSaving(true);
 
-    // 2) role 与 role_level 必须保持一致：改职位/等级时以 roles 表的 level 为准，
-    //    避免出现 role=developer 但 role_level=40 这类「显示开发者、实际无权限」的组合。
-    const currentRole = targetUser.role || 'member';
-    const roleChanged = editRole !== currentRole;
-    const levelChanged = editLevel !== targetLevel;
-    const roleDef = roles.find((role) => role.name === editRole);
+    try {
+      // 1) 自己的记录只允许改靓号：职位始终不写，避免误操作让自己失去管理权限。
+      //    开发者权限转移请由另一位开发者操作。
+      if (isSelf) {
+        if (!customIdChanged) {
+          setEditingId(null);
+          return;
+        }
 
-    // roles 表未加载或该职位不存在时，禁止改职位（避免写入任意 role 字符串造成脏数据）
-    if (!roleDef && roleChanged) {
-      alert(tr('❌ 职位列表未加载或该职位不存在，暂时无法修改职位，请刷新页面后重试。'));
-      return;
-    }
+        const { error } = await supabase
+          .from('profiles')
+          .update({ custom_id: nextCustomId })
+          .eq('id', targetUser.id);
 
-    // 只改靓号（职位与等级都没变）时保持原等级不动，避免误改历史数据；
-    // 只要动过职位或等级，role_level 就跟随 roles.level。
-    const nextRole = roleDef ? roleDef.name : currentRole;
-    const nextLevel = roleDef && (roleChanged || levelChanged) ? levelOf(roleDef.level) : targetLevel;
+        if (error) {
+          alert(tr('保存失败: {msg}', { msg: error.message }));
+          return;
+        }
 
-    if (!isSelf) {
-      // 3) 不能修改同级或上级；开发者除外
+        setEditingId(null);
+        setReloadToken((value) => value + 1);
+        return;
+      }
+
+      // 2) 至少 1 个、最多 4 个职位（数据库触发器同样会兜底拦截 > 4）
+      if (editRoles.length === 0) {
+        alert(tr('❌ 至少保留 1 个职位'));
+        return;
+      }
+      if (editRoles.length > MAX_ROLES) {
+        alert(tr('❌ 一个账号最多只能拥有 4 个职位'));
+        return;
+      }
+
+      // 3) 职位必须存在于 roles 表，等级以 roles.level 为准，禁止写入任意 role 字符串
+      const roleDefs = editRoles
+        .map((name) => roles.find((role) => role.name === name))
+        .filter((role): role is RoleRow => role !== undefined);
+      if (roleDefs.length !== editRoles.length) {
+        alert(tr('❌ 职位列表未加载或该职位不存在，暂时无法修改职位，请刷新页面后重试。'));
+        return;
+      }
+      const nextLevel = roleDefs.reduce(
+        (max, role) => Math.max(max, levelOf(role.level)),
+        0
+      );
+
+      // 4) 不能修改同级或上级；开发者除外
       if (!isDeveloper && targetLevel >= myLevel) {
         alert(tr('❌ 权限不足：你不能修改同级或上级的职位！'));
         return;
       }
 
-      // 4) 不能授予同级或更高职位；开发者除外
+      // 5) 不能授予同级或更高职位；开发者除外
       if (!isDeveloper && nextLevel >= myLevel) {
         alert(tr('❌ 权限不足：你不能授予别人同级或更高的职位！'));
         return;
       }
 
-      // 5) 降级另一位开发者属于高危操作，要求二次确认
+      // 6) 降级另一位开发者属于高危操作，要求二次确认
       if (targetLevel >= ROLE_LEVEL.DEVELOPER && nextLevel < targetLevel) {
         if (!confirm(tr('⚠️ 你正在降级另一位开发者，确定继续吗？此操作可能影响社区最高管理权限。'))) {
           return;
         }
       }
-    }
 
-    // 自己的记录只更新靓号，绝不回写 role / role_level：
-    // 即使 roles 表中的等级与历史脏数据不一致，也不会因为改靓号而意外改变自己的权限。
-    const customId = editCustomId.trim() === '' ? null : editCustomId.trim();
-    const updatePayload = isSelf
-      ? { custom_id: customId }
-      : { role: nextRole, role_level: nextLevel, custom_id: customId };
+      // 7) 职位有变化时调用 RPC：由数据库写 profile_roles 并同步 profiles 的最高职位，
+      //    不再直接 update profiles.role / role_level（避免 role 与 role_level 不一致）。
+      const currentRoles = targetUser.roles.map((item) => item.role);
+      const rolesChanged =
+        currentRoles.length !== editRoles.length ||
+        editRoles.some((name) => !currentRoles.includes(name));
 
-    const { error } = await supabase
-      .from('profiles')
-      .update(updatePayload)
-      .eq('id', targetUser.id);
+      if (rolesChanged) {
+        const { error } = await supabase.rpc('rct_set_user_roles', {
+          p_user: targetUser.id,
+          p_roles: editRoles,
+        });
 
-    if (error) {
-      alert(tr('保存失败: {msg}', { msg: error.message }));
-    } else {
+        if (error) {
+          alert(tr('保存失败: {msg}', { msg: error.message }));
+          return;
+        }
+      }
+
+      // 8) 靓号单独更新，不触碰 role / role_level
+      if (customIdChanged) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ custom_id: nextCustomId })
+          .eq('id', targetUser.id);
+
+        if (error) {
+          alert(tr('保存失败: {msg}', { msg: error.message }));
+          // 职位已写入成功，刷新列表让界面与数据库保持一致
+          setReloadToken((value) => value + 1);
+          return;
+        }
+      }
+
       setEditingId(null);
       // 保存后刷新当前页（保持页码与筛选条件）
       setReloadToken((value) => value + 1);
+    } catch (error) {
+      alert(tr('保存失败: {msg}', { msg: tr(errorMessage(error)) }));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -565,21 +710,29 @@ export default function UserManagementPage() {
     );
   };
 
-  // 编辑下拉 / 职位筛选里的职位名（英文同样用 roleLabelEn）。
+  // 编辑职位 / 职位筛选里的职位名（英文同样用 roleLabelEn）。
   const labelForRoleOption = (name: string, level: number) => {
     if (locale === 'en') return roleLabelEn(name, levelOf(level));
     return ROLE_LABELS[name] || roles.find((item) => item.name === name)?.display_name || name;
   };
 
-  // 非开发者最多只能授予「严格低于自己」的职位，避免越级提拔
-  const allowedRoles = roles.filter((role) => isDeveloper || levelOf(role.level) < myLevel);
-  const roleSearchTerm = roleSearch.toLowerCase();
-  const filteredRoles = allowedRoles.filter(
-    (role) =>
-      labelForRoleOption(role.name, role.level).toLowerCase().includes(roleSearchTerm) ||
-      (ROLE_LABELS[role.name] || role.display_name || '').toLowerCase().includes(roleSearchTerm) ||
-      role.name.toLowerCase().includes(roleSearchTerm)
-  );
+  // 职位颜色：优先 roles.color（与 Discord 身份组一致），缺失时按标准角色/等级回退。
+  const colorForRole = (name: string, level: number): string => {
+    const roleDef = roles.find((item) => item.name === name);
+    return roleDef?.color?.trim() || roleColor(name, level);
+  };
+
+  // 多选面板展示全部职位（按 level 降序）；等级不满足授予条件的职位禁用而不是隐藏。
+  const roleSearchTerm = roleSearch.trim().toLowerCase();
+  const filteredRoles = roles
+    .filter(
+      (role) =>
+        roleSearchTerm === '' ||
+        labelForRoleOption(role.name, role.level).toLowerCase().includes(roleSearchTerm) ||
+        (ROLE_LABELS[role.name] || role.display_name || '').toLowerCase().includes(roleSearchTerm) ||
+        role.name.toLowerCase().includes(roleSearchTerm)
+    )
+    .sort((left, right) => right.level - left.level || left.name.localeCompare(right.name));
 
   return (
     <main className="min-h-screen bg-[#18191c] p-4 font-sans text-gray-300 md:p-10">
@@ -729,6 +882,11 @@ export default function UserManagementPage() {
                     const isSelfRow = user.id === currentUser?.id;
                     const isEditingRow = editingId === user.id;
                     const canEditRow = isSelfRow || isDeveloper || myLevel > rowLevel;
+                    // 主职位 = profiles.role（由触发器维护为最高职位）；数据不一致时取列表第一个
+                    const primaryRoleName =
+                      user.role && user.roles.some((item) => item.role === user.role)
+                        ? user.role
+                        : user.roles[0]?.role;
 
                     return (
                       <article
@@ -782,98 +940,157 @@ export default function UserManagementPage() {
                           <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 lg:hidden">
                             {tr('当前职位')}
                           </span>
-                          {isEditingRow ? (
-                            <div className="relative w-full lg:w-48" ref={dropdownRef}>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  !isSelfRow && setIsRoleDropdownOpen(!isRoleDropdownOpen)
-                                }
-                                disabled={isSelfRow}
-                                title={isSelfRow ? tr('不能修改自己的职位/等级') : undefined}
-                                className={`flex w-full items-center justify-between gap-2 rounded border border-blue-500 bg-[#18191c] px-3 py-1.5 text-left text-sm text-white ${
-                                  isSelfRow ? 'cursor-not-allowed opacity-60' : ''
-                                }`}
-                              >
-                                <span className="truncate">
-                                  {editRole
-                                    ? labelForRoleOption(editRole, editLevel)
-                                    : tr('选择职位...')}
+                          {isEditingRow && !isSelfRow ? (
+                            <div className="w-full space-y-2 rounded border border-blue-500/60 bg-[#18191c] p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                                  {tr('职位')}
                                 </span>
-                                <span className="text-xs text-gray-500">▼</span>
-                              </button>
-                              {isSelfRow && (
-                                <p className="mt-1 text-[10px] text-yellow-500/80">
-                                  {tr('不能修改自己的职位/等级（可改靓号）')}
-                                </p>
-                              )}
+                                <span
+                                  className={`font-mono text-[10px] ${
+                                    editRoles.length >= MAX_ROLES
+                                      ? 'text-yellow-400'
+                                      : 'text-gray-400'
+                                  }`}
+                                >
+                                  {tr('已选 {count}/{max}', {
+                                    count: editRoles.length,
+                                    max: MAX_ROLES,
+                                  })}
+                                </span>
+                              </div>
 
-                              {isRoleDropdownOpen && !isSelfRow && (
-                                <div className="absolute right-0 top-full z-50 mt-1 flex w-64 max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded border border-gray-600 bg-[#222] shadow-2xl lg:left-0 lg:right-auto">
-                                  <div className="border-b border-gray-700 p-2">
-                                    <input
-                                      type="text"
-                                      value={roleSearch}
-                                      onChange={(event) => setRoleSearch(event.target.value)}
-                                      placeholder={tr('搜索职位...')}
-                                      aria-label={tr('搜索职位')}
-                                      className="w-full rounded border border-gray-600 bg-[#111] p-1.5 text-xs text-white focus:outline-none"
-                                      autoFocus
-                                    />
-                                  </div>
-                                  <div className="max-h-60 overflow-y-auto">
-                                    {filteredRoles.length === 0 ? (
-                                      <p className="py-2 text-center text-xs text-gray-500">
-                                        {tr('无匹配职位 (请检查 Supabase 数据库)')}
-                                      </p>
-                                    ) : (
-                                      filteredRoles.map((role) => (
-                                        <div
-                                          key={role.name}
-                                          onClick={() => {
-                                            setEditRole(role.name);
-                                            // role_level 直接取 roles.level，保证 role 与 role_level 一致
-                                            setEditLevel(levelOf(role.level));
-                                            setIsRoleDropdownOpen(false);
-                                          }}
-                                          className={`cursor-pointer px-3 py-2 text-sm transition hover:bg-blue-600 hover:text-white ${
-                                            editRole === role.name
-                                              ? 'bg-[#333] font-bold text-blue-400'
-                                              : 'text-gray-300'
-                                          }`}
-                                        >
-                                          <div className="flex justify-between">
-                                            <span>{labelForRoleOption(role.name, role.level)}</span>
-                                            <span className="text-xs opacity-50">
-                                              Lv.{levelOf(role.level)}
-                                            </span>
-                                          </div>
-                                          <span className="text-[10px] opacity-40">
-                                            {role.department}
-                                          </span>
-                                        </div>
-                                      ))
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                              <input
+                                type="text"
+                                value={roleSearch}
+                                onChange={(event) => setRoleSearch(event.target.value)}
+                                placeholder={tr('搜索职位...')}
+                                aria-label={tr('搜索职位')}
+                                className="w-full rounded border border-gray-600 bg-[#111] p-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+                              />
+
+                              <div className="max-h-48 space-y-0.5 overflow-y-auto pr-1">
+                                {filteredRoles.length === 0 ? (
+                                  <p className="py-2 text-center text-xs text-gray-500">
+                                    {tr('无匹配职位 (请检查 Supabase 数据库)')}
+                                  </p>
+                                ) : (
+                                  filteredRoles.map((role) => {
+                                    const roleLevel = levelOf(role.level);
+                                    const selected = editRoles.includes(role.name);
+                                    const grantable = isDeveloper || roleLevel < myLevel;
+                                    const cannotUnselect = selected && editRoles.length <= 1;
+                                    const cannotSelect =
+                                      !selected &&
+                                      (!grantable || editRoles.length >= MAX_ROLES);
+                                    const disabled = cannotUnselect || cannotSelect;
+                                    const dotColor = colorForRole(role.name, roleLevel);
+
+                                    let hint: string | undefined;
+                                    if (cannotUnselect) {
+                                      hint = tr('至少保留 1 个职位');
+                                    } else if (cannotSelect && !grantable) {
+                                      hint = tr('该职位等级不低于你，无法授予');
+                                    } else if (cannotSelect) {
+                                      hint = tr('最多选择 {max} 个职位', { max: MAX_ROLES });
+                                    }
+
+                                    return (
+                                      <label
+                                        key={role.name}
+                                        title={hint}
+                                        className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs transition ${
+                                          selected
+                                            ? 'bg-blue-900/30 text-white'
+                                            : 'text-gray-300'
+                                        } ${
+                                          disabled
+                                            ? 'cursor-not-allowed opacity-50'
+                                            : 'cursor-pointer hover:bg-[#2a2b2f]'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={selected}
+                                          disabled={disabled}
+                                          onChange={() => toggleEditRole(role.name)}
+                                          className="h-3.5 w-3.5 shrink-0 accent-blue-500"
+                                        />
+                                        <span
+                                          className="h-2 w-2 shrink-0 rounded-full"
+                                          style={{ backgroundColor: dotColor }}
+                                        />
+                                        <span className="min-w-0 flex-1 truncate">
+                                          {labelForRoleOption(role.name, role.level)}
+                                        </span>
+                                        <span className="shrink-0 font-mono text-[10px] text-gray-500">
+                                          Lv.{roleLevel}
+                                        </span>
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+
+                              <p className="text-[10px] leading-relaxed text-gray-500">
+                                {tr('最多选择 {max} 个职位，至少保留 1 个', {
+                                  max: MAX_ROLES,
+                                })}
+                              </p>
                             </div>
                           ) : (
-                            <span
-                              className={`inline-flex items-center rounded border px-2 py-1 text-xs ${
-                                rowLevel >= ROLE_LEVEL.SENIOR_MANAGER
-                                  ? 'border-red-700 bg-red-900/30 text-red-500'
-                                  : rowLevel >= ROLE_LEVEL.MANAGER
-                                    ? 'border-purple-700 bg-purple-900/30 text-purple-400'
-                                    : rowLevel >= ROLE_LEVEL.STAFF
-                                      ? 'border-yellow-700 bg-yellow-900/30 text-yellow-400'
-                                      : rowLevel >= ROLE_LEVEL.MEMBER
-                                        ? 'border-blue-700 bg-blue-900/30 text-blue-400'
-                                        : 'border-gray-600 bg-gray-800 text-gray-400'
-                              }`}
-                            >
-                              {labelForRole(user.role, rowLevel)}
-                            </span>
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap gap-1">
+                                {user.roles.length > 0 ? (
+                                  user.roles.map((item) => {
+                                    const itemLevel = levelOf(item.level);
+                                    const dotColor = colorForRole(item.role, itemLevel);
+                                    const isPrimary = item.role === primaryRoleName;
+
+                                    return (
+                                      <span
+                                        key={item.role}
+                                        title={tr('{name}（Lv.{level}）', {
+                                          name: labelForRole(item.role, itemLevel),
+                                          level: itemLevel,
+                                        })}
+                                        className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs ${
+                                          isPrimary ? 'bg-white/10 font-bold' : 'bg-white/5'
+                                        }`}
+                                        style={{ borderColor: dotColor, color: dotColor }}
+                                      >
+                                        <span
+                                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                          style={{ backgroundColor: dotColor }}
+                                        />
+                                        {labelForRole(item.role, itemLevel)}
+                                      </span>
+                                    );
+                                  })
+                                ) : (
+                                  <span
+                                    className={`inline-flex items-center rounded border px-2 py-1 text-xs ${
+                                      rowLevel >= ROLE_LEVEL.SENIOR_MANAGER
+                                        ? 'border-red-700 bg-red-900/30 text-red-500'
+                                        : rowLevel >= ROLE_LEVEL.MANAGER
+                                          ? 'border-purple-700 bg-purple-900/30 text-purple-400'
+                                          : rowLevel >= ROLE_LEVEL.STAFF
+                                            ? 'border-yellow-700 bg-yellow-900/30 text-yellow-400'
+                                            : rowLevel >= ROLE_LEVEL.MEMBER
+                                              ? 'border-blue-700 bg-blue-900/30 text-blue-400'
+                                              : 'border-gray-600 bg-gray-800 text-gray-400'
+                                    }`}
+                                  >
+                                    {labelForRole(user.role, rowLevel)}
+                                  </span>
+                                )}
+                              </div>
+                              {isEditingRow && isSelfRow && (
+                                <p className="text-[10px] text-yellow-500/80">
+                                  {tr('不能修改自己的职位（可改靓号）')}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
 
@@ -886,14 +1103,16 @@ export default function UserManagementPage() {
                               <button
                                 type="button"
                                 onClick={() => void handleSave(user)}
-                                className="rounded bg-green-600 px-3 py-1 text-sm text-white transition hover:bg-green-500"
+                                disabled={saving}
+                                className="rounded bg-green-600 px-3 py-1 text-sm text-white transition hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                {tr('保存')}
+                                {saving ? tr('保存中...') : tr('保存')}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setEditingId(null)}
-                                className="text-sm text-gray-400 transition hover:text-white"
+                                disabled={saving}
+                                className="text-sm text-gray-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 {tr('取消')}
                               </button>

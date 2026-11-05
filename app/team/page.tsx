@@ -9,7 +9,8 @@ import { createClient } from '@supabase/supabase-js';
 import { useTr, useLocale } from '../../components/I18nProvider';
 import Navbar from '../../components/Navbar';
 import { DISCORD_INVITE_URL } from '../../lib/discord';
-import { roleColor, roleLabelEn } from '../../lib/permissions';
+import { roleColor, roleLabel, roleLabelEn } from '../../lib/permissions';
+import type { Locale } from '../../lib/i18n';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -157,6 +158,24 @@ interface MemberRow {
   /** 公开自定义 ID；本页只查询不展示。 */
   custom_id: string | null;
 }
+
+/** profile_roles 聚合行：一个成员最多 4 个职位。 */
+interface MemberRoleRow {
+  user_id: string;
+  role: string;
+  level: number;
+}
+
+interface RoleBadge {
+  key: string;
+  label: string;
+  level: number;
+  color: string;
+  primary: boolean;
+}
+
+/** 与数据库触发器一致：一个账号最多 4 个职位。 */
+const MAX_MEMBER_ROLES = 4;
 
 interface TierInfo {
   label: string;
@@ -340,6 +359,75 @@ function initialOf(name: string): string {
   return trimmed ? trimmed.slice(0, 1).toUpperCase() : '?';
 }
 
+/** 只保留合法的 profile_roles 行，避免接口异常时渲染出错。 */
+function toMemberRoleRows(data: unknown): MemberRoleRow[] {
+  if (!Array.isArray(data)) return [];
+  const rows: MemberRoleRow[] = [];
+  for (const item of data) {
+    if (typeof item !== 'object' || item === null) continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.user_id !== 'string' || !row.user_id.trim()) continue;
+    if (typeof row.role !== 'string' || !row.role.trim()) continue;
+    rows.push({
+      user_id: row.user_id,
+      role: row.role.trim(),
+      level: typeof row.level === 'number' ? row.level : 0,
+    });
+  }
+  return rows;
+}
+
+/** 职位展示名：优先 roles.display_name 的中英部分，缺失回退 roleLabel / roleLabelEn。 */
+function roleDisplayLabel(
+  role: string,
+  level: number,
+  roleByName: ReadonlyMap<string, RoleRow>,
+  locale: Locale
+): string {
+  const meta = roleByName.get(role);
+  if (meta) {
+    const parts = splitDisplayName(meta.display_name);
+    const localized = locale === 'en' ? parts.en || roleLabelEn(role, meta.level) : parts.zh;
+    if (localized) return localized;
+  }
+  return locale === 'en' ? roleLabelEn(role, level) : roleLabel(role, level);
+}
+
+/**
+ * 成员多职位徽章：profile_roles 按 level 降序（主职位在最前），最多 4 个；
+ * 没有记录时回退 profiles.role / role_level，连主职位都没有则返回空（卡片显示「未分配职位」）。
+ */
+function memberRoleBadges(
+  member: MemberRow,
+  roleRows: readonly MemberRoleRow[] | undefined,
+  roleByName: ReadonlyMap<string, RoleRow>,
+  locale: Locale
+): RoleBadge[] {
+  const seen = new Set<string>();
+  const picked: { role: string; level: number }[] = [];
+  for (const row of [...(roleRows ?? [])].sort((a, b) => b.level - a.level)) {
+    const role = row.role.trim();
+    if (!role || seen.has(role)) continue;
+    seen.add(role);
+    picked.push({ role, level: row.level });
+    if (picked.length >= MAX_MEMBER_ROLES) break;
+  }
+
+  if (picked.length === 0) {
+    const fallback = member.role?.trim();
+    if (!fallback) return [];
+    picked.push({ role: fallback, level: member.role_level ?? 0 });
+  }
+
+  return picked.map((row, index) => ({
+    key: row.role,
+    label: roleDisplayLabel(row.role, row.level, roleByName, locale),
+    level: row.level,
+    color: roleColor(row.role, row.level),
+    primary: index === 0,
+  }));
+}
+
 function errorMessageOf(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   if (error && typeof error === 'object' && 'message' in error) {
@@ -422,7 +510,15 @@ function SteamBadge() {
   );
 }
 
-function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: string }) {
+function MemberCard({
+  member,
+  roleLabel,
+  roleBadges,
+}: {
+  member: MemberRow;
+  roleLabel: string;
+  roleBadges: readonly RoleBadge[];
+}) {
   const tr = useTr(EN);
   const name = member.display_name?.trim() || tr('未命名成员');
   // 身份展示配色：部门职位文字与角色徽章边框 / 文字使用同一个角色颜色。
@@ -451,7 +547,28 @@ function MemberCard({ member, roleLabel }: { member: MemberRow; roleLabel: strin
 
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-black text-white">{name}</p>
-          <p className="mt-0.5 truncate text-xs" style={{ color: accent }}>{roleLabel}</p>
+          {roleBadges.length > 0 ? (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {roleBadges.map((badge) => (
+                <span
+                  key={badge.key}
+                  title={badge.level > 0 ? `Lv.${badge.level}` : undefined}
+                  className={`inline-flex items-center rounded border px-1.5 py-0.5 ${
+                    badge.primary ? 'text-xs font-bold' : 'text-[10px] font-medium'
+                  }`}
+                  style={{
+                    borderColor: `${badge.color}66`,
+                    backgroundColor: `${badge.color}1a`,
+                    color: badge.color,
+                  }}
+                >
+                  {badge.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-0.5 truncate text-xs text-gray-400">{roleLabel}</p>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {member.role_level == null ? (
               <span className="rounded border border-gray-600 bg-[#18191c] px-1.5 py-0.5 text-[10px] font-bold text-gray-400">
@@ -477,10 +594,12 @@ function DepartmentCard({
   department,
   members,
   roleByName,
+  rolesByMember,
 }: {
   department: string;
   members: MemberRow[];
   roleByName: ReadonlyMap<string, RoleRow>;
+  rolesByMember: ReadonlyMap<string, MemberRoleRow[]>;
 }) {
   const tr = useTr(EN);
   const locale = useLocale();
@@ -533,7 +652,20 @@ function DepartmentCard({
                   ? roleLabelEn(member.role, 0)
                   : member.role.trim()
                 : tr('未分配职位');
-            return <MemberCard key={member.id} member={member} roleLabel={roleText} />;
+            const roleBadges = memberRoleBadges(
+              member,
+              rolesByMember.get(member.id),
+              roleByName,
+              locale
+            );
+            return (
+              <MemberCard
+                key={member.id}
+                member={member}
+                roleLabel={roleText}
+                roleBadges={roleBadges}
+              />
+            );
           })}
         </div>
       )}
@@ -637,6 +769,8 @@ export default function TeamPage() {
   const locale = useLocale();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
+  /** profile_roles 聚合：成员 id -> 该成员的全部职位。 */
+  const [memberRoles, setMemberRoles] = useState<MemberRoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -655,11 +789,33 @@ export default function TeamPage() {
       if (membersResult.error) throw membersResult.error;
       if (rolesResult.error) throw rolesResult.error;
 
-      setMembers((membersResult.data ?? []) as unknown as MemberRow[]);
+      const memberRows = (membersResult.data ?? []) as unknown as MemberRow[];
+      setMembers(memberRows);
       setRoles((rolesResult.data ?? []) as unknown as RoleRow[]);
+
+      // 多职位：profile_roles 公开可读，用二次查询按成员 id 聚合（一个账号最多 4 个职位）。
+      // 查询失败不影响成员列表，卡片会自动回退 profiles.role 单职位展示。
+      const memberIds = memberRows.map((member) => member.id).filter((id) => Boolean(id));
+      if (memberIds.length > 0) {
+        const { data: memberRoleData, error: memberRoleError } = await supabase
+          .from('profile_roles')
+          .select('user_id, role, level')
+          .in('user_id', memberIds)
+          .order('level', { ascending: false });
+
+        if (memberRoleError) {
+          console.error('获取成员多职位失败:', memberRoleError);
+          setMemberRoles([]);
+        } else {
+          setMemberRoles(toMemberRoleRows(memberRoleData));
+        }
+      } else {
+        setMemberRoles([]);
+      }
     } catch (loadError: unknown) {
       setMembers([]);
       setRoles([]);
+      setMemberRoles([]);
       setError(errorMessageOf(loadError));
     } finally {
       setLoading(false);
@@ -684,6 +840,18 @@ export default function TeamPage() {
     for (const role of roles) map.set(role.name, role);
     return map;
   }, [roles]);
+
+  /** 成员 id -> 全部职位（SQL 已按 level 降序，这里再兜底排序一次）。 */
+  const rolesByMember = useMemo(() => {
+    const map = new Map<string, MemberRoleRow[]>();
+    for (const row of memberRoles) {
+      const bucket = map.get(row.user_id);
+      if (bucket) bucket.push(row);
+      else map.set(row.user_id, [row]);
+    }
+    for (const bucket of map.values()) bucket.sort((a, b) => b.level - a.level);
+    return map;
+  }, [memberRoles]);
 
   /**
    * 在任成员按 roles.department 分组：
@@ -825,6 +993,7 @@ export default function TeamPage() {
                     department={department}
                     members={departmentMembers}
                     roleByName={roleByName}
+                    rolesByMember={rolesByMember}
                   />
                 ))}
               </div>

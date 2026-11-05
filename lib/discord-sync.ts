@@ -31,17 +31,23 @@ export async function syncUserDiscordRoles(userId: string): Promise<DiscordSyncR
   try {
     const supabase = serviceClient();
 
-    const [{ data: account }, { data: profile }, { data: mappings }, { data: setting }] =
-      await Promise.all([
-        supabase
-          .from('discord_accounts')
-          .select('user_id, discord_id, guild_member, guild_roles')
-          .eq('user_id', userId)
-          .maybeSingle(),
-        supabase.from('profiles').select('id, role, role_level').eq('id', userId).maybeSingle(),
-        supabase.from('discord_role_mappings').select('site_role, discord_role_id, enabled'),
-        supabase.from('discord_settings').select('value').eq('key', 'verified_role_id').maybeSingle(),
-      ]);
+    const [
+      { data: account },
+      { data: profile },
+      { data: mappings },
+      { data: setting },
+      { data: profileRoles },
+    ] = await Promise.all([
+      supabase
+        .from('discord_accounts')
+        .select('user_id, discord_id, guild_member, guild_roles')
+        .eq('user_id', userId)
+        .maybeSingle(),
+      supabase.from('profiles').select('id, role, role_level').eq('id', userId).maybeSingle(),
+      supabase.from('discord_role_mappings').select('site_role, discord_role_id, enabled'),
+      supabase.from('discord_settings').select('value').eq('key', 'verified_role_id').maybeSingle(),
+      supabase.from('profile_roles').select('role').eq('user_id', userId),
+    ]);
 
     if (!account?.discord_id) {
       return { ...result, error: 'discord_not_linked' };
@@ -61,8 +67,23 @@ export async function syncUserDiscordRoles(userId: string): Promise<DiscordSyncR
 
     const currentRoles = new Set(member.roles);
     const enabledMappings = (mappings ?? []).filter((item) => item.enabled);
-    const target = enabledMappings.find((item) => item.site_role === profile.role);
     const mappedRoleIds = new Set(enabledMappings.map((item) => item.discord_role_id));
+
+    const siteRoles = new Set<string>(
+      (profileRoles ?? [])
+        .map((item) => item.role as string)
+        .filter((role): role is string => Boolean(role))
+    );
+    if (siteRoles.size === 0 && profile.role) {
+      siteRoles.add(profile.role);
+    }
+
+    const targetRoleIds = new Set<string>();
+    for (const mapping of enabledMappings) {
+      if (siteRoles.has(mapping.site_role)) {
+        targetRoleIds.add(mapping.discord_role_id);
+      }
+    }
 
     // 已验证身份组（绑定后自动分配）
     const verifiedRoleId = setting?.value?.trim();
@@ -76,12 +97,13 @@ export async function syncUserDiscordRoles(userId: string): Promise<DiscordSyncR
       }
     }
 
-    // 分配目标角色
-    if (target && !currentRoles.has(target.discord_role_id)) {
+    // 分配全部目标角色（多职位）
+    for (const roleId of targetRoleIds) {
+      if (currentRoles.has(roleId)) continue;
       try {
-        await addDiscordRole(account.discord_id, target.discord_role_id);
-        currentRoles.add(target.discord_role_id);
-        result.assigned.push(target.discord_role_id);
+        await addDiscordRole(account.discord_id, roleId);
+        currentRoles.add(roleId);
+        result.assigned.push(roleId);
       } catch (error) {
         return {
           ...result,
@@ -93,7 +115,7 @@ export async function syncUserDiscordRoles(userId: string): Promise<DiscordSyncR
     // 移除其它已映射但不是当前站点的角色
     for (const roleId of Array.from(currentRoles)) {
       if (!mappedRoleIds.has(roleId)) continue;
-      if (target?.discord_role_id === roleId) continue;
+      if (targetRoleIds.has(roleId)) continue;
       try {
         await removeDiscordRole(account.discord_id, roleId);
         currentRoles.delete(roleId);

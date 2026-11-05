@@ -7,7 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Navbar from '../../../components/Navbar';
 import Link from 'next/link';
 import { useTr, useLocale } from '@/components/I18nProvider';
-import { canAccessAdmin, levelOf, roleLabel, roleLabelEn } from '@/lib/permissions';
+import { canAccessAdmin, levelOf, roleColor, roleLabel, roleLabelEn } from '@/lib/permissions';
 import type { Locale } from '@/lib/i18n';
 
 const supabase = createClient(
@@ -122,6 +122,144 @@ interface TopicRow {
 
 type ProfileWithVtc = ProfileRow & { vtc_info: VtcInfo | null };
 
+interface ProfileRoleRow {
+  role: string;
+  level: number;
+}
+
+interface RoleMetaRow {
+  name: string;
+  display_name: string | null;
+}
+
+interface RoleBadge {
+  key: string;
+  label: string;
+  level: number;
+  color: string;
+  primary: boolean;
+}
+
+/** 数据库一个账号最多 4 个职位，前端再兜一层。 */
+const MAX_PROFILE_ROLES = 4;
+
+/** 只保留合法的 profile_roles 行，接口异常时不至于渲染出错。 */
+function toProfileRoleRows(data: unknown): ProfileRoleRow[] {
+  if (!Array.isArray(data)) return [];
+  const rows: ProfileRoleRow[] = [];
+  for (const item of data) {
+    if (typeof item !== 'object' || item === null) continue;
+    const row = item as Record<string, unknown>;
+    const role = typeof row.role === 'string' ? row.role.trim() : '';
+    if (!role) continue;
+    rows.push({ role, level: typeof row.level === 'number' ? row.level : 0 });
+  }
+  return rows;
+}
+
+/** roles 表的展示名，形如「社区版主 (Community Moderator)」。 */
+function toRoleMetaRows(data: unknown): RoleMetaRow[] {
+  if (!Array.isArray(data)) return [];
+  const rows: RoleMetaRow[] = [];
+  for (const item of data) {
+    if (typeof item !== 'object' || item === null) continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.name !== 'string' || !row.name.trim()) continue;
+    rows.push({
+      name: row.name.trim(),
+      display_name: typeof row.display_name === 'string' ? row.display_name : null,
+    });
+  }
+  return rows;
+}
+
+/** "社区版主 (Community Moderator)" -> { zh, en }；没有括号时 en 为空。 */
+function splitRoleDisplayName(displayName: string): { zh: string; en: string } {
+  const matched = displayName.match(/^(.+?)\s*\(([^()]*)\)\s*$/);
+  if (matched) {
+    const zh = matched[1]?.trim() ?? '';
+    const en = matched[2]?.trim() ?? '';
+    if (zh && en) return { zh, en };
+  }
+  return { zh: displayName.trim(), en: '' };
+}
+
+/**
+ * 多职位徽章：profile_roles 按 level 降序取最多 4 个，主职位排在最前；
+ * 没有记录时回退 profiles.role / role_level；颜色统一走 roleColor。
+ * 中文名优先 roles.display_name 的中文部分，英文名用其英文部分，缺失时回退 roleLabel / roleLabelEn。
+ */
+function buildRoleBadges(
+  roleRows: readonly ProfileRoleRow[],
+  roleMeta: readonly RoleMetaRow[],
+  fallbackRole: string | null | undefined,
+  fallbackLevel: number | null | undefined,
+  locale: Locale
+): RoleBadge[] {
+  const metaByName = new Map<string, string>();
+  for (const row of roleMeta) {
+    if (row.display_name) metaByName.set(row.name, row.display_name);
+  }
+
+  const seen = new Set<string>();
+  const picked: ProfileRoleRow[] = [];
+  for (const row of [...roleRows].sort((a, b) => b.level - a.level)) {
+    if (seen.has(row.role)) continue;
+    seen.add(row.role);
+    picked.push(row);
+    if (picked.length >= MAX_PROFILE_ROLES) break;
+  }
+
+  if (picked.length === 0) {
+    picked.push({ role: fallbackRole?.trim() || 'member', level: levelOf(fallbackLevel) });
+  }
+
+  return picked.map((row, index) => {
+    const displayName = metaByName.get(row.role);
+    let label = locale === 'en' ? roleLabelEn(row.role, row.level) : roleLabel(row.role, row.level);
+    if (displayName) {
+      const parts = splitRoleDisplayName(displayName);
+      const localized = locale === 'en' ? parts.en : parts.zh;
+      if (localized) label = localized;
+    }
+    return {
+      key: row.role,
+      label,
+      level: row.level,
+      color: roleColor(row.role, row.level),
+      primary: index === 0,
+    };
+  });
+}
+
+function RoleBadgePill({ badge }: { badge: RoleBadge }) {
+  return (
+    <span
+      title={badge.level > 0 ? `Lv.${badge.level}` : undefined}
+      className={`inline-flex items-center rounded border px-2 py-0.5 text-xs ${
+        badge.primary ? 'font-bold' : 'font-medium'
+      }`}
+      style={{
+        borderColor: `${badge.color}66`,
+        backgroundColor: `${badge.color}1a`,
+        color: badge.color,
+      }}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
+function RoleBadgeList({ badges, className }: { badges: RoleBadge[]; className?: string }) {
+  return (
+    <span className={`flex flex-wrap items-center gap-1.5 ${className ?? ''}`}>
+      {badges.map((badge) => (
+        <RoleBadgePill key={badge.key} badge={badge} />
+      ))}
+    </span>
+  );
+}
+
 // 资料页只展示“生效中的禁言/封禁”数量与状态，不展示原因等隐私信息。
 type SanctionAction = 'mute' | 'ban';
 
@@ -209,9 +347,12 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileWithVtc | null>(null);
   const [loading, setLoading] = useState(true);
   
-  // 🌟 新增：动态存储职位名称和等级
-  const [roleDisplayName, setRoleDisplayName] = useState('注册司机');
+  // 🌟 动态存储职位等级（判权只依据 role_level）
   const [roleLevel, setRoleLevel] = useState(0);
+
+  // 多职位：profile_roles 的全部职位 + roles 表的双语展示名
+  const [profileRoleRows, setProfileRoleRows] = useState<ProfileRoleRow[]>([]);
+  const [roleMetaRows, setRoleMetaRows] = useState<RoleMetaRow[]>([]);
 
   // 生效中的禁言/封禁（只用于 Active bans 计数与状态徽章）
   const [activeSanctions, setActiveSanctions] = useState<ActiveSanction[]>([]);
@@ -221,8 +362,10 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const loadData = async () => {
-      // 切换资料页时先清空，避免短暂显示上一个用户的处罚状态
+      // 切换资料页时先清空，避免短暂显示上一个用户的处罚状态与职位
       setActiveSanctions([]);
+      setProfileRoleRows([]);
+      setRoleMetaRows([]);
 
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
@@ -261,17 +404,26 @@ export default function ProfilePage() {
         const profileLevel = levelOf(profileData.role_level);
         setRoleLevel(profileLevel);
 
-        // 🌟 展示名：优先 roles 表的 display_name，其次 ROLE_LABELS / 原始 role 字符串，最后回退等级标签
-        let label = roleLabel(profileData.role, profileLevel);
-        if (profileData.role) {
-          const { data: roleData } = await supabase
-            .from('roles')
-            .select('display_name')
-            .eq('name', profileData.role)
-            .single();
-          if (roleData?.display_name) label = roleData.display_name;
+        // 多职位：profile_roles 公开可读，按 level 降序；没有记录时由 buildRoleBadges 回退 profile.role。
+        const [profileRolesResult, rolesMetaResult] = await Promise.all([
+          supabase
+            .from('profile_roles')
+            .select('role, level')
+            .eq('user_id', viewId)
+            .order('level', { ascending: false }),
+          supabase.from('roles').select('name, display_name'),
+        ]);
+
+        if (profileRolesResult.error) {
+          console.error('获取多职位失败:', profileRolesResult.error);
+        } else {
+          setProfileRoleRows(toProfileRoleRows(profileRolesResult.data));
         }
-        setRoleDisplayName(label);
+        if (rolesMetaResult.error) {
+          console.error('获取职位名称失败:', rolesMetaResult.error);
+        } else {
+          setRoleMetaRows(toRoleMetaRows(rolesMetaResult.data));
+        }
       } else {
         router.push('/forum');
         return;
@@ -325,8 +477,13 @@ export default function ProfilePage() {
 
   const displayName = profile.display_name || tr('玩家');
   const avatarUrl = profile.avatar_url;
-  const displayRole =
-    locale === 'en' ? roleLabelEn(profile.role, roleLevel) : roleDisplayName;
+  const roleBadges = buildRoleBadges(
+    profileRoleRows,
+    roleMetaRows,
+    profile.role,
+    profile.role_level,
+    locale
+  );
   
   const isOwnProfile = currentUser?.id === profile.id;
   const sanctionBadge = buildSanctionBadge(activeSanctions, tr);
@@ -351,8 +508,8 @@ export default function ProfilePage() {
                 </div>
                 <div className="mt-8">
                   <h2 className="text-white font-bold text-lg">{displayName}</h2>
-                  {/* 🌟 替换：动态职位 */}
-                  <p className="text-xs text-gray-500">{displayRole}</p>
+                  {/* 🌟 多个职位徽章：主职位在最前，颜色与 roles.color 一致 */}
+                  <RoleBadgeList badges={roleBadges} className="mt-2" />
                 </div>
               </div>
             </div>
@@ -415,8 +572,11 @@ export default function ProfilePage() {
                   <div className="text-sm space-y-3">
                     <p><span className="text-gray-500 inline-block w-28">Languages:</span> <span className="text-white">{profile.languages || 'Chinese (Simplified)'}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Steam ID:</span> <span className="text-white">{profile.steam_id || tr('未绑定')}</span></p>
-                    {/* 🌟 替换：动态职位 */}
-                    <p><span className="text-gray-500 inline-block w-28">Role:</span> <span className={canAccessAdmin(roleLevel) ? 'text-red-400 font-bold' : 'text-green-400'}>{displayRole}</span></p>
+                    {/* 🌟 多个职位徽章：主职位加粗 */}
+                    <div className="flex items-start gap-2">
+                      <span className="text-gray-500 inline-block w-28 shrink-0">Role:</span>
+                      <RoleBadgeList badges={roleBadges} />
+                    </div>
                     <p><span className="text-gray-500 inline-block w-28">Active bans:</span> <span className="text-white">{activeSanctions.length}</span></p>
                     <p><span className="text-gray-500 inline-block w-28">Linked games:</span> <span className="text-white">Euro Truck Simulator 2</span></p>
                     <p><span className="text-gray-500 inline-block w-28">In-game status:</span> <span className="text-gray-500">Offline</span></p>

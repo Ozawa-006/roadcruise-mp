@@ -27,11 +27,47 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.55v',
+    date: '2026-11-05',
+    title: '多职位支持（最多 4 个）',
+    title_en: 'Multiple positions per user (up to 4)',
+    highlight: true,
+    items: [
+      {
+        kind: 'feature',
+        text: '一个账号最多可拥有 4 个职位：新增 `profile_roles`，`profiles.role/role_level` 自动取最高职位作为主职位',
+      },
+      {
+        kind: 'feature',
+        text: '后台用户管理改为多选职位（最多 4 个）；旧逻辑通过招募/职位变更写入时自动追加，不再覆盖已有职位',
+      },
+      {
+        kind: 'feature',
+        text: '个人主页、公开主页、团队页显示全部职位徽章（颜色同步角色色）',
+      },
+      {
+        kind: 'feature',
+        text: 'Discord 身份组同步支持多职位：按用户全部职位映射发放/移除身份组',
+      },
+      {
+        kind: 'chore',
+        text: '新增 `supabase/multi-role.sql`、RPC `rct_set_user_roles`',
+      },
+    ],
+    items_en: [
+      'One account can now hold up to 4 positions: added `profile_roles`; `profiles.role/role_level` automatically track the highest as the primary position',
+      'Admin user management now supports multi-select positions (max 4); legacy recruitment/position writes append instead of overwriting',
+      'Profile, public profile and Team pages show all position badges with role colors',
+      'Discord role sync now handles multiple positions, granting/removing mapped roles for all of them',
+      'Added `supabase/multi-role.sql` and the `rct_set_user_roles` RPC',
+    ],
+  },
+  {
     version: '0.0.54v',
     date: '2026-11-05',
     title: '启动器账号登录接口',
     title_en: 'Launcher account login API',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
