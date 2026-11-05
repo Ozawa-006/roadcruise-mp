@@ -57,6 +57,10 @@ const EN: Record<string, string> = {
   '加载中…': 'Loading…',
   '职位变更加载失败，请稍后重试': 'Failed to load role changes. Please try again later.',
   '暂无职位变更记录': 'No role changes yet',
+  '共 {count} 条': '{count} records',
+  '上一页': 'Previous',
+  '下一页': 'Next',
+  '第 {page} / {total} 页': 'Page {page} / {total}',
   '未知成员': 'Unknown member',
   '加入': 'Joined',
   '晋升': 'Promoted',
@@ -201,6 +205,8 @@ function formatChangeTime(createdAt: string): string {
   return date.toLocaleString('zh-CN');
 }
 
+const TEAM_CHANGES_PAGE_SIZE = 5;
+
 export default function ForumHome() {
   const tr = useTr(EN);
   const locale = useLocale();
@@ -214,7 +220,18 @@ export default function ForumHome() {
   const [announcementCount, setAnnouncementCount] = useState<number | null>(null);
   const [teamChangesLoading, setTeamChangesLoading] = useState(true);
   const [teamChangesFailed, setTeamChangesFailed] = useState(false);
+  const [teamChangePage, setTeamChangePage] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  const teamChangeTotalPages = Math.max(
+    1,
+    Math.ceil(teamChanges.length / TEAM_CHANGES_PAGE_SIZE)
+  );
+  const teamChangeCurrentPage = Math.min(teamChangePage, teamChangeTotalPages - 1);
+  const visibleTeamChanges = teamChanges.slice(
+    teamChangeCurrentPage * TEAM_CHANGES_PAGE_SIZE,
+    (teamChangeCurrentPage + 1) * TEAM_CHANGES_PAGE_SIZE
+  );
 
   useEffect(() => {
     const fetchForumData = async () => {
@@ -282,7 +299,7 @@ export default function ForumHome() {
             .select('id, old_role, new_role, change_type, created_at, profiles!user_id(display_name)')
             .order('created_at', { ascending: false })
             .order('id', { ascending: false })
-            .limit(8),
+            .limit(40),
           supabase.from('roles').select('name, display_name'),
         ]);
 
@@ -295,6 +312,7 @@ export default function ForumHome() {
         }
 
         setTeamChanges((changesResult.data ?? []) as unknown as TeamChangeRow[]);
+        setTeamChangePage(0);
 
         if (!rolesResult.error && rolesResult.data) {
           const nextRoleNames: Record<string, string> = {};
@@ -504,8 +522,9 @@ export default function ForumHome() {
                 ) : teamChanges.length === 0 ? (
                   <p className="text-center text-xs text-gray-500 py-4">{tr('暂无职位变更记录')}</p>
                 ) : (
+                  <>
                   <ul>
-                    {teamChanges.map((change) => {
+                    {visibleTeamChanges.map((change) => {
                       const badge = changeTypeMetaOf(change.change_type);
                       const oldRoleLabel = roleLabelOf(change.old_role, roleNames, locale);
                       const newRoleLabel = roleLabelOf(change.new_role, roleNames, locale);
@@ -539,6 +558,42 @@ export default function ForumHome() {
                       );
                     })}
                   </ul>
+                  {teamChangeTotalPages > 1 && (
+                    <div className="mt-1 flex items-center justify-between gap-2 border-t border-gray-700/50 px-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTeamChangePage((page) => Math.max(0, page - 1))
+                        }
+                        disabled={teamChangeCurrentPage <= 0}
+                        className="rounded border border-gray-600 px-2 py-1 text-[10px] text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        ← {tr('上一页')}
+                      </button>
+                      <span className="text-[10px] text-gray-500">
+                        {tr('第 {page} / {total} 页', {
+                          page: teamChangeCurrentPage + 1,
+                          total: teamChangeTotalPages,
+                        })}
+                        <span className="ml-1 text-gray-600">
+                          · {tr('共 {count} 条', { count: teamChanges.length })}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTeamChangePage((page) =>
+                            Math.min(teamChangeTotalPages - 1, page + 1)
+                          )
+                        }
+                        disabled={teamChangeCurrentPage >= teamChangeTotalPages - 1}
+                        className="rounded border border-gray-600 px-2 py-1 text-[10px] text-gray-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {tr('下一页')} →
+                      </button>
+                    </div>
+                  )}
+                  </>
                 )}
               </div>
             </div>

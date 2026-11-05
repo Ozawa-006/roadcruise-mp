@@ -27,11 +27,27 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.0.56v',
+    date: '2026-11-05',
+    title: '论坛职位变更分页',
+    title_en: 'Pagination for forum team role changes',
+    highlight: true,
+    items: [
+      {
+        kind: 'fix',
+        text: '论坛右侧「团队职位变更」改为每页 5 条，支持上一页/下一页与页码，避免长列表撑爆侧栏',
+      },
+    ],
+    items_en: [
+      'The forum Team Role Changes card now shows 5 records per page with previous/next and page numbers, preventing the sidebar from being stretched by long lists',
+    ],
+  },
+  {
     version: '0.0.55v',
     date: '2026-11-05',
     title: '多职位支持（最多 4 个）',
     title_en: 'Multiple positions per user (up to 4)',
-    highlight: true,
+    highlight: false,
     items: [
       {
         kind: 'feature',
